@@ -17,6 +17,7 @@ enum PolishError: LocalizedError {
     case emptyOutput
     case lengthGuard
     case scriptGuard
+    case mixGuard
     case refusalGuard
 
     var errorDescription: String? {
@@ -37,6 +38,8 @@ enum PolishError: LocalizedError {
             return "The result changed the selection length too much. The original text was left untouched."
         case .scriptGuard:
             return "The result changed the selection's dominant writing system. The original text was left untouched."
+        case .mixGuard:
+            return "The result dropped one of the selection's languages. The original text was left untouched."
         case .refusalGuard:
             return "Apple Intelligence returned a refusal instead of proofreading the selection."
         }
@@ -165,6 +168,16 @@ enum TextPolisher {
         guard dominantScriptBucket(trimmedInput) == dominantScriptBucket(trimmedOutput) else {
             return .failure(.scriptGuard)
         }
+        // Wholesale translation of a mixed-language selection can pass the
+        // dominant-bucket check when the minority script is small, so a real
+        // mix must keep at least one character of each side.
+        let inputHan = hanCount(trimmedInput)
+        let inputLatin = latinLetterCount(trimmedInput)
+        if inputHan >= 2 && inputLatin >= 2 {
+            guard hanCount(trimmedOutput) >= 1 && latinLetterCount(trimmedOutput) >= 1 else {
+                return .failure(.mixGuard)
+            }
+        }
         guard !isNovelRefusal(output: trimmedOutput, input: trimmedInput) else {
             return .failure(.refusalGuard)
         }
@@ -190,6 +203,16 @@ enum TextPolisher {
         let symbols = text.filter { "{};()=><".contains($0) }.count
         return statementSymbols >= 1 && symbols >= 4
             && Double(symbols) / Double(max(text.count, 1)) >= 0.12
+    }
+
+    private static func hanCount(_ text: String) -> Int {
+        text.unicodeScalars.lazy.filter { ScriptDetector.isHan($0.value) }.count
+    }
+
+    private static func latinLetterCount(_ text: String) -> Int {
+        text.unicodeScalars.lazy.filter {
+            (0x41...0x5A).contains($0.value) || (0x61...0x7A).contains($0.value)
+        }.count
     }
 
     private enum ScriptBucket: CaseIterable {

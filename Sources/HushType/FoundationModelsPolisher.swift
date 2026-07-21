@@ -71,7 +71,7 @@ enum FoundationModelsPolisher {
             let response = try await session.respond(to: userPrompt, options: options)
             let wasPrewarmed = prewarmedPromptFingerprint == fingerprint
             log.debug("Polish response fingerprint=\(fingerprint, privacy: .public) prewarmed=\(wasPrewarmed, privacy: .public) transcript_entries=\(response.transcriptEntries.count, privacy: .public)")
-            return .success(stripPrefix(response.content))
+            return .success(sanitize(response.content, input: text))
         } catch {
             log.error("Polish failed: \(error.localizedDescription, privacy: .public)")
             return .failure(error)
@@ -87,5 +87,19 @@ enum FoundationModelsPolisher {
             }
         }
         return raw
+    }
+
+    /// The model deterministically echoes the `<selection>` wrapper for some
+    /// inputs (observed on trailing-apostrophe selections). Strip it unless the
+    /// user's own selection was wrapped the same way.
+    static func sanitize(_ raw: String, input: String) -> String {
+        var value = stripPrefix(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedInput = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("<selection>"), value.hasSuffix("</selection>"),
+           !(trimmedInput.hasPrefix("<selection>") && trimmedInput.hasSuffix("</selection>")) {
+            value = String(value.dropFirst("<selection>".count).dropLast("</selection>".count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return value
     }
 }
