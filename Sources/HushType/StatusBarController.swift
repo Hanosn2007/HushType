@@ -1018,53 +1018,45 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     // MARK: - Helpers
 
-    /// Update a toggle menu item to show a green ✓ instead of the system checkmark.
-    private func updateToggleAppearance(_ item: NSMenuItem, title: String, checked: Bool) {
-        item.state = .off  // never use system checkmark
-        item.view = nil    // ensure no custom view blocks click handling
-
-        if checked {
-            let str = NSMutableAttributedString(
-                string: title + "  ",
-                attributes: [.font: NSFont.menuFont(ofSize: 14)]
-            )
-            str.append(NSAttributedString(
-                string: "✓",
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-                    .foregroundColor: NSColor.systemGreen,
-                ]
-            ))
-            item.attributedTitle = str
-        } else {
-            item.attributedTitle = nil
-            item.title = title
+    /// Green checkmark for the menu's leading state column. Rendered from the
+    /// SF Symbol as a non-template image so the menu doesn't recolor it.
+    private static let greenCheckImage: NSImage = {
+        let symbol = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "enabled")!
+            .withSymbolConfiguration(.init(pointSize: 12, weight: .semibold))!
+        let tinted = NSImage(size: symbol.size, flipped: false) { rect in
+            symbol.draw(in: rect)
+            NSColor.systemGreen.set()
+            rect.fill(using: .sourceAtop)
+            return true
         }
+        tinted.isTemplate = false
+        return tinted
+    }()
+
+    /// Update a toggle menu item to show a green ✓ in the native state column.
+    /// Titles stay in the default menu font: a trailing ✓ suffix sat at a
+    /// different x-position per title, and the old 14pt attributed title made
+    /// checked items render larger than their neighbors.
+    private func updateToggleAppearance(_ item: NSMenuItem, title: String, checked: Bool) {
+        item.view = nil    // ensure no custom view blocks click handling
+        item.attributedTitle = nil
+        item.title = title
+        item.onStateImage = Self.greenCheckImage
+        item.state = checked ? .on : .off
     }
 
     /// Update a radio-style sub-menu item (12pt secondary font; the items
-    /// live inside submenus now, so no manual indent). Selected radios get a
-    /// green ✓ suffix matching the toggle style.
+    /// live inside submenus now, so no manual indent). Selection shows the
+    /// same green ✓ in the state column as the toggles.
     private func updateRadioAppearance(_ item: NSMenuItem, title: String, selected: Bool) {
-        item.state = .off
         item.view = nil
 
-        let baseAttrs: [NSAttributedString.Key: Any] = [
+        item.attributedTitle = NSAttributedString(string: title, attributes: [
             .font: NSFont.systemFont(ofSize: 12),
             .foregroundColor: NSColor.labelColor,
-        ]
-
-        let str = NSMutableAttributedString(string: title, attributes: baseAttrs)
-        if selected {
-            str.append(NSAttributedString(
-                string: "  ✓",
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-                    .foregroundColor: NSColor.systemGreen,
-                ]
-            ))
-        }
-        item.attributedTitle = str
+        ])
+        item.onStateImage = Self.greenCheckImage
+        item.state = selected ? .on : .off
     }
 
     private func showAlert(title: String, message: String) {
