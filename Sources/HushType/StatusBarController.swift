@@ -211,6 +211,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         textPolishMenuItem.isEnabled = TextPolisher.isAvailableCached
         menu.addItem(textPolishMenuItem)
 
+        let polishInstructionsItem = NSMenuItem(
+            title: "Edit Polish Instructions",
+            action: #selector(editPolishInstructions),
+            keyEquivalent: ""
+        )
+        polishInstructionsItem.target = self
+        menu.addItem(polishInstructionsItem)
+
         menu.addItem(.separator())
 
         // ────────────────────── Dictation Settings ──────────────────────
@@ -1030,6 +1038,26 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         // Open in the user's default text editor
         NSWorkspace.shared.open(url)
         log.info("Opened dictionary file in default editor")
+    }
+
+    // MARK: - Polish Instructions
+
+    @objc private func editPolishInstructions() {
+        // Mirror the Edit Customized Dictionary flow: create the documented
+        // template on first use, then open in the default text editor.
+        PolishPrompt.createRulesTemplateIfMissing()
+
+        let url = PolishPrompt.rulesFileURL
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            showAlert(
+                title: "Could not open Polish instructions",
+                message: "Failed to create the instructions file at:\n\(url.path)"
+            )
+            return
+        }
+
+        NSWorkspace.shared.open(url)
+        log.info("Opened polish rules file in default editor")
     }
 
     // MARK: - Unload / Reload Model

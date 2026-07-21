@@ -60,12 +60,13 @@ enum FoundationModelsPolisher {
         log.info("Text Polish warmup state released")
     }
 
-    static func polish(_ text: String) async -> Result<String, Error> {
+    static func polish(_ text: String, mixRetry: Bool = false) async -> Result<String, Error> {
         let prompt = PolishPrompt.activePrompt()
         let fingerprint = prompt.hashValue
         let session = LanguageModelSession(instructions: prompt)
         let options = GenerationOptions(temperature: 0.0)
-        let userPrompt = "Input: <selection>\(text)</selection>\nOutput:"
+        let reminder = mixRetry ? PolishPrompt.mixRetryReminder : ""
+        let userPrompt = "Input: <selection>\(text)</selection>\(reminder)\nOutput:"
 
         do {
             let response = try await session.respond(to: userPrompt, options: options)

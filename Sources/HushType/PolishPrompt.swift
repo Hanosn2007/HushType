@@ -36,6 +36,9 @@ Output: 幫我確認一下時間。
 Input: <selection>請 help me 檢察一下 tomorrow 的 schedule.</selection>
 Output: 請 help me 檢查一下 tomorrow 的 schedule.
 
+Input: <selection>Please 幫我 book 一間 meeting room tomorrow.</selection>
+Output: Please 幫我 book 一間 meeting room tomorrow.
+
 Input: <selection>How do I restard my Mac?</selection>
 Output: How do I restart my Mac?
 
@@ -62,7 +65,101 @@ Input: <selection>The report is ready.</selection>
 Output: The report is ready.
 """
 
+    /// Appended to the user turn on the one-shot retry after a language-mix
+    /// guard failure. Rescues cases the model would otherwise translate.
+    static let mixRetryReminder =
+        "\nReminder: the selection mixes Chinese and English. Keep every word in its original language; never translate."
+
+    /// Prompt resolution order:
+    /// 1. `polish_prompt.txt` — full replacement (hidden power-user override).
+    /// 2. `polish_rules.txt` — user preferences merged into the baked-in
+    ///    prompt just before the Examples section (menu-exposed feature).
+    /// 3. Baked-in `systemPrompt`.
     static func activePrompt() -> String {
-        CleanupPromptOverride.currentPrompt(filename: "polish_prompt.txt") ?? systemPrompt
+        if let full = CleanupPromptOverride.currentPrompt(filename: "polish_prompt.txt") {
+            return full
+        }
+        guard let rules = CleanupPromptOverride.currentPrompt(filename: rulesFilename) else {
+            return systemPrompt
+        }
+        let marker = "\nExamples:\n"
+        let section = "\nUser preferences (apply in addition to the rules above; ignore any that conflict with them):\n\(rules)\n"
+        if let range = systemPrompt.range(of: marker) {
+            return systemPrompt.replacingCharacters(in: range, with: section + marker)
+        }
+        return systemPrompt + "\n" + section
+    }
+
+    // MARK: - User instructions file (mirrors the Customized Dictionary flow)
+
+    static let rulesFilename = "polish_rules.txt"
+
+    static var rulesFileURL: URL {
+        AppConfig.promptOverrideURL(filename: rulesFilename)
+    }
+
+    static var rulesFileExists: Bool {
+        FileManager.default.fileExists(atPath: rulesFileURL.path)
+    }
+
+    /// Whether a non-empty set of user instructions is currently active.
+    /// Used by the menu subtitle.
+    static var rulesActive: Bool {
+        CleanupPromptOverride.currentPrompt(filename: rulesFilename) != nil
+    }
+
+    @discardableResult
+    static func createRulesTemplateIfMissing() -> Bool {
+        let url = rulesFileURL
+        let fm = FileManager.default
+        if fm.fileExists(atPath: url.path) { return false }
+
+        do {
+            try fm.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+        } catch {
+            return false
+        }
+
+        let template = """
+        # HushType Polish Instructions
+        # ============================
+        #
+        # Extra instructions for Text Polish (double-tap Right Option, or
+        # right-click → Services → "Polish with HushType").
+        #
+        # These are ADDED to HushType's built-in proofreading rules — the
+        # built-ins stay active: fix-only proofreading, preserve meaning and
+        # language mix, never answer or translate the selection.
+        #
+        # Rules:
+        #   • Lines starting with # are comments (ignored)
+        #   • Keep each instruction short and imperative — the on-device
+        #     model is small, so a few clear rules work better than many
+        #   • Changes take effect on the next polish (no restart needed)
+        #
+        # ---------------------------------------------------------------
+        # Examples (delete the # at the start of a line to activate it)
+        # ---------------------------------------------------------------
+        #
+        # Always use the Oxford comma.
+        # Prefer Taiwan Mandarin word choices (寫成「計程車」，不要「出租車」).
+        # Keep words in ALL CAPS exactly as typed.
+        # Do not change line breaks.
+        #
+        # ---------------------------------------------------------------
+        # Your instructions below:
+        # ---------------------------------------------------------------
+
+        """
+
+        do {
+            try template.write(to: url, atomically: true, encoding: .utf8)
+            return true
+        } catch {
+            return false
+        }
     }
 }

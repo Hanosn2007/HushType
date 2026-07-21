@@ -36,6 +36,9 @@ Output: 幫我確認一下時間。
 Input: <selection>請 help me 檢察一下 tomorrow 的 schedule.</selection>
 Output: 請 help me 檢查一下 tomorrow 的 schedule.
 
+Input: <selection>Please 幫我 book 一間 meeting room tomorrow.</selection>
+Output: Please 幫我 book 一間 meeting room tomorrow.
+
 Input: <selection>How do I restard my Mac?</selection>
 Output: How do I restart my Mac?
 
@@ -220,23 +223,53 @@ func latinLetterCount(_ text: String) -> Int {
     }.count
 }
 
-func passesPostGuards(input: String, output: String) -> Bool {
+func lengthGuardOK(input: String, output: String) -> Bool {
     let source = trimmed(input)
     let result = trimmed(output)
     guard !result.isEmpty else { return false }
     if source.count >= 20 {
         let ratio = Double(result.count) / Double(source.count)
-        guard (0.5...2.0).contains(ratio) else { return false }
-    } else if abs(result.count - source.count) > 10 {
-        return false
+        return (0.5...2.0).contains(ratio)
     }
+    return abs(result.count - source.count) <= 10
+}
+
+func languageGuardOK(input: String, output: String) -> Bool {
+    let source = trimmed(input)
+    let result = trimmed(output)
     guard bucket(source) == bucket(result) else { return false }
-    // Mirrors TextPolisher mix guard: a genuinely mixed selection must keep
-    // at least one character of each side.
-    if hanCount(source) >= 2 && latinLetterCount(source) >= 2 {
-        guard hanCount(result) >= 1 && latinLetterCount(result) >= 1 else { return false }
+    // Mirrors TextPolisher mix guard: each script of a genuinely mixed
+    // selection must retain ≥60% of its characters (translations fall far
+    // below; proofreads sit near 100%).
+    let sourceHan = hanCount(source)
+    let sourceLatin = latinLetterCount(source)
+    if sourceHan >= 2 && sourceLatin >= 2 {
+        let hanRetention = Double(hanCount(result)) / Double(sourceHan)
+        let latinRetention = Double(latinLetterCount(result)) / Double(sourceLatin)
+        guard hanRetention >= 0.6 && latinRetention >= 0.6 else { return false }
     }
     return true
+}
+
+func passesPostGuards(input: String, output: String) -> Bool {
+    lengthGuardOK(input: input, output: output)
+        && languageGuardOK(input: input, output: output)
+}
+
+// Mirrors PolishPrompt.mixRetryReminder — appended to the user turn on the
+// one-shot retry after a language-guard failure.
+let MIX_RETRY_REMINDER =
+    "\nReminder: the selection mixes Chinese and English. Keep every word in its original language; never translate."
+
+@available(macOS 26.0, *)
+func generate(_ input: String, reminder: String) async throws -> String {
+    let session = LanguageModelSession(instructions: POLISH_PROMPT)
+    let options = GenerationOptions(temperature: 0.0)
+    let response = try await session.respond(
+        to: "Input: <selection>\(input)</selection>\(reminder)\nOutput:",
+        options: options
+    )
+    return sanitize(response.content, input: input)
 }
 
 @available(macOS 26.0, *)
@@ -247,7 +280,6 @@ func run() async {
     }
 
     print("FoundationModels available · \(cases.count) polish cases")
-    let options = GenerationOptions(temperature: 0.0)
     var corruptCount = 0
 
     for (index, test) in cases.enumerated() {
@@ -265,12 +297,17 @@ func run() async {
 
         case .model:
             do {
-                let session = LanguageModelSession(instructions: POLISH_PROMPT)
-                let response = try await session.respond(
-                    to: "Input: <selection>\(test.input)</selection>\nOutput:",
-                    options: options
-                )
-                actual = sanitize(response.content, input: test.input)
+                var candidate = try await generate(test.input, reminder: "")
+                // Mirrors TextPolisher: one retry with the mix reminder when
+                // only the language guards fail.
+                if lengthGuardOK(input: test.input, output: candidate),
+                   !languageGuardOK(input: test.input, output: candidate) {
+                    let retried = try await generate(test.input, reminder: MIX_RETRY_REMINDER)
+                    if passesPostGuards(input: test.input, output: retried) {
+                        candidate = retried
+                    }
+                }
+                actual = candidate
                 if !passesPostGuards(input: test.input, output: actual) {
                     verdict = .guarded
                 } else if actual == test.expected || test.accepted.contains(actual) {

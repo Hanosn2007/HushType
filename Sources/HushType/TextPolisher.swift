@@ -44,6 +44,15 @@ enum PolishError: LocalizedError {
             return "Apple Intelligence returned a refusal instead of proofreading the selection."
         }
     }
+
+    /// Guards that indicate the model changed the selection's language rather
+    /// than proofreading it — the failures worth a mix-reminder retry.
+    var isLanguageGuard: Bool {
+        switch self {
+        case .scriptGuard, .mixGuard: return true
+        default: return false
+        }
+    }
 }
 
 enum TextPolisher {
@@ -131,7 +140,25 @@ enum TextPolisher {
         case .failure(let error):
             return .failure(.generationFailed(error.localizedDescription))
         case .success(let polished):
-            return validateOutput(polished, input: text)
+            let validated = validateOutput(polished, input: text)
+            // The model has a translation attractor on mixed-language
+            // selections. A single retry with an explicit keep-the-mix
+            // reminder rescues a good share of them; the retry result must
+            // clear every guard or the original guard error stands.
+            if case .failure(let guardError) = validated,
+               guardError.isLanguageGuard {
+                let retryResult = await withDeadline(seconds: 30) {
+                    if #available(macOS 26.0, *) {
+                        return await FoundationModelsPolisher.polish(text, mixRetry: true)
+                    }
+                    return .failure(PolishError.unavailable("This Mac is running an earlier version of macOS."))
+                }
+                if case .success(let retried) = retryResult ?? .failure(PolishError.emptyOutput),
+                   case .success(let polished, let changed) = validateOutput(retried, input: text) {
+                    return .success(polished: polished, changed: changed)
+                }
+            }
+            return validated
         }
     }
 
@@ -168,13 +195,17 @@ enum TextPolisher {
         guard dominantScriptBucket(trimmedInput) == dominantScriptBucket(trimmedOutput) else {
             return .failure(.scriptGuard)
         }
-        // Wholesale translation of a mixed-language selection can pass the
-        // dominant-bucket check when the minority script is small, so a real
-        // mix must keep at least one character of each side.
+        // Translation of a mixed-language selection can pass the
+        // dominant-bucket check when the minority script is small, and
+        // partial translations keep a token of each language, so require
+        // proportional retention: each script keeps ≥60% of its characters.
+        // Legitimate proofreads sit near 100%; translations fall far below.
         let inputHan = hanCount(trimmedInput)
         let inputLatin = latinLetterCount(trimmedInput)
         if inputHan >= 2 && inputLatin >= 2 {
-            guard hanCount(trimmedOutput) >= 1 && latinLetterCount(trimmedOutput) >= 1 else {
+            let hanRetention = Double(hanCount(trimmedOutput)) / Double(inputHan)
+            let latinRetention = Double(latinLetterCount(trimmedOutput)) / Double(inputLatin)
+            guard hanRetention >= 0.6 && latinRetention >= 0.6 else {
                 return .failure(.mixGuard)
             }
         }
