@@ -4,7 +4,67 @@ import os
 
 private let log = Logger(subsystem: "com.felix.hushtype", category: "app")
 
+@MainActor
+private final class TapArbiter {
+    static let doubleTapWindow: TimeInterval = 0.35
+
+    private final class PendingTap {
+        var fired = false
+        var workItem: DispatchWorkItem!
+    }
+
+    private var pendingTap: PendingTap?
+    private(set) var secondTapCandidate = false
+
+    func deferSingleTap(_ action: @escaping @MainActor () -> Void) {
+        reset()
+
+        let pending = PendingTap()
+        pending.workItem = DispatchWorkItem { [weak self, weak pending] in
+            pending?.fired = true
+            guard let self, let pending, !pending.workItem.isCancelled else { return }
+            guard self.pendingTap === pending else { return }
+            self.pendingTap = nil
+            action()
+        }
+        pendingTap = pending
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.doubleTapWindow,
+            execute: pending.workItem
+        )
+    }
+
+    /// Called at the start of every Right ⌥ press. Main-queue serialization
+    /// makes `fired` the boundary interlock: either the deferred action began,
+    /// or this press cancels it and owns the intent as tap #2—never both.
+    @discardableResult
+    func cancelPendingForSecondPress() -> Bool {
+        guard let pendingTap, !pendingTap.fired else { return false }
+        pendingTap.workItem.cancel()
+        self.pendingTap = nil
+        secondTapCandidate = true
+        return true
+    }
+
+    func consumeSecondTapCandidate() -> Bool {
+        guard secondTapCandidate else { return false }
+        secondTapCandidate = false
+        return true
+    }
+
+    func reset() {
+        pendingTap?.workItem.cancel()
+        pendingTap = nil
+        secondTapCandidate = false
+    }
+}
+
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    nonisolated override init() {
+        super.init()
+    }
+
     enum AppState {
         case loading
         case idle
@@ -12,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case transcribing
         case inserting
         case translating
+        case polishing
         case unloaded
     }
 
@@ -27,6 +88,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var transcriptionEngine: Qwen3TranscriptionEngine!
     private var translationManager: TranslationManager!
     private var liveCaptionManager: LiveCaptionManager?
+    private let tapArbiter = TapArbiter()
+
+    private enum SelectionSource {
+        case copySelection
+        case provided(String)
+    }
 
     /// Wall-clock at which the user pressed Right ⌥. Set on press, read on
     /// release for tap-vs-hold disambiguation (<0.3s = tap → translate).
@@ -39,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Translation card (created lazily on first use)
     private lazy var translationCardWindow = TranslationCardWindow()
+    private lazy var polishCardWindow = PolishCardWindow()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("[HushType] Starting...")
@@ -61,12 +129,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         transcriptionEngine = Qwen3TranscriptionEngine()
         translationManager = TranslationManager()
 
+        TextPolisher.refreshAvailabilityCache()
+        statusBar.setTextPolishAvailability(TextPolisher.isAvailableCached)
+        NSApp.servicesProvider = self
+
         // Wire hotkey callbacks
         hotkeyManager.onPress = { [weak self] in
             self?.handleHotkeyPress()
         }
         hotkeyManager.onRelease = { [weak self] in
             self?.handleHotkeyRelease()
+        }
+        hotkeyManager.onCancelledRelease = { [weak self] in
+            self?.handleCancelledHotkeyRelease()
         }
         hotkeyManager.onLiveCaptionToggle = { [weak self] in
             Task { @MainActor in self?.toggleLiveCaptionViaHotkey() }
@@ -184,6 +259,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         }
                     }
                 }
+
+                if AppConfig.shared.textPolishEnabled && TextPolisher.isAvailableCached {
+                    if #available(macOS 26.0, *) {
+                        Task { @MainActor in
+                            log.info("Scheduling Text Polish prewarm after launch")
+                            FoundationModelsPolisher.warmup()
+                        }
+                    }
+                }
             } catch {
                 log.error("Failed to load model: \(error.localizedDescription)")
                 await MainActor.run {
@@ -200,9 +284,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        tapArbiter.reset()
         hotkeyManager.stop()
         hideOverlay()
         log.info("HushType terminated")
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        TextPolisher.refreshAvailabilityCache()
+        statusBar?.setTextPolishAvailability(TextPolisher.isAvailableCached)
     }
 
     // MARK: - Overlay helpers
@@ -219,6 +309,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlayState.state = .transcribing
     }
 
+    private func showOverlayPolishing() {
+        guard AppConfig.shared.floatingOverlayEnabled else { return }
+        overlayState.state = .polishing
+        overlayWindow.show()
+    }
+
     private func hideOverlay() {
         overlayWindow.hide()
         overlayState.state = .hidden
@@ -227,29 +323,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Hotkey Handlers
 
     private func handleHotkeyPress() {
+        let claimedSecondTap = tapArbiter.cancelPendingForSecondPress()
+
         // Gate dictation only when Live Caption is active on the MIC source —
         // both would compete for the mic. System-audio Live Caption uses
         // ScreenCaptureKit (different audio path) so dictation works
         // concurrently. Record press timestamp for tap/hold disambiguation
         // on release; do NOT start recording. Pill stays hidden.
         if AppConfig.shared.liveCaptionUsesMicSource {
+            guard state == .idle else {
+                if claimedSecondTap { tapArbiter.reset() }
+                log.info("Ignoring mic-gated press — state is \(String(describing: self.state), privacy: .public)")
+                return
+            }
             liveCaptionGatePressTimestamp = Date()
             return
         }
 
         // If model is unloaded and user holds Right ⌥, auto-reload
         if state == .unloaded {
+            if claimedSecondTap { tapArbiter.reset() }
             print("[HushType] Model unloaded — auto-reloading...")
             reloadModel()
             return
         }
 
         guard state == .idle else {
+            if claimedSecondTap { tapArbiter.reset() }
             print("[HushType] Ignoring press — state is \(state)")
             return
         }
 
         guard transcriptionEngine.isLoaded else {
+            if claimedSecondTap { tapArbiter.reset() }
             print("[HushType] Model not loaded yet")
             return
         }
@@ -268,11 +374,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // flash the panel header (hold). System-audio Live Caption does NOT
         // gate dictation, so it never enters this branch.
         if AppConfig.shared.liveCaptionUsesMicSource {
+            guard state == .idle else {
+                liveCaptionGatePressTimestamp = nil
+                tapArbiter.reset()
+                log.info("Ignoring mic-gated release — state is \(String(describing: self.state), privacy: .public)")
+                return
+            }
             let elapsed = liveCaptionGatePressTimestamp.map { Date().timeIntervalSince($0) } ?? 0
             liveCaptionGatePressTimestamp = nil
-            if elapsed < 0.3 && AppConfig.shared.textTranslationEnabled {
-                handleTranslation()
+            if elapsed < 0.3 {
+                handleTapDetected()
             } else {
+                tapArbiter.reset()
                 Task { @MainActor [weak self] in
                     self?.liveCaptionManager?.flashGatedMessage()
                 }
@@ -291,20 +404,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Skip if too short (< 0.3s) — treat as a TAP for translation
         guard samples.count > 4800 else {
             hideOverlay()
-
-            if AppConfig.shared.textTranslationEnabled {
-                print("[HushType] Short tap detected — triggering translation")
-                state = .idle
-                statusBar.setState(.idle)
-                handleTranslation()
-            } else {
-                print("[HushType] Too short, skipping (translation not enabled)")
-                state = .idle
-                statusBar.setState(.idle)
-            }
+            state = .idle
+            statusBar.setState(.idle)
+            handleTapDetected()
             return
         }
 
+        tapArbiter.reset()
         state = .transcribing
         statusBar.setState(.transcribing)
         switchOverlayToTranscribing()
@@ -340,36 +446,107 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func handleTapDetected() {
+        guard state == .idle else {
+            tapArbiter.reset()
+            log.info("Ignoring tap — state is \(String(describing: self.state), privacy: .public)")
+            return
+        }
+
+        if tapArbiter.consumeSecondTapCandidate() {
+            print("[HushType] Double tap detected — triggering Text Polish")
+            handlePolish(source: .copySelection)
+            return
+        }
+
+        if AppConfig.shared.textPolishEnabled && TextPolisher.isAvailableCached {
+            tapArbiter.deferSingleTap { [weak self] in
+                guard let self, self.state == .idle else {
+                    log.info("Deferred translation dropped — app is no longer idle")
+                    return
+                }
+                guard AppConfig.shared.textTranslationEnabled else { return }
+                self.handleTranslation(source: .copySelection)
+            }
+            return
+        }
+
+        guard AppConfig.shared.textTranslationEnabled else {
+            print("[HushType] Too short, skipping (translation not enabled)")
+            return
+        }
+        print("[HushType] Short tap detected — triggering translation")
+        handleTranslation(source: .copySelection)
+    }
+
+    private func handleCancelledHotkeyRelease() {
+        tapArbiter.reset()
+        liveCaptionGatePressTimestamp = nil
+
+        guard state == .recording else {
+            log.info("Suppressed Right Option release had no active recording")
+            return
+        }
+
+        _ = audioCapture.stopRecording()
+        state = .idle
+        statusBar.setState(.idle)
+        hideOverlay()
+        log.info("Cancelled recording after option-character chord")
+    }
+
     // MARK: - Translation
 
-    private func handleTranslation() {
-        // 1. Simulate Cmd+C to copy selected text
-        simulateCmdC()
+    private struct ResolvedSelection {
+        let text: String
+        let priorPasteboardItems: [NSPasteboardItem]?
+    }
 
-        // 2. Wait for clipboard to update, then translate
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+    private func handleTranslation(source: SelectionSource) {
+        guard state == .idle else {
+            log.info("Ignoring translation — state is \(String(describing: self.state), privacy: .public)")
+            return
+        }
+
+        // The tap sites check the toggle before calling in, but the Services
+        // entry ("Translate with HushType") dispatches here directly — enforce
+        // the menu toggle for that path too.
+        if case .provided = source, !AppConfig.shared.textTranslationEnabled {
+            showTranslationError(TranslationError.translationFailed(
+                "Text Translation is turned off in the HushType menu."))
+            return
+        }
+
+        state = .translating
+        Task { @MainActor [weak self] in
             guard let self else { return }
-
-            guard let text = NSPasteboard.general.string(forType: .string), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                print("[HushType] No text on clipboard for translation")
+            let selection = await self.resolveSelection(source)
+            let text = selection.text
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                self.state = .idle
+                self.statusBar.setState(.idle)
+                switch source {
+                case .copySelection:
+                    // A bare Right ⌥ tap with nothing selected is a common
+                    // accident — stay silent like pre-0.6 releases. Only the
+                    // explicit Services path earns an alert.
+                    print("[HushType] No text on clipboard for translation")
+                case .provided:
+                    self.showTranslationError(TranslationError.translationFailed("No text was selected."))
+                }
                 return
             }
 
             print("[HushType] Translating: '\(text.prefix(50))...'")
-            self.state = .translating
-
             self.translationManager.translate(text: text) { [weak self] result in
                 DispatchQueue.main.async {
                     guard let self else { return }
 
                     switch result {
                     case .success(let (translated, direction)):
-                        // Copy translated text to clipboard
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(translated, forType: .string)
                         print("[HushType] Translation result (\(direction)): '\(translated.prefix(80))...'")
-
-                        // Show translation card
                         self.translationCardWindow.show(
                             sourceLanguage: direction,
                             sourceText: text,
@@ -385,6 +562,140 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.statusBar.setState(.idle)
                 }
             }
+        }
+    }
+
+    // MARK: - Text Polish
+
+    private func handlePolish(source: SelectionSource) {
+        guard state == .idle else {
+            log.info("Ignoring polish — state is \(String(describing: self.state), privacy: .public)")
+            return
+        }
+
+        state = .polishing
+        statusBar.setState(.polishing)
+        showOverlayPolishing()
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let selection = await self.resolveSelection(source, preservingPasteboard: true)
+            self.restorePasteboardIfNeeded(selection.priorPasteboardItems)
+            let result = await TextPolisher.polish(selection.text)
+
+            switch result {
+            case .success(let polished, let changed):
+                if changed {
+                    // The source application must retain focus through the
+                    // complete simulated paste before any result window appears.
+                    TextInserter.insert(polished)
+                }
+
+                self.finishPolishing()
+                self.polishCardWindow.show(
+                    originalText: selection.text,
+                    polishedText: polished,
+                    changed: changed
+                )
+
+            case .failure(let error):
+                self.finishPolishing()
+                self.showPolishError(error)
+            }
+        }
+    }
+
+    private func finishPolishing() {
+        state = .idle
+        statusBar.setState(.idle)
+        hideOverlay()
+    }
+
+    private func showPolishError(_ error: PolishError) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.icon = NSImage(named: "AppIcon")
+            ?? NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: nil)
+        alert.messageText = "Text Polish Failed"
+        alert.informativeText = "Unable to polish the selected text.\n\n\(error.localizedDescription)"
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    private func resolveSelection(
+        _ source: SelectionSource,
+        preservingPasteboard: Bool = false
+    ) async -> ResolvedSelection {
+        switch source {
+        case .provided(let text):
+            return ResolvedSelection(text: text, priorPasteboardItems: nil)
+
+        case .copySelection:
+            let pasteboard = NSPasteboard.general
+            let priorItems = preservingPasteboard
+                ? copyPasteboardItems(pasteboard.pasteboardItems ?? [])
+                : nil
+            let previousChangeCount = pasteboard.changeCount
+            simulateCmdC()
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            if pasteboard.changeCount == previousChangeCount {
+                // Slow apps (Chrome/Electron) can take >150 ms to service ⌘C —
+                // give one extra beat before declaring the selection empty.
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            }
+            guard pasteboard.changeCount != previousChangeCount else {
+                return ResolvedSelection(text: "", priorPasteboardItems: priorItems)
+            }
+            return ResolvedSelection(
+                text: pasteboard.string(forType: .string) ?? "",
+                priorPasteboardItems: priorItems
+            )
+        }
+    }
+
+    private func copyPasteboardItems(_ items: [NSPasteboardItem]) -> [NSPasteboardItem] {
+        items.map { item in
+            let copy = NSPasteboardItem()
+            for type in item.types {
+                if let data = item.data(forType: type) {
+                    copy.setData(data, forType: type)
+                }
+            }
+            return copy
+        }
+    }
+
+    private func restorePasteboardIfNeeded(_ items: [NSPasteboardItem]?) {
+        guard let items else { return }
+        NSPasteboard.general.clearContents()
+        if !items.isEmpty {
+            NSPasteboard.general.writeObjects(items)
+        }
+    }
+
+    // MARK: - Services
+
+    @objc func polishSelection(
+        _ pboard: NSPasteboard,
+        userData: String,
+        error: AutoreleasingUnsafeMutablePointer<NSString?>
+    ) {
+        error.pointee = nil
+        let text = pboard.string(forType: .string) ?? ""
+        Task { @MainActor [weak self] in
+            self?.handlePolish(source: .provided(text))
+        }
+    }
+
+    @objc func translateSelection(
+        _ pboard: NSPasteboard,
+        userData: String,
+        error: AutoreleasingUnsafeMutablePointer<NSString?>
+    ) {
+        error.pointee = nil
+        let text = pboard.string(forType: .string) ?? ""
+        Task { @MainActor [weak self] in
+            self?.handleTranslation(source: .provided(text))
         }
     }
 
@@ -602,6 +913,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        if AppConfig.shared.textPolishEnabled {
+            if #available(macOS 26.0, *) {
+                Task { @MainActor in
+                    FoundationModelsPolisher.releaseSession()
+                }
+            }
+        }
 
         // Drop any MLX buffers retained from prior transcribes — the model
         // pointers are now gone, so cached intermediate tensors are dead
@@ -665,6 +983,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         }
                     }
                     log.info("Model reloaded")
+                }
+
+                if AppConfig.shared.textPolishEnabled && TextPolisher.isAvailableCached {
+                    if #available(macOS 26.0, *) {
+                        Task { @MainActor in
+                            log.info("Scheduling Text Polish prewarm after model reload")
+                            FoundationModelsPolisher.warmup()
+                        }
+                    }
                 }
             } catch {
                 log.error("Failed to reload model: \(error.localizedDescription)")

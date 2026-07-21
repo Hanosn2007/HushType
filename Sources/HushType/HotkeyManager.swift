@@ -6,6 +6,7 @@ private let log = Logger(subsystem: "com.felix.hushtype", category: "hotkey")
 final class HotkeyManager {
     var onPress: (() -> Void)?
     var onRelease: (() -> Void)?
+    var onCancelledRelease: (() -> Void)?
     /// Fires on Right ⌘ + /. Single keyDown event — caller should treat it
     /// as a toggle (start if off, stop if running). Suppressed from
     /// propagation so the focused editor doesn't see it as a "toggle line
@@ -133,6 +134,8 @@ final class HotkeyManager {
             log.debug("Right Option released (otherKeys: \(self.otherKeyPressedDuringHold))")
             if !otherKeyPressedDuringHold {
                 onRelease?()
+            } else {
+                onCancelledRelease?()
             }
             return nil // suppress
         }

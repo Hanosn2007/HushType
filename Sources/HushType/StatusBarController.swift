@@ -9,6 +9,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case idle
         case recording
         case transcribing
+        case polishing
         case error(String)
         case unloaded
     }
@@ -35,6 +36,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var liveTranslatedSystemItem: NSMenuItem!
     private var liveTranslatedChangeSourceItem: NSMenuItem!
     private var textTranslationMenuItem: NSMenuItem!
+    private var textPolishMenuItem: NSMenuItem!
     private var textTranslationEnableItem: NSMenuItem!
     private var translateToItem: NSMenuItem!
     private var translationHintItem: NSMenuItem!
@@ -163,7 +165,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     // MARK: - Private
 
-    /// Builds the top-level menu: 9 items + 4 separators (was ~35 flat rows).
+    /// Builds the top-level menu: 10 items + 4 separators (was ~35 flat rows).
     /// Frequent actions stay top-level; per-feature controls live in
     /// submenus per the HIG for menu bar extras. Active features show the
     /// green ✓ on the submenu PARENT so state is visible without opening it.
@@ -194,6 +196,20 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         updateToggleAppearance(textTranslationMenuItem, title: "Text Translation", checked: AppConfig.shared.textTranslationEnabled)
         textTranslationMenuItem.submenu = buildTextTranslationSubmenu()
         menu.addItem(textTranslationMenuItem)
+
+        textPolishMenuItem = NSMenuItem(
+            title: "Text Polish (double-tap ⌥)",
+            action: #selector(toggleTextPolish),
+            keyEquivalent: ""
+        )
+        textPolishMenuItem.target = self
+        updateToggleAppearance(
+            textPolishMenuItem,
+            title: "Text Polish (double-tap ⌥)",
+            checked: AppConfig.shared.textPolishEnabled
+        )
+        textPolishMenuItem.isEnabled = TextPolisher.isAvailableCached
+        menu.addItem(textPolishMenuItem)
 
         menu.addItem(.separator())
 
@@ -899,6 +915,59 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     // MARK: - Text Translation
 
+    @objc private func toggleTextPolish() {
+        if AppConfig.shared.textPolishEnabled {
+            AppConfig.shared.textPolishEnabled = false
+            updateToggleAppearance(
+                textPolishMenuItem,
+                title: "Text Polish (double-tap ⌥)",
+                checked: false
+            )
+            if #available(macOS 26.0, *) {
+                Task { @MainActor in FoundationModelsPolisher.releaseSession() }
+            }
+            return
+        }
+
+        textPolishMenuItem.isEnabled = false
+        let originalTitle = textPolishMenuItem.title
+        textPolishMenuItem.title = "Text Polish (validating…)"
+
+        Task { @MainActor in
+            let result = await TextPolisher.validate()
+            self.textPolishMenuItem.title = originalTitle
+
+            switch result {
+            case .ok:
+                AppConfig.shared.textPolishEnabled = true
+                self.updateToggleAppearance(
+                    self.textPolishMenuItem,
+                    title: "Text Polish (double-tap ⌥)",
+                    checked: true
+                )
+                self.textPolishMenuItem.isEnabled = true
+                if #available(macOS 26.0, *) {
+                    FoundationModelsPolisher.warmup()
+                }
+            case .unavailable(let reason):
+                self.textPolishMenuItem.isEnabled = false
+                self.showAlert(
+                    title: "Text Polish unavailable",
+                    message: "Text Polish requires macOS 26 + Apple Intelligence.\n\n\(reason)"
+                )
+            }
+        }
+    }
+
+    func setTextPolishAvailability(_ available: Bool) {
+        textPolishMenuItem.isEnabled = available
+        updateToggleAppearance(
+            textPolishMenuItem,
+            title: "Text Polish (double-tap ⌥)",
+            checked: AppConfig.shared.textPolishEnabled
+        )
+    }
+
     @objc private func toggleTextTranslation() {
         let newValue = !AppConfig.shared.textTranslationEnabled
         AppConfig.shared.textTranslationEnabled = newValue
@@ -1203,6 +1272,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             symbolName = "record.circle"
         case .transcribing:
             symbolName = "ellipsis.circle"
+        case .polishing:
+            symbolName = "wand.and.sparkles"
         case .error:
             symbolName = "exclamationmark.triangle"
         case .unloaded:
@@ -1227,6 +1298,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             return "Recording..."
         case .transcribing:
             return "Transcribing..."
+        case .polishing:
+            return "Polishing…"
         case .error(let msg):
             return "Error: \(msg)"
         case .unloaded:

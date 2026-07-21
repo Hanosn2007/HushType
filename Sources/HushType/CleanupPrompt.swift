@@ -95,6 +95,6 @@ Examples:
     /// Returns the override prompt if `cleanup_prompt.txt` exists and is
     /// non-empty, otherwise the baked-in Phase 4 prompt above.
     static func activePrompt() -> String {
-        CleanupPromptOverride.currentPrompt() ?? systemPrompt
+        CleanupPromptOverride.currentPrompt(filename: "cleanup_prompt.txt") ?? systemPrompt
     }
 }

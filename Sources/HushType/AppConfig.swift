@@ -16,6 +16,7 @@ final class AppConfig {
         static let onboardingCompleted = "hushtype.onboardingCompleted"
         static let numberConversionEnabled = "hushtype.numberConversionEnabled"
         static let aiCleanupEnabled = "hushtype.aiCleanupEnabled"
+        static let textPolishEnabled = "hushtype.textPolishEnabled"
         static let textTranslationEnabled = "hushtype.textTranslationEnabled"
         static let translateTargetLanguage = "hushtype.translateTargetLanguage"
         static let cloudTargetLanguage = "hushtype.cloudTargetLanguage"
@@ -137,6 +138,23 @@ final class AppConfig {
         set {
             defaults.set(newValue, forKey: Keys.aiCleanupEnabled)
             log.info("AI cleanup enabled: \(newValue, privacy: .public)")
+        }
+    }
+
+    /// Whether double-tap Right ⌥ and the Services entry can proofread selected
+    /// text with Apple Foundation Models. On by default; runtime availability
+    /// is cached separately so unsupported systems retain immediate single-tap
+    /// translation behavior.
+    var textPolishEnabled: Bool {
+        get {
+            if defaults.object(forKey: Keys.textPolishEnabled) == nil {
+                return true
+            }
+            return defaults.bool(forKey: Keys.textPolishEnabled)
+        }
+        set {
+            defaults.set(newValue, forKey: Keys.textPolishEnabled)
+            log.info("Text polish enabled: \(newValue, privacy: .public)")
         }
     }
 
@@ -300,13 +318,13 @@ final class AppConfig {
             .appendingPathComponent("dictionary.txt")
     }
 
-    static var cleanupPromptOverrideURL: URL {
+    static func promptOverrideURL(filename: String) -> URL {
         FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
         )[0]
         .appendingPathComponent("HushType", isDirectory: true)
-        .appendingPathComponent("cleanup_prompt.txt")
+        .appendingPathComponent(filename)
     }
 
     /// Path to the OpenAI API key file used by the cloud Live Caption engine.
