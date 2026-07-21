@@ -4,18 +4,15 @@ import os
 private let log = Logger(subsystem: "com.felix.hushtype", category: "cleanup-prompt-override")
 
 enum CleanupPromptOverride {
-    /// Absolute path to the override file. Reads `AppConfig.cleanupPromptOverrideURL`.
-    static var fileURL: URL { AppConfig.cleanupPromptOverrideURL }
+    private struct CacheEntry {
+        var mtime: Date?
+        var result: String?
+        var fileExists: Bool
+    }
 
-    /// mtime of the file the last time we successfully parsed it.
-    private static var cachedMtime: Date?
-
-    /// Parsed prompt contents, or nil when the file is missing/empty/all-comments.
-    private static var cachedResult: String?
-
-    /// Tracks whether the file existed at the last check so disappearances can
-    /// be detected separately from mtime changes.
-    private static var cachedFileExists = false
+    /// Alternating between cleanup and polish must retain independent stat-only
+    /// fast paths and never reuse one feature's parsed prompt for the other.
+    private static var cacheByFilename: [String: CacheEntry] = [:]
 
     /// Returns the override prompt (with full-line `#` comments stripped and
     /// globally trimmed) if the file exists and is non-empty after stripping.
@@ -26,59 +23,55 @@ enum CleanupPromptOverride {
     /// unchanged mtime are stat-only.
     ///
     /// Concurrency: not thread-safe by design. Current callers reach this via
-    /// `CleanupPrompt.activePrompt()` from `FoundationModelsCleaner` on the main
-    /// actor. If a non-main-actor caller is ever added, this cache state needs
-    /// explicit synchronization.
-    static func currentPrompt() -> String? {
-        let previousResult = cachedResult
-        let previousFileExists = cachedFileExists
+    /// the cleanup and polish FoundationModels wrappers on the main actor. If
+    /// a non-main-actor caller is ever added, this cache state needs explicit
+    /// synchronization.
+    static func currentPrompt(filename: String) -> String? {
+        let fileURL = AppConfig.promptOverrideURL(filename: filename)
+        var cache = cacheByFilename[filename]
+            ?? CacheEntry(mtime: nil, result: nil, fileExists: false)
+        let previousResult = cache.result
+        let previousFileExists = cache.fileExists
 
         let attributes: [FileAttributeKey: Any]
         do {
             attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
         } catch {
             if previousFileExists {
-                cachedMtime = nil
-                cachedResult = nil
-                cachedFileExists = false
-                log.debug("Override file disappeared")
+                cache = CacheEntry(mtime: nil, result: nil, fileExists: false)
+                cacheByFilename[filename] = cache
+                log.debug("Override file disappeared: \(filename, privacy: .public)")
             }
             return nil
         }
 
         let mtime = attributes[.modificationDate] as? Date
-        if let mtime, previousFileExists, cachedMtime == mtime {
-            return cachedResult
+        if let mtime, previousFileExists, cache.mtime == mtime {
+            return cache.result
         }
 
         let data: Data
         do {
             data = try Data(contentsOf: fileURL)
         } catch {
-            cachedMtime = nil
-            cachedResult = nil
-            cachedFileExists = false
+            cacheByFilename[filename] = CacheEntry(mtime: nil, result: nil, fileExists: false)
             log.warning("Failed to read override file at \(fileURL.path, privacy: .public)")
             return nil
         }
 
         guard let contents = String(data: data, encoding: .utf8) else {
-            cachedMtime = nil
-            cachedResult = nil
-            cachedFileExists = false
+            cacheByFilename[filename] = CacheEntry(mtime: nil, result: nil, fileExists: false)
             log.warning("Override file is not valid UTF-8: \(fileURL.path, privacy: .public)")
             return nil
         }
 
         let parsed = parseOverrideFile(contents)
-        cachedMtime = mtime
-        cachedResult = parsed
-        cachedFileExists = true
+        cacheByFilename[filename] = CacheEntry(mtime: mtime, result: parsed, fileExists: true)
 
         if !previousFileExists {
-            log.debug("Override file appeared")
+            log.debug("Override file appeared: \(filename, privacy: .public)")
         } else if parsed != previousResult {
-            log.debug("Override file changed")
+            log.debug("Override file changed: \(filename, privacy: .public)")
         }
 
         return parsed

@@ -6,7 +6,7 @@ private let log = Logger(subsystem: "com.felix.hushtype", category: "itn")
 /// Inverse Text Normalization (ITN) for Chinese numbers.
 ///
 /// Converts Chinese-numeral expressions to Arabic-digit form as a
-/// post-processing pass between OpenCC and AI Cleanup. Designed around
+/// post-processing pass after OpenCC. Designed around
 /// Felix's asymmetric requirement: PASS best, MISS acceptable, CORRUPT
 /// near-zero. See `Product_WS/SPEC_itn-number-normalizer.md`.
 ///

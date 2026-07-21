@@ -37,6 +37,8 @@
 
 **真正能用的繁體中文。** Whisper 與多數開源模型預設輸出簡體或大陸用語（软件 而非 軟體）。HushType 串接 Qwen3-ASR 與 OpenCC `s2twp` 做台灣在地輸出——軟體、滑鼠、品質——支援英中同句混用辨識，並可選擇將中文數字依語境轉成阿拉伯數字（`一零一大樓` → `101 大樓`），預設開啟。
 
+**文字就地修正。** 在任何 App 選取文字、雙擊 Right ⌥——裝置端 Apple Intelligence 模型直接就地校對並替換：錯字、文法、標點。它是機械式校對員，不是改寫器——語意、語氣、中英混用全都原樣保留（macOS 26+）。
+
 **字幕兩種模式。** 本機 **Live Caption（即時字幕）** 用同一套裝置端管線把字幕顯示在浮動面板上：免費、離線、飛機上也能用（品質普通）。可選的 **Live Translated Caption（即時翻譯字幕）** 把音訊串到 OpenAI 的 `gpt-realtime-translate`，即時產生 14 種語言的字幕（高品質）——金鑰是你的（帳單也是你的！），不自動啟動。
 
 ---
@@ -47,6 +49,7 @@
 |---|---|---|
 | 按住 Right ⌥ 進行語音輸入（macOS）| ON | macOS 15+ |
 | 輕按 Right ⌥ 翻譯選取的文字 | OFF | macOS 14+ |
+| 雙擊 Right ⌥ 校對選取的文字——就地修正 | **ON** | macOS 26 + Apple Intelligence |
 | **Live Caption（本機，免費）** — 浮動字幕面板，麥克風或系統音訊 | OFF | macOS 15+ |
 | **Live Translated Caption（雲端，約 $2/小時）** — 即時外文翻譯字幕，使用 OpenAI | OFF（自行開啟） | 你自己的 OpenAI API key |
 | Right ⌘ + / — 切換上次用過的字幕模式 | — | macOS 15+ |
@@ -54,7 +57,6 @@
 | 簡體 → 繁體 後處理（OpenCC `s2twp`）| **ON** | — |
 | 阿拉伯數字轉換（確定性 ITN）| **ON** | — |
 | 中文標點清理——修剪模型過度斷句（soft / hard / off）| **soft** | — |
-| AI Cleanup——清除贅字、自我修正解析 | **OFF**（opt-in beta）| macOS 26 + Apple Intelligence |
 | 自訂字典（專有名詞 / 行話）| 檔案驅動 | — |
 | 浮動「Listening / Transcribing」指示條 | ON | — |
 | 卸載語音轉文字模型 | 一鍵 | — |
@@ -70,6 +72,8 @@
 
 **閱讀其他語言。** 在 Safari、Mail、備忘錄等任何 App 中選取文字，輕按 Right ⌥。半透明卡片即跳出翻譯結果，使用 Apple 裝置端 Translation Framework。10 秒後自動關閉、游標停留會暫停倒數。無 API 金鑰、無雲端。
 
+**在原地把文字改對。** 語音輸入的 Slack 回覆、打太快滿是錯字的留言、有 typo 的中英夾雜句——選取、雙擊 Right ⌥，修正後的文字直接落回原處（同時保留在剪貼簿）。不用貼去聊天機器人再貼回來，也不用擔心 AI「順便幫你潤飾」：只做修正，其他一律不動。
+
 **看外語內容。** 韓劇、日本新聞、西語足球轉播。在任何 App 開來源，選單列 → **Live Translated Caption → From System Audio…** 選那個 App — 翻譯後的英文（或你設定的目標語言）會即時顯示在螢幕下方的浮動字幕面板。Right ⌘ + / 開關。原文小灰字在翻譯上方一起顯示，方便確認翻譯沒走偏；面板抬頭的費用條會即時顯示本次工作階段在你 OpenAI 帳戶上的累積花費。
 
 ---
@@ -80,6 +84,7 @@
 macOS（獨立運作——不需要網路）：
   按住 Right Option（≥0.3 秒）→ 說話 → 放開 → 文字出現在游標位置
   輕按 Right Option（<0.3 秒）+ 選取文字 → 翻譯卡片
+  選取文字後雙擊 Right Option → 就地校對（Text Polish）
   流程：麥克風 → Qwen3-ASR（MLX、裝置端推論）→ OpenCC s2twp → ITN → 貼上
 
 iOS（透過你的 Mac 作為伺服器）：
@@ -197,6 +202,7 @@ make install
 - **按住 Right Option（≥0.3 秒）** — 錄音。螢幕底部出現「Listening」指示條與音量條。
 - **放開** — 指示條切換為「Transcribing」，文字貼到游標並保留在剪貼簿。
 - **輕按 Right Option（<0.3 秒）** — 選取文字後輕按，浮動卡片顯示 Apple Translation Framework 翻譯結果。詳見下方[文字翻譯](#選用功能文字翻譯macos-14)。
+- **雙擊 Right Option** — 選取文字後雙擊，就地校對並替換。詳見下方 [Text Polish](#選用功能text-polishmacos-26)。
 
 **選單列：**
 
@@ -204,7 +210,8 @@ make install
 - **Show Floating Indicator** — 切換指示條（預設開啟）
 - **Number Conversion** — 中文數字 → 阿拉伯數字（預設開啟）
 - **Text Translation** — 啟用輕按翻譯（macOS 14+）
-- **AI Cleanup** — Apple Foundation Models 後處理（macOS 26+，預設關閉）
+- **Text Polish (double-tap ⌥)** — 開關雙擊校對（macOS 26+，預設開啟）
+- **Edit Polish Instructions** — `polish_rules.txt`，你自己的校對規則，存檔自動熱重載
 - **Unload Speech-to-Text Model** — 釋放約 2 GB 記憶體；同一選單可重新載入（約 3 秒冷啟動）
 - **Edit Customized Dictionary** — `~/Library/Application Support/HushType/dictionary.txt`，`source -> target` 一行一條，存檔自動熱重載
 
@@ -240,19 +247,23 @@ make install
 
 **啟用：** 選單列 → **Text Translation**。會做一次可用性測試，若 Translation Framework 不可用會跳清楚的錯誤訊息。
 
-### 選用功能：AI Cleanup（opt-in beta,macOS 26+）
+### 選用功能：Text Polish（macOS 26+）
 
-HushType **預設關閉 AI Cleanup**。啟用後，每段轉錄會經過 Apple 裝置端 Foundation Models 框架做三件事：（1） 清除句首贅字（`um`、`uh`、`嗯`、`那個`),(2) 收縮連續重複但保留強調式重複，（3） 解析明確的自我修正（`I'll send it Wednesday no actually Friday` → `I'll send it Friday`）。
+使用 Apple Foundation Models 框架在裝置端校對——就是 macOS 內建的 Apple Intelligence 模型，不增加 HushType 約 675 MB 的預算，內容也不離開你的 Mac。在任何 App 選取文字 → 雙擊 Right Option → 選取範圍就地替換為修正後的文字，結果卡片顯示改了什麼。有修正時，修正後的文字同時保留在剪貼簿——所以唯讀畫面（網頁、PDF）也能用：選取、雙擊、貼到你要的地方。原本就正確的文字會顯示「No changes needed」卡片，剪貼簿完全不動。右鍵選單也有：**服務 → Polish with HushType**。
 
-**為什麼預設關閉：** AI Cleanup 會改寫你的轉錄內容。確定性的 ITN 階層（中文數字 → 阿拉伯數字）預設開啟，因為它可逆且範圍有界；AI Cleanup 則是 opt-in，因為語意層級的改寫是更強的承諾。
+**它修什麼——以及它絕不碰什麼。** 錯字、文法、標點、明顯的 typo。它刻意設計成機械式校對員，而非改寫器：語意、語氣、格式、大小寫、語言混用全部保留。它被要求遵守的規則：
 
-**需求：** macOS 26（Tahoe）+ 已啟用 Apple Intelligence + Apple Silicon。
+- **絕不翻譯。** 中英夾雜的句子保持夾雜。如果模型把其中一種語言翻掉了，HushType 會在輸出端偵測到、帶著更強的指令重試一次，仍失敗就跳警示——而不是貼上誤譯。
+- **絕不簡繁互轉**，兩個方向都不會。
+- **絕不回答。** 長得像問題或指令的選取內容，一律當成待校對的文字，不當成要執行的 prompt。
+- **不碰程式碼。** 像程式碼的選取會跳警示退回；一般文字裡的 URL、檔案路徑、反引號內容原樣保留。
+- **失敗會明講，不會默默出錯。** 如果模型輸出看起來壞了（長度異常、少了一種語言），你會看到警示，原文完全不動。
 
-**如何啟用：** 選單列 → AI Cleanup。HushType 會對裝置端模型做一次快速 round-trip 測試；若 Apple Intelligence 不可用，會跳出清楚的錯誤訊息，開關保持關閉。成功後，之後的轉錄都會自動清理。若裝置端模型在轉錄途中出錯，HushType 會靜默回退到未清理的文字——你不會看到壞掉的結果。
+**速度：** 通常約 1–3 秒。HushType 會維持一個預熱好的待命模型 session，把 prompt 處理成本在你雙擊之前先付掉。
 
-**已知限制（beta）：** 偶爾會過度修剪中文副詞（`我一直都在` 可能變成 `我一直在`）；自我修正解析後尾部助詞可能殘留；中文語境下的英文數字會被轉換（`我買了 five 本書` → `我買了 5 本書`，這是產品接受的行為）；語言覆蓋主要驗證中文與英文，日文測試有限。
+**自訂規則：** 選單列 → **Edit Polish Instructions** 開啟 `~/Library/Application Support/HushType/polish_rules.txt`。一行一條短規則（`#` 開頭為註解），會合併進內建 prompt——例如 `一律用台灣用語` 或 `Use the Oxford comma.`。存檔即生效，不用重啟。
 
----
+**需求：** macOS 26（Tahoe）+ 已啟用 Apple Intelligence + Apple Silicon。預設開啟；沒有 Foundation Models 的 Mac 上雙擊不會有反應，改用 **服務 → Polish with HushType** 會顯示清楚的原因。可從選單列（**Text Polish**）或 `defaults` 開關。
 
 ## 安裝指南：iOS（iPhone + Mac 伺服器）
 
@@ -395,10 +406,9 @@ defaults write com.felix.hushtype hushtype.numberConversionEnabled -bool false
 # 底部浮動「Listening / Transcribing」指示條（預設:true）
 defaults write com.felix.hushtype hushtype.floatingOverlayEnabled -bool false
 
-# 透過 Apple Foundation Models 的 AI Cleanup（預設:false,需要 macOS 26+）
-# 建議從選單列切換——選單會驗證 FoundationModels 可用性,
-# 若 Apple Intelligence 未啟用會顯示清楚的錯誤訊息。
-defaults write com.felix.hushtype hushtype.aiCleanupEnabled -bool true
+# Text Polish——雙擊 Right ⌥ 就地校對選取文字
+# （預設:true,需要 macOS 26 + Apple Intelligence）
+defaults write com.felix.hushtype hushtype.textPolishEnabled -bool false
 
 # 透過 Apple Translation Framework 的文字翻譯（預設:false,需要 macOS 14+）
 defaults write com.felix.hushtype hushtype.textTranslationEnabled -bool true
@@ -443,3 +453,4 @@ private static let rightOptionKeyCode: Int64 = 61
 - 聆聽時間固定為 5 分鐘（尚無介面可調整）
 - Mac 必須是 iPhone 可連線的（同一 WiFi 或 Tailscale）
 - DMG 使用臨時簽章（未經 Apple 公證）——首次啟動時 macOS Gatekeeper 會發出警告，需右鍵 → 打開來略過
+- Text Polish 繼承 Apple Foundation Models 的模型限制：少數中文細微用法（如 的/得/地）可能維持原樣；英文佔比極高的混合句可能被擋下並顯示警示，而不是冒著誤譯風險貼上。被擋下一律代表原文完全不動

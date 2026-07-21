@@ -6,7 +6,7 @@ private let log = Logger(subsystem: "com.felix.hushtype", category: "dictionary"
 /// User-editable customized dictionary applied as the final post-processing
 /// step in the transcription pipeline. Pipeline order:
 ///
-///     Qwen3-ASR → OpenCC s2twp → AI Cleanup → DictionaryReplacer → TextInserter
+///     Qwen3-ASR → OpenCC s2twp → ITN → DictionaryReplacer → TextInserter
 ///
 /// The dictionary is a plain text file at `~/Library/Application Support/HushType/dictionary.txt`,
 /// one rule per line in `source -> target` format. Lines starting with `#` are

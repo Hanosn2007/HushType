@@ -10,6 +10,7 @@ enum OverlayState: Equatable {
     case hidden
     case recording(level: Float)  // 0.0–1.0 RMS
     case transcribing
+    case polishing
 }
 
 /// Observable model so SwiftUI can react to RMS updates.
@@ -29,7 +30,7 @@ struct FloatingOverlayView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "mic.fill")
+            Image(systemName: iconName)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.primary)
 
@@ -53,6 +54,9 @@ struct FloatingOverlayView: View {
                         .foregroundStyle(.primary.opacity(0.85))
                         .symbolEffect(.pulse.byLayer, options: .repeating)
                         .transition(.opacity)
+                case .polishing:
+                    ProgressView()
+                        .controlSize(.small)
                 case .hidden:
                     EmptyView()
                 }
@@ -76,7 +80,15 @@ struct FloatingOverlayView: View {
         switch model.state {
         case .recording:    return "Listening"
         case .transcribing: return "Transcribing"
+        case .polishing:    return "Polishing…"
         case .hidden:       return ""
+        }
+    }
+
+    private var iconName: String {
+        switch model.state {
+        case .polishing: return "wand.and.sparkles"
+        default:         return "mic.fill"
         }
     }
 
@@ -87,6 +99,7 @@ struct FloatingOverlayView: View {
         case .hidden:        return 0
         case .recording:     return 1
         case .transcribing:  return 2
+        case .polishing:     return 3
         }
     }
 }
@@ -125,4 +138,3 @@ private struct AudioBarsView: View {
         return max(3, maxHeight * scaled)
     }
 }
-

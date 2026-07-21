@@ -9,6 +9,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case idle
         case recording
         case transcribing
+        case polishing
         case error(String)
         case unloaded
     }
@@ -23,7 +24,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var iosServerMenuItem: NSMenuItem!
     private var floatingOverlayMenuItem: NSMenuItem!
     private var numberConversionMenuItem: NSMenuItem!
-    private var aiCleanupMenuItem: NSMenuItem!
     private var liveCaptionMenuItem: NSMenuItem!
     private var liveCaptionStartStopItem: NSMenuItem!
     private var liveCaptionMicItem: NSMenuItem!
@@ -35,6 +35,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var liveTranslatedSystemItem: NSMenuItem!
     private var liveTranslatedChangeSourceItem: NSMenuItem!
     private var textTranslationMenuItem: NSMenuItem!
+    private var textPolishMenuItem: NSMenuItem!
     private var textTranslationEnableItem: NSMenuItem!
     private var translateToItem: NSMenuItem!
     private var translationHintItem: NSMenuItem!
@@ -100,7 +101,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     /// the local product with the last-used source (mirrors the Right ⌘ + /
     /// hotkey behavior). Without this the header is a non-actionable label
     /// and macOS greys it out — making it visually inconsistent with the
-    /// bright-white "AI Cleanup", "Text Translation", etc. toggle items
+    /// bright-white "Text Translation", "Text Polish", etc. toggle items
     /// elsewhere in this menu.
     var onLiveCaptionHeaderClicked: (() -> Void)?
 
@@ -163,7 +164,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     // MARK: - Private
 
-    /// Builds the top-level menu: 9 items + 4 separators (was ~35 flat rows).
+    /// Builds the top-level menu: 10 items + 4 separators (was ~35 flat rows).
     /// Frequent actions stay top-level; per-feature controls live in
     /// submenus per the HIG for menu bar extras. Active features show the
     /// green ✓ on the submenu PARENT so state is visible without opening it.
@@ -194,6 +195,28 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         updateToggleAppearance(textTranslationMenuItem, title: "Text Translation", checked: AppConfig.shared.textTranslationEnabled)
         textTranslationMenuItem.submenu = buildTextTranslationSubmenu()
         menu.addItem(textTranslationMenuItem)
+
+        textPolishMenuItem = NSMenuItem(
+            title: "Text Polish (double-tap ⌥)",
+            action: #selector(toggleTextPolish),
+            keyEquivalent: ""
+        )
+        textPolishMenuItem.target = self
+        updateToggleAppearance(
+            textPolishMenuItem,
+            title: "Text Polish (double-tap ⌥)",
+            checked: AppConfig.shared.textPolishEnabled
+        )
+        textPolishMenuItem.isEnabled = TextPolisher.isAvailableCached
+        menu.addItem(textPolishMenuItem)
+
+        let polishInstructionsItem = NSMenuItem(
+            title: "Edit Polish Instructions",
+            action: #selector(editPolishInstructions),
+            keyEquivalent: ""
+        )
+        polishInstructionsItem.target = self
+        menu.addItem(polishInstructionsItem)
 
         menu.addItem(.separator())
 
@@ -499,17 +522,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         updatePunctuationCheckmarks()
         sub.addItem(punctuationItem)
         addSubtitle("    Trim Chinese over-punctuation", to: sub)
-
-        // AI Cleanup toggle (requires macOS 26+ with Apple Intelligence)
-        aiCleanupMenuItem = NSMenuItem(
-            title: "AI Cleanup",
-            action: #selector(toggleAICleanup),
-            keyEquivalent: ""
-        )
-        aiCleanupMenuItem.target = self
-        updateToggleAppearance(aiCleanupMenuItem, title: "AI Cleanup", checked: AppConfig.shared.aiCleanupEnabled)
-        sub.addItem(aiCleanupMenuItem)
-        addSubtitle("    via Apple Foundation Models", to: sub)
 
         // Floating overlay toggle
         floatingOverlayMenuItem = NSMenuItem(
@@ -833,71 +845,60 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    // MARK: - AI Cleanup
+    // MARK: - Text Translation
 
-    @objc private func toggleAICleanup() {
-        // Turning OFF — simple flip.
-        if AppConfig.shared.aiCleanupEnabled {
-            AppConfig.shared.aiCleanupEnabled = false
-            updateToggleAppearance(aiCleanupMenuItem, title: "AI Cleanup", checked: false)
+    @objc private func toggleTextPolish() {
+        if AppConfig.shared.textPolishEnabled {
+            AppConfig.shared.textPolishEnabled = false
+            updateToggleAppearance(
+                textPolishMenuItem,
+                title: "Text Polish (double-tap ⌥)",
+                checked: false
+            )
             if #available(macOS 26.0, *) {
-                Task { @MainActor in
-                    FoundationModelsCleaner.releaseSession()
-                }
+                Task { @MainActor in FoundationModelsPolisher.releaseSession() }
             }
             return
         }
 
-        // Turning ON — platform check first.
-        guard #available(macOS 26.0, *) else {
-            let version = ProcessInfo.processInfo.operatingSystemVersionString
-            showAlert(
-                title: "macOS 26 or later required",
-                message: """
-                    AI Cleanup uses Apple's on-device Foundation Models framework, \
-                    which requires macOS 26 (Tahoe) or later.
-
-                    Your current version: \(version)
-                    """
-            )
-            return
-        }
-
-        // Validate asynchronously.
-        aiCleanupMenuItem.isEnabled = false
-        let originalTitle = aiCleanupMenuItem.title
-        aiCleanupMenuItem.title = "AI Cleanup (validating…)"
+        textPolishMenuItem.isEnabled = false
+        let originalTitle = textPolishMenuItem.title
+        textPolishMenuItem.title = "Text Polish (validating…)"
 
         Task { @MainActor in
-            let result = await FoundationModelsCleaner.validate()
-            self.aiCleanupMenuItem.isEnabled = true
-            self.aiCleanupMenuItem.title = originalTitle
+            let result = await TextPolisher.validate()
+            self.textPolishMenuItem.title = originalTitle
 
             switch result {
             case .ok:
-                AppConfig.shared.aiCleanupEnabled = true
-                self.updateToggleAppearance(self.aiCleanupMenuItem, title: "AI Cleanup", checked: true)
-                Task.detached {
-                    await FoundationModelsCleaner.warmup()
+                AppConfig.shared.textPolishEnabled = true
+                self.updateToggleAppearance(
+                    self.textPolishMenuItem,
+                    title: "Text Polish (double-tap ⌥)",
+                    checked: true
+                )
+                self.textPolishMenuItem.isEnabled = true
+                if #available(macOS 26.0, *) {
+                    FoundationModelsPolisher.warmup()
                 }
             case .unavailable(let reason):
+                self.textPolishMenuItem.isEnabled = false
                 self.showAlert(
-                    title: "AI Cleanup unavailable",
-                    message: """
-                        Could not start Apple Foundation Models:
-                        \(reason)
-
-                        Common causes:
-                        • This device does not support Apple Intelligence
-                        • Apple Intelligence is not enabled in System Settings
-                        • The on-device model is still downloading
-                        """
+                    title: "Text Polish unavailable",
+                    message: "Text Polish requires macOS 26 + Apple Intelligence.\n\n\(reason)"
                 )
             }
         }
     }
 
-    // MARK: - Text Translation
+    func setTextPolishAvailability(_ available: Bool) {
+        textPolishMenuItem.isEnabled = available
+        updateToggleAppearance(
+            textPolishMenuItem,
+            title: "Text Polish (double-tap ⌥)",
+            checked: AppConfig.shared.textPolishEnabled
+        )
+    }
 
     @objc private func toggleTextTranslation() {
         let newValue = !AppConfig.shared.textTranslationEnabled
@@ -963,6 +964,26 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         log.info("Opened dictionary file in default editor")
     }
 
+    // MARK: - Polish Instructions
+
+    @objc private func editPolishInstructions() {
+        // Mirror the Edit Customized Dictionary flow: create the documented
+        // template on first use, then open in the default text editor.
+        PolishPrompt.createRulesTemplateIfMissing()
+
+        let url = PolishPrompt.rulesFileURL
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            showAlert(
+                title: "Could not open Polish instructions",
+                message: "Failed to create the instructions file at:\n\(url.path)"
+            )
+            return
+        }
+
+        NSWorkspace.shared.open(url)
+        log.info("Opened polish rules file in default editor")
+    }
+
     // MARK: - Unload / Reload Model
 
     @objc private func unloadOrReloadModel() {
@@ -997,53 +1018,45 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     // MARK: - Helpers
 
-    /// Update a toggle menu item to show a green ✓ instead of the system checkmark.
-    private func updateToggleAppearance(_ item: NSMenuItem, title: String, checked: Bool) {
-        item.state = .off  // never use system checkmark
-        item.view = nil    // ensure no custom view blocks click handling
-
-        if checked {
-            let str = NSMutableAttributedString(
-                string: title + "  ",
-                attributes: [.font: NSFont.menuFont(ofSize: 14)]
-            )
-            str.append(NSAttributedString(
-                string: "✓",
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-                    .foregroundColor: NSColor.systemGreen,
-                ]
-            ))
-            item.attributedTitle = str
-        } else {
-            item.attributedTitle = nil
-            item.title = title
+    /// Green checkmark for the menu's leading state column. Rendered from the
+    /// SF Symbol as a non-template image so the menu doesn't recolor it.
+    private static let greenCheckImage: NSImage = {
+        let symbol = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "enabled")!
+            .withSymbolConfiguration(.init(pointSize: 12, weight: .semibold))!
+        let tinted = NSImage(size: symbol.size, flipped: false) { rect in
+            symbol.draw(in: rect)
+            NSColor.systemGreen.set()
+            rect.fill(using: .sourceAtop)
+            return true
         }
+        tinted.isTemplate = false
+        return tinted
+    }()
+
+    /// Update a toggle menu item to show a green ✓ in the native state column.
+    /// Titles stay in the default menu font: a trailing ✓ suffix sat at a
+    /// different x-position per title, and the old 14pt attributed title made
+    /// checked items render larger than their neighbors.
+    private func updateToggleAppearance(_ item: NSMenuItem, title: String, checked: Bool) {
+        item.view = nil    // ensure no custom view blocks click handling
+        item.attributedTitle = nil
+        item.title = title
+        item.onStateImage = Self.greenCheckImage
+        item.state = checked ? .on : .off
     }
 
     /// Update a radio-style sub-menu item (12pt secondary font; the items
-    /// live inside submenus now, so no manual indent). Selected radios get a
-    /// green ✓ suffix matching the toggle style.
+    /// live inside submenus now, so no manual indent). Selection shows the
+    /// same green ✓ in the state column as the toggles.
     private func updateRadioAppearance(_ item: NSMenuItem, title: String, selected: Bool) {
-        item.state = .off
         item.view = nil
 
-        let baseAttrs: [NSAttributedString.Key: Any] = [
+        item.attributedTitle = NSAttributedString(string: title, attributes: [
             .font: NSFont.systemFont(ofSize: 12),
             .foregroundColor: NSColor.labelColor,
-        ]
-
-        let str = NSMutableAttributedString(string: title, attributes: baseAttrs)
-        if selected {
-            str.append(NSAttributedString(
-                string: "  ✓",
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-                    .foregroundColor: NSColor.systemGreen,
-                ]
-            ))
-        }
-        item.attributedTitle = str
+        ])
+        item.onStateImage = Self.greenCheckImage
+        item.state = selected ? .on : .off
     }
 
     private func showAlert(title: String, message: String) {
@@ -1203,6 +1216,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             symbolName = "record.circle"
         case .transcribing:
             symbolName = "ellipsis.circle"
+        case .polishing:
+            symbolName = "wand.and.sparkles"
         case .error:
             symbolName = "exclamationmark.triangle"
         case .unloaded:
@@ -1227,6 +1242,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             return "Recording..."
         case .transcribing:
             return "Transcribing..."
+        case .polishing:
+            return "Polishing…"
         case .error(let msg):
             return "Error: \(msg)"
         case .unloaded:
