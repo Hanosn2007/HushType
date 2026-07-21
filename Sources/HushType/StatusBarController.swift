@@ -24,7 +24,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var iosServerMenuItem: NSMenuItem!
     private var floatingOverlayMenuItem: NSMenuItem!
     private var numberConversionMenuItem: NSMenuItem!
-    private var aiCleanupMenuItem: NSMenuItem!
     private var liveCaptionMenuItem: NSMenuItem!
     private var liveCaptionStartStopItem: NSMenuItem!
     private var liveCaptionMicItem: NSMenuItem!
@@ -102,7 +101,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     /// the local product with the last-used source (mirrors the Right ⌘ + /
     /// hotkey behavior). Without this the header is a non-actionable label
     /// and macOS greys it out — making it visually inconsistent with the
-    /// bright-white "AI Cleanup", "Text Translation", etc. toggle items
+    /// bright-white "Text Translation", "Text Polish", etc. toggle items
     /// elsewhere in this menu.
     var onLiveCaptionHeaderClicked: (() -> Void)?
 
@@ -524,17 +523,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         sub.addItem(punctuationItem)
         addSubtitle("    Trim Chinese over-punctuation", to: sub)
 
-        // AI Cleanup toggle (requires macOS 26+ with Apple Intelligence)
-        aiCleanupMenuItem = NSMenuItem(
-            title: "AI Cleanup",
-            action: #selector(toggleAICleanup),
-            keyEquivalent: ""
-        )
-        aiCleanupMenuItem.target = self
-        updateToggleAppearance(aiCleanupMenuItem, title: "AI Cleanup", checked: AppConfig.shared.aiCleanupEnabled)
-        sub.addItem(aiCleanupMenuItem)
-        addSubtitle("    via Apple Foundation Models", to: sub)
-
         // Floating overlay toggle
         floatingOverlayMenuItem = NSMenuItem(
             title: "Show Floating Indicator",
@@ -854,70 +842,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         for item in punctuationItems {
             let value = item.representedObject as? String
             updateRadioAppearance(item, title: item.title, selected: value == current)
-        }
-    }
-
-    // MARK: - AI Cleanup
-
-    @objc private func toggleAICleanup() {
-        // Turning OFF — simple flip.
-        if AppConfig.shared.aiCleanupEnabled {
-            AppConfig.shared.aiCleanupEnabled = false
-            updateToggleAppearance(aiCleanupMenuItem, title: "AI Cleanup", checked: false)
-            if #available(macOS 26.0, *) {
-                Task { @MainActor in
-                    FoundationModelsCleaner.releaseSession()
-                }
-            }
-            return
-        }
-
-        // Turning ON — platform check first.
-        guard #available(macOS 26.0, *) else {
-            let version = ProcessInfo.processInfo.operatingSystemVersionString
-            showAlert(
-                title: "macOS 26 or later required",
-                message: """
-                    AI Cleanup uses Apple's on-device Foundation Models framework, \
-                    which requires macOS 26 (Tahoe) or later.
-
-                    Your current version: \(version)
-                    """
-            )
-            return
-        }
-
-        // Validate asynchronously.
-        aiCleanupMenuItem.isEnabled = false
-        let originalTitle = aiCleanupMenuItem.title
-        aiCleanupMenuItem.title = "AI Cleanup (validating…)"
-
-        Task { @MainActor in
-            let result = await FoundationModelsCleaner.validate()
-            self.aiCleanupMenuItem.isEnabled = true
-            self.aiCleanupMenuItem.title = originalTitle
-
-            switch result {
-            case .ok:
-                AppConfig.shared.aiCleanupEnabled = true
-                self.updateToggleAppearance(self.aiCleanupMenuItem, title: "AI Cleanup", checked: true)
-                Task.detached {
-                    await FoundationModelsCleaner.warmup()
-                }
-            case .unavailable(let reason):
-                self.showAlert(
-                    title: "AI Cleanup unavailable",
-                    message: """
-                        Could not start Apple Foundation Models:
-                        \(reason)
-
-                        Common causes:
-                        • This device does not support Apple Intelligence
-                        • Apple Intelligence is not enabled in System Settings
-                        • The on-device model is still downloading
-                        """
-                )
-            }
         }
     }
 

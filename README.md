@@ -54,7 +54,6 @@
 | 簡體 → 繁體 後處理（OpenCC `s2twp`）| **ON** | — |
 | 阿拉伯數字轉換（確定性 ITN）| **ON** | — |
 | 中文標點清理——修剪模型過度斷句（soft / hard / off）| **soft** | — |
-| AI Cleanup——清除贅字、自我修正解析 | **OFF**（opt-in beta）| macOS 26 + Apple Intelligence |
 | 自訂字典（專有名詞 / 行話）| 檔案驅動 | — |
 | 浮動「Listening / Transcribing」指示條 | ON | — |
 | 卸載語音轉文字模型 | 一鍵 | — |
@@ -204,7 +203,6 @@ make install
 - **Show Floating Indicator** — 切換指示條（預設開啟）
 - **Number Conversion** — 中文數字 → 阿拉伯數字（預設開啟）
 - **Text Translation** — 啟用輕按翻譯（macOS 14+）
-- **AI Cleanup** — Apple Foundation Models 後處理（macOS 26+，預設關閉）
 - **Unload Speech-to-Text Model** — 釋放約 2 GB 記憶體；同一選單可重新載入（約 3 秒冷啟動）
 - **Edit Customized Dictionary** — `~/Library/Application Support/HushType/dictionary.txt`，`source -> target` 一行一條，存檔自動熱重載
 
@@ -239,20 +237,6 @@ make install
 **方向：** 中文 → 英文；其他 → 繁體中文。可從選單列或 `defaults write hushtype.translateTargetLanguage` 覆寫。
 
 **啟用：** 選單列 → **Text Translation**。會做一次可用性測試，若 Translation Framework 不可用會跳清楚的錯誤訊息。
-
-### 選用功能：AI Cleanup（opt-in beta,macOS 26+）
-
-HushType **預設關閉 AI Cleanup**。啟用後，每段轉錄會經過 Apple 裝置端 Foundation Models 框架做三件事：（1） 清除句首贅字（`um`、`uh`、`嗯`、`那個`),(2) 收縮連續重複但保留強調式重複，（3） 解析明確的自我修正（`I'll send it Wednesday no actually Friday` → `I'll send it Friday`）。
-
-**為什麼預設關閉：** AI Cleanup 會改寫你的轉錄內容。確定性的 ITN 階層（中文數字 → 阿拉伯數字）預設開啟，因為它可逆且範圍有界；AI Cleanup 則是 opt-in，因為語意層級的改寫是更強的承諾。
-
-**需求：** macOS 26（Tahoe）+ 已啟用 Apple Intelligence + Apple Silicon。
-
-**如何啟用：** 選單列 → AI Cleanup。HushType 會對裝置端模型做一次快速 round-trip 測試；若 Apple Intelligence 不可用，會跳出清楚的錯誤訊息，開關保持關閉。成功後，之後的轉錄都會自動清理。若裝置端模型在轉錄途中出錯，HushType 會靜默回退到未清理的文字——你不會看到壞掉的結果。
-
-**已知限制（beta）：** 偶爾會過度修剪中文副詞（`我一直都在` 可能變成 `我一直在`）；自我修正解析後尾部助詞可能殘留；中文語境下的英文數字會被轉換（`我買了 five 本書` → `我買了 5 本書`，這是產品接受的行為）；語言覆蓋主要驗證中文與英文，日文測試有限。
-
----
 
 ## 安裝指南：iOS（iPhone + Mac 伺服器）
 
@@ -394,11 +378,6 @@ defaults write com.felix.hushtype hushtype.numberConversionEnabled -bool false
 
 # 底部浮動「Listening / Transcribing」指示條（預設:true）
 defaults write com.felix.hushtype hushtype.floatingOverlayEnabled -bool false
-
-# 透過 Apple Foundation Models 的 AI Cleanup（預設:false,需要 macOS 26+）
-# 建議從選單列切換——選單會驗證 FoundationModels 可用性,
-# 若 Apple Intelligence 未啟用會顯示清楚的錯誤訊息。
-defaults write com.felix.hushtype hushtype.aiCleanupEnabled -bool true
 
 # 透過 Apple Translation Framework 的文字翻譯（預設:false,需要 macOS 14+）
 defaults write com.felix.hushtype hushtype.textTranslationEnabled -bool true

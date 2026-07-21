@@ -54,7 +54,6 @@
 | 簡體 → 繁體 post-processing (OpenCC `s2twp`) | **ON** | — |
 | 阿拉伯數字 conversion (deterministic ITN) | **ON** | — |
 | Chinese punctuation cleanup — trim the model's over-segmentation (soft / hard / off) | **soft** | — |
-| AI Cleanup — filler removal, self-correction resolution | **OFF** (opt-in beta) | macOS 26 + Apple Intelligence |
 | Customized dictionary (proper nouns / jargon) | File-driven | — |
 | Floating "Listening / Transcribing" pill | ON | — |
 | Unload speech-to-text model | One-click | — |
@@ -204,7 +203,6 @@ make install
 - **Show Floating Indicator** — toggle the listening pill (default on)
 - **Number Conversion** — Chinese numeral → Arabic digit pass (default on)
 - **Text Translation** — enable tap-to-translate (macOS 14+)
-- **AI Cleanup** — Apple Foundation Models post-processing (macOS 26+, off by default)
 - **Unload Speech-to-Text Model** — frees ~2 GB RAM; reload from the same menu (~3s cold start)
 - **Edit Customized Dictionary** — `~/Library/Application Support/HushType/dictionary.txt`, plain text, `source -> target` per line, hot-reloads
 
@@ -239,20 +237,6 @@ On-device translation via Apple Translation Framework. Select any text → tap R
 **Direction:** Chinese → English; everything else → Traditional Chinese. Override via menu bar or `defaults write hushtype.translateTargetLanguage`.
 
 **Enable:** Menu bar → **Text Translation**. The toggle runs a sanity-check; if Translation Framework isn't available, the toggle stays off with a clear error.
-
-### Optional: AI Cleanup (opt-in beta, macOS 26+)
-
-HushType ships with AI Cleanup **off by default**. When enabled, each transcription is passed through Apple's on-device Foundation Models framework, which (1) strips leading filler words (`um`, `uh`, `嗯`, `那個`), (2) collapses immediate duplicates while preserving emphatic repetitions, and (3) resolves explicit self-corrections (`I'll send it Wednesday no actually Friday` → `I'll send it Friday`).
-
-**Why off by default:** AI Cleanup rewrites your transcription content. The deterministic ITN layer (Chinese numeral → Arabic digit) is on by default because it's reversible and bounded; AI Cleanup is opt-in because semantic rewriting is a stronger commitment.
-
-**Requirements:** macOS 26 (Tahoe) + Apple Intelligence enabled + Apple Silicon.
-
-**How to enable:** Menu bar → AI Cleanup. HushType runs a quick round-trip test against the on-device model; if Apple Intelligence isn't available, you get a clear error and the toggle stays off. On success, future transcriptions are cleaned automatically. If the on-device model errors mid-transcription, HushType silently falls back to the uncleaned text — you never see a broken result.
-
-**Known limitations (beta):** Occasional over-pruning of Chinese adverbs (`我一直都在` may become `我一直在`); trailing particles may leak through after self-correction resolution; English numerals inside Chinese context get converted (`我買了 five 本書` → `我買了 5 本書`, accepted behavior); Japanese is tested minimally.
-
----
 
 ## Setup Guide: iOS (iPhone + Mac Server)
 
@@ -395,11 +379,6 @@ defaults write com.felix.hushtype hushtype.numberConversionEnabled -bool false
 # Floating "Listening / Transcribing" indicator (default: true)
 defaults write com.felix.hushtype hushtype.floatingOverlayEnabled -bool false
 
-# AI Cleanup via Apple Foundation Models (default: false, requires macOS 26+)
-# Prefer toggling from the menu bar — the menu validates FoundationModels
-# availability and shows a clear error if Apple Intelligence isn't enabled.
-defaults write com.felix.hushtype hushtype.aiCleanupEnabled -bool true
-
 # Text Translation via Apple Translation Framework (default: false, requires macOS 14+)
 defaults write com.felix.hushtype hushtype.textTranslationEnabled -bool true
 
@@ -463,9 +442,6 @@ HushType/
 │   ├── InputSourceManager.swift       CJK input method detection
 │   ├── FloatingOverlayWindow.swift    Borderless NSPanel for the listening pill
 │   ├── FloatingOverlayView.swift      SwiftUI pill: RMS bars + transcribing spinner
-│   ├── AICleaner.swift                Non-gated façade over FoundationModels cleanup
-│   ├── FoundationModelsCleaner.swift  macOS 26+ gated Apple FM wrapper
-│   ├── CleanupPrompt.swift            Phase 4 AI Cleanup prompt (filler + self-correction)
 │   ├── TranslationManager.swift       Apple Translation Framework integration
 │   ├── TranslationCardWindow.swift    Floating translation card NSPanel
 │   ├── TranslationCardView.swift      SwiftUI translation card view

@@ -15,7 +15,6 @@ final class AppConfig {
         static let floatingOverlayEnabled = "hushtype.floatingOverlayEnabled"
         static let onboardingCompleted = "hushtype.onboardingCompleted"
         static let numberConversionEnabled = "hushtype.numberConversionEnabled"
-        static let aiCleanupEnabled = "hushtype.aiCleanupEnabled"
         static let textPolishEnabled = "hushtype.textPolishEnabled"
         static let textTranslationEnabled = "hushtype.textTranslationEnabled"
         static let translateTargetLanguage = "hushtype.translateTargetLanguage"
@@ -92,7 +91,7 @@ final class AppConfig {
 
     /// Whether to run deterministic ITN (inverse text normalization) over each
     /// transcription to convert Chinese numerals to Arabic digits in context.
-    /// Runs between OpenCC and AI Cleanup in the pipeline. On by default;
+    /// Runs after OpenCC in the pipeline. On by default;
     /// reversible from the Number Conversion menu toggle.
     var numberConversionEnabled: Bool {
         get {
@@ -124,20 +123,6 @@ final class AppConfig {
         set {
             defaults.set(newValue.rawValue, forKey: Keys.punctuationMode)
             log.info("Punctuation mode set to: \(newValue.rawValue, privacy: .public)")
-        }
-    }
-
-    /// Whether to run Apple FoundationModels over each transcription to clean
-    /// up filler words, convert Chinese numerals to Arabic digits, collapse
-    /// repetitions, and resolve speaker self-corrections. Requires macOS 26+
-    /// with Apple Intelligence enabled. Opt-in (off by default) because the
-    /// feature changes transcription content and users should consciously
-    /// enable semantic rewriting.
-    var aiCleanupEnabled: Bool {
-        get { defaults.bool(forKey: Keys.aiCleanupEnabled) }
-        set {
-            defaults.set(newValue, forKey: Keys.aiCleanupEnabled)
-            log.info("AI cleanup enabled: \(newValue, privacy: .public)")
         }
     }
 
@@ -298,7 +283,7 @@ final class AppConfig {
     }
 
     /// Path to the user-editable customized dictionary file. The dictionary is
-    /// applied as the final post-processing step (after OpenCC and AI Cleanup)
+    /// applied as the final post-processing step (after OpenCC and ITN)
     /// to fix recurring transcription errors like proper nouns and jargon.
     /// If the file doesn't exist, no replacements happen — there's no separate
     /// enable/disable toggle. Power users edit the file directly in their

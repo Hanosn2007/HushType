@@ -251,15 +251,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     log.info("HushType ready")
                 }
 
-                if AppConfig.shared.aiCleanupEnabled {
-                    if #available(macOS 26.0, *) {
-                        Task { @MainActor in
-                            log.info("Scheduling AI Cleanup prewarm after launch")
-                            await FoundationModelsCleaner.warmup()
-                        }
-                    }
-                }
-
                 if AppConfig.shared.textPolishEnabled && TextPolisher.isAvailableCached {
                     if #available(macOS 26.0, *) {
                         Task { @MainActor in
@@ -280,7 +271,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // FoundationModels prewarm is deferred until after Qwen3-ASR finishes
         // loading and the app reaches `.idle`. This keeps the sensitive
         // post-onboarding launch path predictable while still letting users
-        // benefit from `prewarm()` on relaunch when AI Cleanup is already on.
+        // benefit from `prewarm()` on relaunch when Text Polish is already on.
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -905,14 +896,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         transcriptionEngine.unload()
         snapshot("2_engine_unload")
 
-        // Also release AI Cleanup session if active
-        if AppConfig.shared.aiCleanupEnabled {
-            if #available(macOS 26.0, *) {
-                Task { @MainActor in
-                    FoundationModelsCleaner.releaseSession()
-                }
-            }
-        }
         if AppConfig.shared.textPolishEnabled {
             if #available(macOS 26.0, *) {
                 Task { @MainActor in

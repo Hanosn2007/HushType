@@ -72,8 +72,7 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         }
 
         // Apply number conversion (ITN) if enabled. Deterministic regex-based
-        // pass that converts Chinese numerals to Arabic digits. Runs before
-        // AI Cleanup so the cleanup prompt doesn't need to handle numbers.
+        // pass that converts Chinese numerals to Arabic digits.
         let itnResult: NumberNormalizer.Result
         if script == .zh && AppConfig.shared.numberConversionEnabled {
             itnResult = NumberNormalizer.normalize(convertedText)
@@ -86,18 +85,10 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
             itnResult = NumberNormalizer.Result(text: convertedText, applied: false, note: "disabled")
         }
 
-        // Apply AI Cleanup if enabled. No-op when disabled, when running on
-        // macOS < 26, or when FoundationModels errors — in all those cases
-        // the input is returned unchanged.
-        let cleanup = await AICleaner.cleanWithTiming(itnResult.text)
-        if cleanup.text != convertedText {
-            log.info("After AI cleanup: \(cleanup.text)")
-        }
-
         // Apply user customized dictionary as the final post-processing step.
         // No-op if the dictionary file doesn't exist or is empty.
-        let dictText = DictionaryReplacer.apply(cleanup.text)
-        if dictText != cleanup.text {
+        let dictText = DictionaryReplacer.apply(itnResult.text)
+        if dictText != itnResult.text {
             log.info("After dictionary: \(dictText)")
         }
 
@@ -119,10 +110,9 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         let outCh = finalText.count
         let asrMs = Int(asrElapsed * 1000)
         let totalMs = Int(totalElapsed * 1000)
-        let stateLabel = cleanup.state.rawValue
 
         let itnLabel = itnResult.applied ? "applied" : itnResult.note
-        log.info("timings asr=\(asrMs, privacy: .public)ms itn=\(itnLabel, privacy: .public) cleanup_init=\(cleanup.initMs, privacy: .public)ms cleanup_respond=\(cleanup.respondMs, privacy: .public)ms cleanup_state=\(stateLabel, privacy: .public) cleanup_entries=\(cleanup.transcriptEntries, privacy: .public) total=\(totalMs, privacy: .public)ms in=\(inCh, privacy: .public)ch out=\(outCh, privacy: .public)ch")
+        log.info("timings asr=\(asrMs, privacy: .public)ms itn=\(itnLabel, privacy: .public) total=\(totalMs, privacy: .public)ms in=\(inCh, privacy: .public)ch out=\(outCh, privacy: .public)ch")
 
         return finalText
     }
