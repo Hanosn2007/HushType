@@ -2,50 +2,66 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleIdentifier</key>
-    <string>com.felix.hushtype</string>
-    <key>CFBundleName</key>
-    <string>HushType</string>
-    <key>CFBundleDisplayName</key>
-    <string>HushType</string>
-    <key>CFBundleExecutable</key>
-    <string>HushType</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleVersion</key>
-    <string>18</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.6.0</string>
-    <key>NSHumanReadableCopyright</key>
-    <string>MIT License © 2026 Felix Fu</string>
-    <key>CFBundleIconFile</key>
-    <string>HushType</string>
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>HushType needs microphone access to transcribe your voice input.</string>
-    <key>NSScreenCaptureUsageDescription</key>
-    <string>HushType uses Screen &amp; System Audio Recording to caption audio from apps like Zoom, Chrome, and Safari when you wear headphones. Only audio is processed — screen contents are never read.</string>
-    <key>NSServices</key>
-    <array>
-        <dict>
-            <key>NSMenuItem</key>
-            <dict><key>default</key><string>Polish with HushType</string></dict>
-            <key>NSMessage</key><string>polishSelection</string>
-            <key>NSPortName</key><string>HushType</string>
-            <key>NSSendTypes</key>
-            <array><string>public.utf8-plain-text</string></array>
-            <key>NSRequiredContext</key><dict/>
-        </dict>
-        <dict>
-            <key>NSMenuItem</key>
-            <dict><key>default</key><string>Translate with HushType</string></dict>
-            <key>NSMessage</key><string>translateSelection</string>
-            <key>NSPortName</key><string>HushType</string>
-            <key>NSSendTypes</key>
-            <array><string>public.utf8-plain-text</string></array>
-            <key>NSRequiredContext</key><dict/>
-        </dict>
-    </array>
+	<key>CFBundleDisplayName</key>
+	<string>HushType</string>
+	<key>CFBundleExecutable</key>
+	<string>HushType</string>
+	<key>CFBundleIconFile</key>
+	<string>HushType</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.felix.hushtype</string>
+	<key>CFBundleName</key>
+	<string>HushType</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.6.0</string>
+	<key>CFBundleVersion</key>
+	<string>19</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>MIT License © 2026 Felix Fu</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>HushType needs microphone access to transcribe your voice input.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>HushType uses Screen &amp; System Audio Recording to caption audio from apps like Zoom, Chrome, and Safari when you wear headphones. Only audio is processed — screen contents are never read.</string>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Polish with HushType</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>polishSelection</string>
+			<key>NSPortName</key>
+			<string>HushType</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSSendTypes</key>
+			<array>
+				<string>public.utf8-plain-text</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Translate with HushType</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>translateSelection</string>
+			<key>NSPortName</key>
+			<string>HushType</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSSendTypes</key>
+			<array>
+				<string>public.utf8-plain-text</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

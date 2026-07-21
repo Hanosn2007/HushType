@@ -12,7 +12,19 @@ enum FoundationModelsPolisher {
         case unavailable(reason: String)
     }
 
-    private static var prewarmedPromptFingerprint: Int?
+    /// Prewarmed session pool of one. The OS does NOT share instruction-prefix
+    /// KV cache across `LanguageModelSession` instances (measured 2026-07-22:
+    /// identical vs unique instructions both ~690 ms), so a discarded warmup
+    /// session buys nothing. Instead we keep one prewarmed standby, consume it
+    /// for exactly one respond (statelessness preserved — no transcript
+    /// accumulation), and prewarm a replacement afterwards. Measured saving:
+    /// ~290 ms per polish; back-to-back polishes land on an in-flight prewarm
+    /// and degrade gracefully to baseline, never worse.
+    private static var standbySession: LanguageModelSession?
+    private static var standbyFingerprint: Int?
+    /// False after releaseSession() so an in-flight polish's replenish can't
+    /// resurrect a standby for a feature the user just toggled off.
+    private static var poolingEnabled = false
 
     static func availabilityReason() -> String? {
         switch SystemLanguageModel.default.availability {
@@ -48,30 +60,55 @@ enum FoundationModelsPolisher {
     }
 
     static func warmup() {
-        let prompt = PolishPrompt.activePrompt()
-        let session = LanguageModelSession(instructions: prompt)
-        session.prewarm()
-        prewarmedPromptFingerprint = prompt.hashValue
+        poolingEnabled = true
+        replenishStandby(prompt: PolishPrompt.activePrompt())
         log.info("Warmup complete")
     }
 
     static func releaseSession() {
-        prewarmedPromptFingerprint = nil
-        log.info("Text Polish warmup state released")
+        poolingEnabled = false
+        standbySession = nil
+        standbyFingerprint = nil
+        log.info("Text Polish standby session released")
+    }
+
+    private static func replenishStandby(prompt: String) {
+        guard poolingEnabled else { return }
+        let session = LanguageModelSession(instructions: prompt)
+        // Must fire AFTER any in-flight respond has finished: the daemon
+        // serializes a respond behind a just-issued prewarm (+320 ms measured).
+        session.prewarm()
+        standbySession = session
+        standbyFingerprint = prompt.hashValue
     }
 
     static func polish(_ text: String, mixRetry: Bool = false) async -> Result<String, Error> {
         let prompt = PolishPrompt.activePrompt()
         let fingerprint = prompt.hashValue
-        let session = LanguageModelSession(instructions: prompt)
+
+        // Consume the standby if its instructions match the current prompt
+        // (a polish_rules.txt edit changes the fingerprint and forces a cold
+        // session). One respond per session — never reuse across polishes.
+        let session: LanguageModelSession
+        let standbyHit: Bool
+        if let standby = standbySession, standbyFingerprint == fingerprint {
+            session = standby
+            standbyHit = true
+        } else {
+            session = LanguageModelSession(instructions: prompt)
+            standbyHit = false
+        }
+        standbySession = nil
+        standbyFingerprint = nil
+
         let options = GenerationOptions(temperature: 0.0)
         let reminder = mixRetry ? PolishPrompt.mixRetryReminder : ""
         let userPrompt = "Input: <selection>\(text)</selection>\(reminder)\nOutput:"
 
+        defer { replenishStandby(prompt: prompt) }
         do {
             let response = try await session.respond(to: userPrompt, options: options)
-            let wasPrewarmed = prewarmedPromptFingerprint == fingerprint
-            log.debug("Polish response fingerprint=\(fingerprint, privacy: .public) prewarmed=\(wasPrewarmed, privacy: .public) transcript_entries=\(response.transcriptEntries.count, privacy: .public)")
+            log.debug("Polish response fingerprint=\(fingerprint, privacy: .public) standby_hit=\(standbyHit, privacy: .public) transcript_entries=\(response.transcriptEntries.count, privacy: .public)")
             return .success(sanitize(response.content, input: text))
         } catch {
             log.error("Polish failed: \(error.localizedDescription, privacy: .public)")
