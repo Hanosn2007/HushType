@@ -260,7 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             } catch {
-                log.error("Failed to load model: \(error.localizedDescription)")
+                log.error("Failed to load model: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
                     self?.state = .idle
                     self?.statusBar.setState(.error("Model load failed"))
@@ -977,7 +977,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             } catch {
-                log.error("Failed to reload model: \(error.localizedDescription)")
+                log.error("Failed to reload model: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
                     self?.state = .unloaded
                     self?.statusBar.setState(.error("Reload failed"))
