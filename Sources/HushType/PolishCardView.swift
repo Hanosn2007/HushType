@@ -5,6 +5,19 @@ struct PolishCardView: View {
     let polishedText: String
     let changed: Bool
 
+    /// Track-changes rendering; nil when the selection exceeds the diff
+    /// token cap, in which case the card shows the polished text plain.
+    private let diffText: AttributedString?
+
+    init(originalText: String, polishedText: String, changed: Bool) {
+        self.originalText = originalText
+        self.polishedText = polishedText
+        self.changed = changed
+        self.diffText = changed
+            ? PolishDiff.attributed(original: originalText, polished: polishedText)
+            : nil
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -22,30 +35,29 @@ struct PolishCardView: View {
 
             Divider()
 
-            Text("Original")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(originalText)
-                .font(.system(size: 16))
-                .lineSpacing(4)
-                .foregroundStyle(.secondary)
-                .lineLimit(6)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if changed {
+                HStack {
+                    Text("Changes")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
-            Divider()
+                    Spacer()
 
-            Text("Polished")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                    if diffText != nil {
+                        legend
+                    }
+                }
+            }
+
             ScrollView {
-                Text(polishedText)
-                    .font(.system(size: 22, weight: .regular))
-                    .lineSpacing(6)
+                Text(diffText ?? AttributedString(polishedText))
+                    .font(.system(size: 15))
+                    .lineSpacing(4)
                     .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
             }
-            .frame(maxHeight: 380)
+            .frame(maxHeight: 420)
 
             HStack(alignment: .bottom) {
                 Text("Click outside to dismiss")
@@ -61,7 +73,7 @@ struct PolishCardView: View {
             }
         }
         .padding(24)
-        .frame(width: 660)
+        .frame(width: 560)
         .fixedSize(horizontal: false, vertical: true)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -70,5 +82,19 @@ struct PolishCardView: View {
                 .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
         )
         .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 4)
+    }
+
+    private var legend: some View {
+        HStack(spacing: 4) {
+            Text("removed")
+                .strikethrough()
+                .foregroundStyle(Color(nsColor: .systemRed))
+            Text("·")
+                .foregroundStyle(.secondary)
+            Text("added")
+                .underline()
+                .foregroundStyle(Color(nsColor: .systemGreen))
+        }
+        .font(.caption)
     }
 }
