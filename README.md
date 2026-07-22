@@ -249,7 +249,11 @@ make install
 
 ### 選用功能：Text Polish（macOS 26+）
 
-使用 Apple Foundation Models 框架在裝置端校對——就是 macOS 內建的 Apple Intelligence 模型，不增加 HushType 約 675 MB 的預算，內容也不離開你的 Mac。在任何 App 選取文字 → 雙擊 Right Option → 選取範圍就地替換為修正後的文字，結果卡片顯示改了什麼。有修正時，修正後的文字同時保留在剪貼簿——所以唯讀畫面（網頁、PDF）也能用：選取、雙擊、貼到你要的地方。原本就正確的文字會顯示「No changes needed」卡片，剪貼簿完全不動。右鍵選單也有：**服務 → Polish with HushType**。
+使用 Apple Foundation Models 框架在裝置端校對——就是 macOS 內建的 Apple Intelligence 模型，不增加 HushType 約 675 MB 的預算，內容也不離開你的 Mac。在任何 App 選取文字 → 雙擊 Right Option → 選取範圍就地替換為修正後的文字，結果卡片以 Word 追蹤修訂的方式顯示到底改了什麼：刪除的字紅色刪除線、加入的字綠色底線。
+
+<p align="center">
+  <img src="Resources/polish-card-diff-zh.png" alt="Text Polish 結果卡片：刪除紅色刪除線、新增綠色底線" width="560">
+</p>有修正時，修正後的文字同時保留在剪貼簿——所以唯讀畫面（網頁、PDF）也能用：選取、雙擊、貼到你要的地方。原本就正確的文字會顯示「No changes needed」卡片，剪貼簿完全不動。右鍵選單也有：**服務 → Polish with HushType**。
 
 **它修什麼——以及它絕不碰什麼。** 錯字、文法、標點、明顯的 typo。它刻意設計成機械式校對員，而非改寫器：語意、語氣、格式、大小寫、語言混用全部保留。它被要求遵守的規則：
 
