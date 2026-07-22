@@ -82,6 +82,38 @@ enum PolishDiff {
         return out
     }
 
+    /// The on-device model persistently rewrites 妳 to 你/您 even when told
+    /// not to (verified 2026-07-23: resists both an explicit prompt rule and
+    /// a dedicated few-shot). That is a register change, not a proofread —
+    /// revert any diff cluster that is exactly that swap, keeping every
+    /// other fix in the output.
+    static func revertingNiSwaps(original: String, polished: String) -> String {
+        guard original.contains("妳"),
+              let segments = segments(original: original, polished: polished) else {
+            return polished
+        }
+        var out = ""
+        var index = 0
+        while index < segments.count {
+            if case .delete(let deleted) = segments[index],
+               index + 1 < segments.count,
+               case .insert(let inserted) = segments[index + 1],
+               deleted.allSatisfy({ $0 == "妳" }),
+               inserted.count == deleted.count,
+               inserted.allSatisfy({ $0 == "你" || $0 == "您" }) {
+                out += deleted
+                index += 2
+                continue
+            }
+            switch segments[index] {
+            case .equal(let text), .insert(let text): out += text
+            case .delete: break
+            }
+            index += 1
+        }
+        return out
+    }
+
     /// Word-level tokens for alphabetic scripts, character-level for CJK
     /// (no word boundaries to align on), single characters for whitespace
     /// and punctuation so punctuation-only fixes surface precisely.

@@ -179,6 +179,9 @@ enum TextPolisher {
     }
 
     private static func validateOutput(_ output: String, input: String) -> PolishResult {
+        // If the model's only edit was a 妳 swap, this restores the input
+        // exactly and the polish correctly reports "no changes needed".
+        let output = PolishDiff.revertingNiSwaps(original: input, polished: output)
         let trimmedInput = input.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedOutput = output.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedOutput.isEmpty else { return .failure(.emptyOutput) }

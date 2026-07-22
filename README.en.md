@@ -249,7 +249,11 @@ On-device translation via Apple Translation Framework. Select any text → tap R
 
 ### Optional: Text Polish (macOS 26+)
 
-On-device proofreading via Apple's Foundation Models framework — the Apple Intelligence model already shipped with macOS, so it adds nothing to HushType's ~675 MB budget and nothing leaves your Mac. Select text in any app → double-tap Right Option → the selection is replaced in place with corrected text, and a result card shows what changed. When a correction was made, the polished text also stays on the clipboard — so read-only views (a web page, a PDF) work too: select, double-tap, paste it wherever you want. Already-correct text gets a "No changes needed" card and your clipboard is left alone. Also in the right-click menu: **Services → Polish with HushType**.
+On-device proofreading via Apple's Foundation Models framework — the Apple Intelligence model already shipped with macOS, so it adds nothing to HushType's ~675 MB budget and nothing leaves your Mac. Select text in any app → double-tap Right Option → the selection is replaced in place with corrected text, and a result card shows exactly what changed, Word track-changes style: deletions struck through in red, insertions underlined in green.
+
+<p align="center">
+  <img src="Resources/polish-card-diff-en.png" alt="Text Polish result card: deletions in red strikethrough, insertions in green underline" width="560">
+</p> When a correction was made, the polished text also stays on the clipboard — so read-only views (a web page, a PDF) work too: select, double-tap, paste it wherever you want. Already-correct text gets a "No changes needed" card and your clipboard is left alone. Also in the right-click menu: **Services → Polish with HushType**.
 
 **What it fixes — and what it never touches.** Spelling, grammar, punctuation, obvious typos. It is deliberately a mechanical proofreader, not a rewriter: meaning, tone, formatting, casing, and language mix are preserved. The rules it is held to:
 
