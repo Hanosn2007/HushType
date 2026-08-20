@@ -1072,9 +1072,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     /// Called by AppDelegate after successful unload to update menu state.
     func setModelUnloaded() {
-        currentState = .unloaded
-        refreshStatusLine()
-
         let reloadAttrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: NSColor.systemGreen
         ]
@@ -1366,10 +1363,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         unloadMenuItem.isHidden = false
         setModelLoaded()
         switch state {
-        case .idle:
+        case .idle, .unloaded:
             unloadMenuItem.isEnabled = true
-        case .unloaded:
-            unloadMenuItem.isEnabled = false
         case .loading:
             unloadMenuItem.isEnabled = false
         default:

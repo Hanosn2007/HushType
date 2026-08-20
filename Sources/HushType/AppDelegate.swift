@@ -346,6 +346,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Hotkey Handlers
 
     private func handleHotkeyPress() {
+        // App-modal alerts must exclusively own input while they are visible.
+        guard NSApp.modalWindow == nil else { return }
+
         let claimedSecondTap = tapArbiter.cancelPendingForSecondPress()
 
         // Gate dictation only when Live Caption is active on the MIC source —
@@ -481,22 +484,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let provider = consentProvider(for: selection)
         guard let provider else { return }
 
-        if !CloudDictationOnboardingAlert.shared.hasConsent(for: provider),
-           CloudDictationOnboardingAlert.shared.requestConsent(for: provider) == .revertToLocal {
-            switchDictationEngine(to: .local)
-            hideOverlay()
-            if localEngine.isLoaded {
-                state = .idle
-                statusBar.setState(.idle)
+        let keyIsEmpty: Bool
+        switch selection {
+        case .openai:
+            if case .empty = OpenAIKeyStore.load() {
+                keyIsEmpty = true
+            } else {
+                keyIsEmpty = false
             }
+        case .gemini:
+            if case .empty = GeminiKeyStore.load() {
+                keyIsEmpty = true
+            } else {
+                keyIsEmpty = false
+            }
+        case .local:
+            keyIsEmpty = false
+        }
+        if keyIsEmpty {
             Task { @MainActor [weak self] in
-                _ = await self?.restoreInsertionFocus(insertionFocus)
+                await self?.handleCloudFailure(
+                    .noKey,
+                    samples: samples,
+                    language: language,
+                    selection: selection,
+                    insertionFocus: insertionFocus
+                )
             }
             return
         }
 
-        // Guard before WAV encoding or request construction. The cloud engine
-        // repeats the guard as defense in depth.
+        // Guard before consent, WAV encoding, or request construction. The
+        // cloud engine repeats the payload guard as defense in depth.
         if let maxSampleCount = activeEngine.maxSampleCount,
            samples.count > maxSampleCount {
             Task { @MainActor [weak self] in
@@ -507,6 +526,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     selection: selection,
                     insertionFocus: insertionFocus
                 )
+            }
+            return
+        }
+
+        if !CloudDictationOnboardingAlert.shared.hasConsent(for: provider),
+           CloudDictationOnboardingAlert.shared.requestConsent(for: provider) == .revertToLocal {
+            switchDictationEngine(to: .local)
+            hideOverlay()
+            if localEngine.isLoaded {
+                state = .idle
+                statusBar.setState(.idle)
+            }
+            Task { @MainActor [weak self] in
+                _ = await self?.restoreInsertionFocus(insertionFocus)
             }
             return
         }
@@ -1057,7 +1090,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !localEngine.isLoaded {
                 reloadModel()
             }
-        } else if state == .unloaded {
+        } else if state == .unloaded || state == .loading {
+            localEngine.unload()
             state = .idle
             statusBar.setState(.idle)
         }

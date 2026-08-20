@@ -149,8 +149,10 @@ actor CloudUsageTracker {
         switch (provider, model) {
         case (.openai, "gpt-transcribe"):
             return Rate.openAIGPTTranscribe
-        case (.openai, _):
+        case (.openai, "gpt-4o-mini-transcribe"):
             return Rate.openAIMiniTranscribe
+        case (.openai, _):
+            return Rate.openAIGPTTranscribe
         case (.gemini, "gemini-3.5-flash-lite"):
             return Rate.geminiFlashLite
         case (.gemini, _):

@@ -41,6 +41,8 @@ enum DictionaryReplacer {
         let target: String
     }
 
+    private static let lock = NSLock()
+
     /// Cached entries, sorted by source length descending (longest first).
     /// Empty when no file or all lines are comments/malformed.
     private static var entries: [Entry] = []
@@ -58,6 +60,9 @@ enum DictionaryReplacer {
     /// Cheap to call before every transcription — does a single stat() and
     /// returns immediately if mtime is unchanged.
     static func reloadIfNeeded() {
+        lock.lock()
+        defer { lock.unlock() }
+
         let url = AppConfig.dictionaryFileURL
         let fm = FileManager.default
 
@@ -95,7 +100,11 @@ enum DictionaryReplacer {
     static func apply(_ text: String) -> String {
         reloadIfNeeded()
 
-        guard !entries.isEmpty else { return text }
+        lock.lock()
+        let currentEntries = entries
+        lock.unlock()
+
+        guard !currentEntries.isEmpty else { return text }
 
         var result = ""
         result.reserveCapacity(text.count)
@@ -106,7 +115,7 @@ enum DictionaryReplacer {
 
         outer: while index < end {
             // Try each entry (already sorted longest source first)
-            for entry in entries {
+            for entry in currentEntries {
                 let sourceCount = entry.source.count
 
                 // Cheap length guard before substring comparison
@@ -140,7 +149,10 @@ enum DictionaryReplacer {
     /// Number of currently loaded entries. Used by the menu subtitle.
     static var entryCount: Int {
         reloadIfNeeded()
-        return entries.count
+        lock.lock()
+        let currentEntries = entries
+        lock.unlock()
+        return currentEntries.count
     }
 
     /// Whether the dictionary file currently exists on disk.

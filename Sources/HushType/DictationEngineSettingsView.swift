@@ -152,15 +152,6 @@ struct DictationEngineSettingsView: View {
                     Text("OpenAI Cloud")
                     Text("\(rateText(model.openAIRate)) · No model RAM")
                         .font(.caption).foregroundStyle(.secondary)
-                    HStack(spacing: 8) {
-                        Text("Model:")
-                        Picker("", selection: $model.openAIModel) {
-                            Text("gpt-4o-mini-transcribe (recommended)").tag("gpt-4o-mini-transcribe")
-                            Text("gpt-transcribe").tag("gpt-transcribe")
-                        }
-                        .labelsHidden()
-                        .disabled(model.engine != .openai)
-                    }
                 }
                 .tag(AppConfig.DictationEngine.openai)
 
@@ -168,20 +159,31 @@ struct DictationEngineSettingsView: View {
                     Text("Gemini Cloud")
                     Text("Free tier; metered at \(rateText(model.geminiRate)) · No model RAM")
                         .font(.caption).foregroundStyle(.secondary)
-                    HStack(spacing: 8) {
-                        Text("Model:")
-                        Picker("", selection: $model.geminiModel) {
-                            Text("gemini-3.7-flash (quality)").tag("gemini-3.7-flash")
-                            Text("gemini-3.5-flash-lite (budget)").tag("gemini-3.5-flash-lite")
-                        }
-                        .labelsHidden()
-                        .disabled(model.engine != .gemini)
-                    }
                 }
                 .tag(AppConfig.DictationEngine.gemini)
             }
             .labelsHidden()
             .pickerStyle(.radioGroup)
+
+            HStack(spacing: 8) {
+                Text("OpenAI model:")
+                Picker("", selection: $model.openAIModel) {
+                    Text("gpt-4o-mini-transcribe (recommended)").tag("gpt-4o-mini-transcribe")
+                    Text("gpt-transcribe").tag("gpt-transcribe")
+                }
+                .labelsHidden()
+                .disabled(model.engine != .openai)
+            }
+
+            HStack(spacing: 8) {
+                Text("Gemini model:")
+                Picker("", selection: $model.geminiModel) {
+                    Text("gemini-3.7-flash (quality)").tag("gemini-3.7-flash")
+                    Text("gemini-3.5-flash-lite (budget)").tag("gemini-3.5-flash-lite")
+                }
+                .labelsHidden()
+                .disabled(model.engine != .gemini)
+            }
 
             Text("While a cloud engine is selected the speech model stays unloaded. The iOS companion server always uses the local model.")
                 .font(.caption)
