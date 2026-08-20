@@ -38,6 +38,7 @@ final class CloudDictationReachability: @unchecked Sendable {
 }
 
 final class OpenAITranscribeEngine: TranscriptionEngine {
+    static let requestTimeout: TimeInterval = 180
     private static let endpoint = URL(string: "https://api.openai.com/v1/audio/transcriptions")!
     private static let providerMaxSampleCount = 16_000 * 600
     private static let primer = "上週的簡報我已經更新到 Notion，請大家確認。"
@@ -47,8 +48,8 @@ final class OpenAITranscribeEngine: TranscriptionEngine {
 
     init() {
         let configuration = URLSessionConfiguration.default
-        configuration.timeoutIntervalForRequest = 15
-        configuration.timeoutIntervalForResource = 15
+        configuration.timeoutIntervalForRequest = Self.requestTimeout
+        configuration.timeoutIntervalForResource = Self.requestTimeout
         configuration.waitsForConnectivity = false
 
         let redirectDelegate = RedirectRefusingDelegate()
@@ -94,7 +95,7 @@ final class OpenAITranscribeEngine: TranscriptionEngine {
 
         var request = URLRequest(url: Self.endpoint)
         request.httpMethod = "POST"
-        request.timeoutInterval = 15
+        request.timeoutInterval = Self.requestTimeout
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         if let organization, !organization.isEmpty {
             request.setValue(organization, forHTTPHeaderField: "OpenAI-Organization")
@@ -129,14 +130,7 @@ final class OpenAITranscribeEngine: TranscriptionEngine {
 
         guard (200..<300).contains(http.statusCode) else {
             logHTTPFailure(statusCode: http.statusCode, data: data)
-            switch http.statusCode {
-            case 401, 403:
-                throw TranscriptionError.auth
-            case 429:
-                throw TranscriptionError.rateLimited(provider: "OpenAI")
-            default:
-                throw TranscriptionError.network
-            }
+            throw Self.mapHTTPFailure(statusCode: http.statusCode)
         }
 
         guard let object = try? JSONSerialization.jsonObject(with: data),
@@ -197,6 +191,21 @@ final class OpenAITranscribeEngine: TranscriptionEngine {
         body.append(Data("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".utf8))
         body.append(Data(value.utf8))
         body.append(Data("\r\n".utf8))
+    }
+
+    /// Status-only classification keeps provider attribution reliable without
+    /// coupling behavior to mutable, localized error-message strings.
+    static func mapHTTPFailure(statusCode: Int) -> TranscriptionError {
+        switch statusCode {
+        case 401:
+            return .auth
+        case 403:
+            return .permissionDenied(provider: "OpenAI")
+        case 429:
+            return .rateLimited(provider: "OpenAI")
+        default:
+            return .network
+        }
     }
 
     private func logHTTPFailure(statusCode: Int, data: Data) {

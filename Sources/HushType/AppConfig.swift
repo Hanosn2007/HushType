@@ -256,8 +256,9 @@ final class AppConfig {
         }
     }
 
-    /// Daily soft-cap warning threshold in USD. Default $5. Clamped to
-    /// 0.5...100.0 on set.
+    /// Daily spend warning threshold in USD. Cloud dictation latches off
+    /// before an upload would reach it; Reset counter clears the daily latch.
+    /// Default $5. Clamped to 0.5...100.0 on set.
     var cloudDailyCapDollars: Double {
         get {
             if defaults.object(forKey: Keys.cloudDailyCapDollars) == nil {

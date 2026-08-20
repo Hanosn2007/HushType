@@ -194,10 +194,10 @@ struct DictationEngineSettingsView: View {
 
     private var sectionGuardrails: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Cost guardrails", systemImage: "dollarsign.circle").font(.headline)
+            Label("Daily spend warning", systemImage: "dollarsign.circle").font(.headline)
 
             HStack {
-                Text("Warn me when daily spend hits:")
+                Text("Block new cloud uploads at:")
                 Stepper(value: $model.dailyCap, in: 0.5...100.0, step: 0.5) {
                     Text(CloudUsageTracker.formatDollars(model.dailyCap))
                         .frame(minWidth: 60, alignment: .trailing)

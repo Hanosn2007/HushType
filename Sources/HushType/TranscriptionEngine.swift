@@ -17,9 +17,10 @@ extension TranscriptionEngine {
     var maxSampleCount: Int? { nil }
 }
 
-enum TranscriptionError: Error {
+enum TranscriptionError: Error, Equatable, Sendable {
     case noKey
     case auth
+    case permissionDenied(provider: String)
     case rateLimited(provider: String)
     case network
     case timeout

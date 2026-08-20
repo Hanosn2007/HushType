@@ -451,6 +451,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let language = AppConfig.shared.language
         let selection = AppConfig.shared.dictationEngine
+        let engine = activeEngine!
         let insertionFocus = captureInsertionFocus()
 
         if selection == .local {
@@ -458,16 +459,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 samples: samples,
                 language: language,
                 selection: selection,
+                engine: engine,
                 insertionFocus: insertionFocus
             )
         } else {
             // The hotkey callbacks originate inside CGEventTap. Queue consent
             // for the next main-loop turn so NSAlert never blocks that tap.
-            DispatchQueue.main.async { [weak self] in
-                self?.continueCloudTranscriptionAfterConsent(
+            Task { @MainActor [weak self] in
+                await self?.continueCloudTranscriptionAfterConsent(
                     samples: samples,
                     language: language,
                     selection: selection,
+                    engine: engine,
                     insertionFocus: insertionFocus
                 )
             }
@@ -478,8 +481,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         samples: [Float],
         language: String?,
         selection: AppConfig.DictationEngine,
+        engine: any TranscriptionEngine,
         insertionFocus: NSRunningApplication?
-    ) {
+    ) async {
         guard state == .transcribing else { return }
         let provider = consentProvider(for: selection)
         guard let provider else { return }
@@ -502,32 +506,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             keyIsEmpty = false
         }
         if keyIsEmpty {
-            Task { @MainActor [weak self] in
-                await self?.handleCloudFailure(
-                    .noKey,
-                    samples: samples,
-                    language: language,
-                    selection: selection,
-                    insertionFocus: insertionFocus
-                )
-            }
+            await handleCloudFailure(
+                .noKey,
+                samples: samples,
+                language: language,
+                selection: selection,
+                engine: engine,
+                insertionFocus: insertionFocus
+            )
             return
         }
 
         // Guard before consent, WAV encoding, or request construction. The
         // cloud engine repeats the payload guard as defense in depth.
-        if let maxSampleCount = activeEngine.maxSampleCount,
+        if let maxSampleCount = engine.maxSampleCount,
            samples.count > maxSampleCount {
-            Task { @MainActor [weak self] in
-                await self?.handleCloudFailure(
-                    .payloadTooLarge,
+            await handleCloudFailure(
+                .payloadTooLarge,
+                samples: samples,
+                language: language,
+                selection: selection,
+                engine: engine,
+                insertionFocus: insertionFocus
+            )
+            return
+        }
+
+        let metering = cloudDictationMetering(for: selection)
+        if let metering {
+            let projection = await CloudUsageTracker.shared.evaluateDictationUpload(
+                seconds: Double(samples.count) / 16_000.0,
+                dollarsPerMinute: metering.rate,
+                warningThreshold: AppConfig.shared.cloudDailyCapDollars
+            )
+            // The actor hop gives menu/settings actions a chance to change app
+            // state. Never upload a retained buffer after the request was
+            // cancelled or another flow took ownership.
+            guard state == .transcribing else { return }
+            if projection.shouldBlock {
+                await handleDailySpendWarning(
+                    projection,
                     samples: samples,
                     language: language,
-                    selection: selection,
                     insertionFocus: insertionFocus
                 )
+                return
             }
-            return
         }
 
         if !CloudDictationOnboardingAlert.shared.hasConsent(for: provider),
@@ -548,6 +572,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             samples: samples,
             language: language,
             selection: selection,
+            engine: engine,
+            metering: metering,
             insertionFocus: insertionFocus
         )
     }
@@ -556,35 +582,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         samples: [Float],
         language: String?,
         selection: AppConfig.DictationEngine,
+        engine: any TranscriptionEngine,
+        metering: CloudDictationMetering? = nil,
         insertionFocus: NSRunningApplication?
     ) {
-        let engine = activeEngine!
-        let metering: (CloudUsageTracker.Provider, Double)? = {
-            guard let provider = Self.usageProvider(for: selection) else { return nil }
-            let model: String
-            switch selection {
-            case .openai: model = AppConfig.shared.cloudDictationModelOpenAI
-            case .gemini: model = AppConfig.shared.cloudDictationModelGemini
-            case .local: return nil
-            }
-            return (
-                provider,
-                CloudUsageTracker.dictationRate(provider: provider, model: model)
-            )
-        }()
+        let metering = metering ?? cloudDictationMetering(for: selection)
         Task.detached { [weak self, engine] in
             do {
                 let text = try await engine.transcribe(audio: samples, language: language)
-                if let (provider, rate) = metering {
+                if let metering {
                     let snapshot = await CloudUsageTracker.shared.recordDictation(
                         seconds: Double(samples.count) / 16_000.0,
-                        provider: provider,
-                        dollarsPerMinute: rate
+                        provider: metering.provider,
+                        dollarsPerMinute: metering.rate
                     )
                     let cap = AppConfig.shared.cloudDailyCapDollars
                     if await CloudUsageTracker.shared.shouldFireDailyCapWarning(cap: cap) {
                         await CloudUsageTracker.shared.markDailyCapWarned()
-                        await self?.postCloudCapNotification(snapshot: snapshot, cap: cap)
+                        await self?.postDailySpendWarningNotification(snapshot: snapshot, threshold: cap)
                     }
                 }
                 await self?.finishSuccessfulTranscription(
@@ -601,16 +616,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let mapped = error as? TranscriptionError ?? .network
                 switch mapped {
                 case .malformedResponse, .safetyBlocked, .timeout:
-                    if let (provider, rate) = metering {
+                    if let metering {
                         let snapshot = await CloudUsageTracker.shared.recordDictation(
                             seconds: Double(samples.count) / 16_000.0,
-                            provider: provider,
-                            dollarsPerMinute: rate
+                            provider: metering.provider,
+                            dollarsPerMinute: metering.rate
                         )
                         let cap = AppConfig.shared.cloudDailyCapDollars
                         if await CloudUsageTracker.shared.shouldFireDailyCapWarning(cap: cap) {
                             await CloudUsageTracker.shared.markDailyCapWarned()
-                            await self?.postCloudCapNotification(snapshot: snapshot, cap: cap)
+                            await self?.postDailySpendWarningNotification(snapshot: snapshot, threshold: cap)
                         }
                     }
                 default:
@@ -621,6 +636,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     samples: samples,
                     language: language,
                     selection: selection,
+                    engine: engine,
                     insertionFocus: insertionFocus
                 )
             }
@@ -1227,6 +1243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private enum CloudFailureChoice {
+        case retryCloud
         case useLocalOnce
         case switchToLocal
         case cancel
@@ -1234,11 +1251,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case openKeyFile
     }
 
+    private typealias CloudDictationMetering = (
+        provider: CloudUsageTracker.Provider,
+        rate: Double
+    )
+
+    private func cloudDictationMetering(
+        for selection: AppConfig.DictationEngine
+    ) -> CloudDictationMetering? {
+        guard let provider = Self.usageProvider(for: selection) else { return nil }
+        let model: String
+        switch selection {
+        case .openai:
+            model = AppConfig.shared.cloudDictationModelOpenAI
+        case .gemini:
+            model = AppConfig.shared.cloudDictationModelGemini
+        case .local:
+            return nil
+        }
+        return (
+            provider: provider,
+            rate: CloudUsageTracker.dictationRate(provider: provider, model: model)
+        )
+    }
+
+    private func handleDailySpendWarning(
+        _ projection: CloudUsageTracker.DictationUploadProjection,
+        samples: [Float],
+        language: String?,
+        insertionFocus: NSRunningApplication?
+    ) async {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Daily spend warning reached"
+        alert.informativeText = "This upload would bring today's estimated cloud usage to \(CloudUsageTracker.formatDollars(projection.projectedTotalDollars)) (warning: \(CloudUsageTracker.formatDollars(projection.warningThreshold))). No audio was uploaded. Open Settings and reset today's counter to use cloud again."
+        alert.addButton(withTitle: "Open Settings")
+        alert.addButton(withTitle: "Use Local Once")
+        alert.addButton(withTitle: "Cancel")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            state = .idle
+            statusBar.setState(.idle)
+            hideOverlay()
+            DictationEngineSettingsWindowController.shared.presentAndFocus(
+                onSwitchEngine: { [weak self] engine in
+                    self?.switchDictationEngine(to: engine)
+                }
+            )
+        case .alertSecondButtonReturn:
+            await transcribeLocallyOnce(
+                samples: samples,
+                language: language,
+                insertionFocus: insertionFocus
+            )
+        default:
+            await finishWithoutInsertion(restoreFocus: insertionFocus)
+        }
+    }
+
     private func handleCloudFailure(
         _ error: TranscriptionError,
         samples: [Float],
         language: String?,
         selection: AppConfig.DictationEngine,
+        engine: any TranscriptionEngine,
         insertionFocus: NSRunningApplication?
     ) async {
         switch error {
@@ -1255,6 +1332,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         switch choice {
+        case .retryCloud:
+            await continueCloudTranscriptionAfterConsent(
+                samples: samples,
+                language: language,
+                selection: selection,
+                engine: engine,
+                insertionFocus: insertionFocus
+            )
         case .useLocalOnce:
             await transcribeLocallyOnce(
                 samples: samples,
@@ -1360,11 +1445,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.addButton(withTitle: "Use Local Once")
             return alert.runModal() == .alertFirstButtonReturn ? .openKeyFile : .useLocalOnce
 
-        case .rateLimited:
-            alert.messageText = "\(provider) rate limit hit"
-            alert.informativeText = selection == .gemini
-                ? "You may have exhausted today's free tier."
-                : "Wait a moment before trying cloud dictation again."
+        case .permissionDenied(let deniedProvider):
+            let path = selection == .gemini ? GeminiKeyStore.displayPath : OpenAIKeyStore.displayPath
+            alert.messageText = "\(deniedProvider) denied this request"
+            alert.informativeText = "The API key is present, but its project or model permissions may not allow this request. Check provider access and \(path)."
+            alert.addButton(withTitle: "Open File")
+            alert.addButton(withTitle: "Use Local Once")
+            return alert.runModal() == .alertFirstButtonReturn ? .openKeyFile : .useLocalOnce
+
+        case .rateLimited(let limitedProvider):
+            alert.messageText = "\(limitedProvider) quota or rate limit reached"
+            alert.informativeText = "This limit comes from \(limitedProvider), not HushType's Daily spend warning. Check provider usage or billing, or try again later."
             alert.addButton(withTitle: "Use Local Once")
             alert.addButton(withTitle: "Cancel")
             return alert.runModal() == .alertFirstButtonReturn ? .useLocalOnce : .cancel
@@ -1376,12 +1467,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.addButton(withTitle: "Cancel")
             return alert.runModal() == .alertFirstButtonReturn ? .useLocalOnce : .cancel
 
-        case .network, .timeout:
-            let timedOut: Bool
-            if case .timeout = error { timedOut = true } else { timedOut = false }
-            alert.messageText = timedOut
-                ? "Cloud transcription timed out"
-                : "Cloud transcription unavailable"
+        case .timeout:
+            alert.messageText = "Cloud transcription timed out"
+            alert.informativeText = "\(provider) did not respond within 180 seconds. The recording is still available."
+            alert.addButton(withTitle: "Retry Cloud")
+            alert.addButton(withTitle: "Use Local Once")
+            alert.addButton(withTitle: "Cancel")
+            switch alert.runModal() {
+            case .alertFirstButtonReturn: return .retryCloud
+            case .alertSecondButtonReturn: return .useLocalOnce
+            default: return .cancel
+            }
+
+        case .network:
+            alert.messageText = "Cloud transcription unavailable"
             alert.informativeText = "HushType could not reach \(provider). The recording is still available for local transcription."
             addStandardCloudFailureButtons(to: alert, preferSwitchToLocal: preferSwitchToLocal)
             return standardCloudFailureChoice(from: alert.runModal())
@@ -1449,13 +1548,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func postCloudCapNotification(
+    private func postDailySpendWarningNotification(
         snapshot: CloudUsageTracker.Snapshot,
-        cap: Double
+        threshold: Double
     ) {
         let content = UNMutableNotificationContent()
-        content.title = "Cloud daily-spend warning"
-        content.body = "Today's total is \(CloudUsageTracker.formatDollars(snapshot.dayDollars)) (cap: \(CloudUsageTracker.formatDollars(cap)))."
+        content.title = "Daily spend warning reached"
+        content.body = "Today's cloud total is \(CloudUsageTracker.formatDollars(snapshot.dayDollars)) (warning: \(CloudUsageTracker.formatDollars(threshold)))."
         UNUserNotificationCenter.current().add(
             UNNotificationRequest(
                 identifier: "hushtype-cloud-cap-\(snapshot.dayKey)",

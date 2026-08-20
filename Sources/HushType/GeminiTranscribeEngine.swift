@@ -7,6 +7,7 @@ private let geminiTranscribeLog = Logger(
 )
 
 final class GeminiTranscribeEngine: TranscriptionEngine {
+    static let requestTimeout: TimeInterval = 180
     private static let providerMaxSampleCount = 16_000 * 420
     private static let instruction = "Transcribe this audio verbatim. The speech may mix Mandarin and English; transcribe each language exactly as spoken. Use Traditional Chinese (繁體中文) characters for all Mandarin. Output only the transcript."
 
@@ -15,8 +16,8 @@ final class GeminiTranscribeEngine: TranscriptionEngine {
 
     init() {
         let configuration = URLSessionConfiguration.default
-        configuration.timeoutIntervalForRequest = 15
-        configuration.timeoutIntervalForResource = 15
+        configuration.timeoutIntervalForRequest = Self.requestTimeout
+        configuration.timeoutIntervalForResource = Self.requestTimeout
         configuration.waitsForConnectivity = false
 
         let redirectDelegate = RedirectRefusingDelegate()
@@ -98,7 +99,7 @@ final class GeminiTranscribeEngine: TranscriptionEngine {
 
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-        request.timeoutInterval = 15
+        request.timeoutInterval = Self.requestTimeout
         request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = encodedBody
@@ -122,14 +123,7 @@ final class GeminiTranscribeEngine: TranscriptionEngine {
 
         guard (200..<300).contains(http.statusCode) else {
             logHTTPFailure(statusCode: http.statusCode, data: data)
-            switch http.statusCode {
-            case 401, 403:
-                throw TranscriptionError.auth
-            case 429:
-                throw TranscriptionError.rateLimited(provider: "Gemini")
-            default:
-                throw TranscriptionError.network
-            }
+            throw Self.mapHTTPFailure(statusCode: http.statusCode)
         }
 
         guard let object = try? JSONSerialization.jsonObject(with: data),
@@ -170,6 +164,21 @@ final class GeminiTranscribeEngine: TranscriptionEngine {
         }
 
         return DictationPostProcessor.apply(rawTranscript)
+    }
+
+    /// Status-only classification keeps provider attribution reliable without
+    /// coupling behavior to mutable, localized error-message strings.
+    static func mapHTTPFailure(statusCode: Int) -> TranscriptionError {
+        switch statusCode {
+        case 401:
+            return .auth
+        case 403:
+            return .permissionDenied(provider: "Gemini")
+        case 429:
+            return .rateLimited(provider: "Gemini")
+        default:
+            return .network
+        }
     }
 
     private func logHTTPFailure(statusCode: Int, data: Data) {

@@ -46,6 +46,17 @@ actor CloudUsageTracker {
         let translatedCaptionDollars: Double
     }
 
+    /// Conservative pre-upload decision for one cloud dictation. The projected
+    /// cost uses the same duration/rate math as persisted usage, and the total
+    /// aggregates dictation plus Live Translated Caption across providers.
+    struct DictationUploadProjection: Equatable, Sendable {
+        let currentDollars: Double
+        let projectedDollars: Double
+        let projectedTotalDollars: Double
+        let warningThreshold: Double
+        let shouldBlock: Bool
+    }
+
     private var sessionSeconds: Double = 0
     private var sessionDollars: Double = 0
     private var cachedDayKey: String
@@ -94,6 +105,32 @@ actor CloudUsageTracker {
     func snapshot() -> Snapshot {
         rolloverIfNeeded()
         return makeSnapshot()
+    }
+
+    /// Evaluate immediately before constructing/uploading a cloud request.
+    /// Equality blocks: the utterance that would first reach or cross the
+    /// user's Daily spend warning is kept local and never uploaded.
+    func evaluateDictationUpload(
+        seconds: Double,
+        dollarsPerMinute: Double,
+        warningThreshold: Double
+    ) -> DictationUploadProjection {
+        rolloverIfNeeded()
+        let projection = Self.makeDictationUploadProjection(
+            currentDollars: totalDollars(),
+            seconds: seconds,
+            dollarsPerMinute: dollarsPerMinute,
+            warningThreshold: warningThreshold,
+            warningAlreadyReached: dailyCapWarnedToday
+        )
+        if projection.shouldBlock && !dailyCapWarnedToday {
+            // Reaching the warning latches cloud dictation off for the rest of
+            // the day. Changing the threshold does not silently bypass the
+            // user's stop; only Reset counter clears this persisted latch.
+            dailyCapWarnedToday = true
+            UserDefaults.standard.set(true, forKey: Self.capWarnedKey(for: cachedDayKey))
+        }
+        return projection
     }
 
     func resetSession() {
@@ -160,7 +197,37 @@ actor CloudUsageTracker {
         }
     }
 
+    /// Pure policy seam used by unit tests. Invalid/negative usage inputs are
+    /// clamped to zero; an invalid threshold fails closed at zero.
+    static func makeDictationUploadProjection(
+        currentDollars: Double,
+        seconds: Double,
+        dollarsPerMinute: Double,
+        warningThreshold: Double,
+        warningAlreadyReached: Bool = false
+    ) -> DictationUploadProjection {
+        let current = sanitizedNonnegative(currentDollars)
+        let safeSeconds = sanitizedNonnegative(seconds)
+        let safeRate = sanitizedNonnegative(dollarsPerMinute)
+        let threshold = warningThreshold.isFinite
+            ? max(0, warningThreshold)
+            : 0
+        let projected = safeSeconds / 60.0 * safeRate
+        let total = current + projected
+        return DictationUploadProjection(
+            currentDollars: current,
+            projectedDollars: projected,
+            projectedTotalDollars: total,
+            warningThreshold: threshold,
+            shouldBlock: warningAlreadyReached || total >= threshold
+        )
+    }
+
     // MARK: - Private
+
+    private static func sanitizedNonnegative(_ value: Double) -> Double {
+        value.isFinite ? max(0, value) : 0
+    }
 
     private func record(
         seconds: Double,

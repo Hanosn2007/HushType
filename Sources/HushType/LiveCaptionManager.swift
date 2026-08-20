@@ -821,7 +821,7 @@ final class LiveCaptionManager {
         }
     }
 
-    // MARK: - Cloud watchdog (cost ticker + auto-stop + daily cap)
+    // MARK: - Cloud watchdog (cost ticker + auto-stop + daily spend warning)
 
     private func startCloudWatchdog() {
         let timer = DispatchSource.makeTimerSource(queue: .main)
@@ -850,14 +850,14 @@ final class LiveCaptionManager {
             return
         }
 
-        // Daily cap warning (one-time per day).
+        // Daily spend warning (one-time per day).
         let cap = AppConfig.shared.cloudDailyCapDollars
         let shouldWarn = await CloudUsageTracker.shared.shouldFireDailyCapWarning(cap: cap)
         if shouldWarn {
             await CloudUsageTracker.shared.markDailyCapWarned()
             postNotification(
-                title: "Cloud Live Caption — daily cap reached",
-                body: "You've used \(CloudUsageTracker.formatDollars(snap.dayDollars)) today (cap: \(CloudUsageTracker.formatDollars(cap)))."
+                title: "Daily spend warning reached",
+                body: "You've used \(CloudUsageTracker.formatDollars(snap.dayDollars)) today (warning: \(CloudUsageTracker.formatDollars(cap)))."
             )
         }
     }
