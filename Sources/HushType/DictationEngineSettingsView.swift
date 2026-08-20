@@ -1,22 +1,107 @@
 import SwiftUI
 import AppKit
 
-/// Layout skeleton for the Dictation Engine settings window (design canvas
-/// "Engine Settings Window"). All state is local `@State` placeholders; every
-/// dead control carries a `// WIRE:` comment naming what will bind there in a
-/// later task. No AppConfig reads, no key-store calls.
+extension Notification.Name {
+    static let hushTypeDictationEngineDidChange = Notification.Name(
+        "com.felix.hushtype.dictationEngineDidChange"
+    )
+}
+
+@MainActor
+final class DictationEngineSettingsModel: ObservableObject {
+    @Published var engine: AppConfig.DictationEngine {
+        didSet {
+            guard engine != oldValue else { return }
+            onSwitchEngine(engine)
+        }
+    }
+    @Published var openAIModel: String {
+        didSet { AppConfig.shared.cloudDictationModelOpenAI = openAIModel }
+    }
+    @Published var geminiModel: String {
+        didSet { AppConfig.shared.cloudDictationModelGemini = geminiModel }
+    }
+    @Published var dailyCap: Double {
+        didSet { AppConfig.shared.cloudDailyCapDollars = dailyCap }
+    }
+    @Published var usageLine = "Today's cloud usage: —"
+    @Published var openAIKeyStatus = "Status: —"
+    @Published var geminiKeyStatus = "Status: —"
+
+    private let onSwitchEngine: (AppConfig.DictationEngine) -> Void
+
+    init(onSwitchEngine: @escaping (AppConfig.DictationEngine) -> Void) {
+        self.onSwitchEngine = onSwitchEngine
+        engine = AppConfig.shared.dictationEngine
+        openAIModel = AppConfig.shared.cloudDictationModelOpenAI
+        geminiModel = AppConfig.shared.cloudDictationModelGemini
+        dailyCap = AppConfig.shared.cloudDailyCapDollars
+        refreshDerived()
+    }
+
+    var openAIRate: Double {
+        CloudUsageTracker.dictationRate(provider: .openai, model: openAIModel)
+    }
+
+    var geminiRate: Double {
+        CloudUsageTracker.dictationRate(provider: .gemini, model: geminiModel)
+    }
+
+    func refreshDerived() {
+        engine = AppConfig.shared.dictationEngine
+        openAIModel = AppConfig.shared.cloudDictationModelOpenAI
+        geminiModel = AppConfig.shared.cloudDictationModelGemini
+        dailyCap = AppConfig.shared.cloudDailyCapDollars
+        openAIKeyStatus = Self.openAIStatusLine(OpenAIKeyStore.load())
+        geminiKeyStatus = Self.geminiStatusLine(GeminiKeyStore.load())
+        Task { [weak self] in
+            let snapshot = await CloudUsageTracker.shared.snapshot()
+            await MainActor.run {
+                self?.usageLine = CloudUsageTracker.formatDailyBreakdown(snapshot)
+            }
+        }
+    }
+
+    func resetCounter() {
+        Task { [weak self] in
+            await CloudUsageTracker.shared.resetDailyCounter()
+            await MainActor.run { self?.refreshDerived() }
+        }
+    }
+
+    func openKeyFile(provider: CloudUsageTracker.Provider) {
+        switch provider {
+        case .openai: OpenAIKeyStore.openInDefaultEditor()
+        case .gemini: GeminiKeyStore.openInDefaultEditor()
+        }
+        refreshDerived()
+    }
+
+    private static func openAIStatusLine(_ status: OpenAIKeyStore.LoadStatus) -> String {
+        switch status {
+        case .ok: return "Status: ✓ Key loaded"
+        case .empty: return "Status: Key empty — OpenAI cloud features disabled"
+        case .unusualFormat: return "Status: Key format unusual — passing through anyway"
+        }
+    }
+
+    private static func geminiStatusLine(_ status: GeminiKeyStore.LoadStatus) -> String {
+        switch status {
+        case .ok: return "Status: ✓ Key loaded"
+        case .empty: return "Status: Key empty — Gemini cloud dictation disabled"
+        case .unusualFormat: return "Status: Key format unusual — passing through anyway"
+        }
+    }
+}
+
 struct DictationEngineSettingsView: View {
-    // Engine radio group. WIRE: bind to AppConfig.shared.dictationEngine.
-    @State private var engine: String = "local"
+    @StateObject private var model: DictationEngineSettingsModel
 
-    // OpenAI model picker. WIRE: bind to AppConfig.shared.dictationOpenAIModel.
-    @State private var openAIModel: String = "gpt-4o-mini-transcribe"
-
-    // Gemini model picker. WIRE: bind to AppConfig.shared.dictationGeminiModel.
-    @State private var geminiModel: String = "gemini-3.7-flash"
-
-    // Daily spend warning threshold. WIRE: bind to AppConfig.shared.cloudDailyCapDollars.
-    @State private var dailyCap: Double = 5.0
+    init(onSwitchEngine: @escaping (AppConfig.DictationEngine) -> Void) {
+        _model = StateObject(
+            wrappedValue: DictationEngineSettingsModel(onSwitchEngine: onSwitchEngine)
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -31,9 +116,14 @@ struct DictationEngineSettingsView: View {
         }
         .padding(20)
         .frame(width: 460, alignment: .topLeading)
+        .onAppear { model.refreshDerived() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            model.refreshDerived()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .hushTypeDictationEngineDidChange)) { _ in
+            model.refreshDerived()
+        }
     }
-
-    // MARK: - Sections
 
     private var sectionHeader: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -48,52 +138,47 @@ struct DictationEngineSettingsView: View {
 
     private var sectionEngine: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Engine", systemImage: "cpu")
-                .font(.headline)
+            Label("Engine", systemImage: "cpu").font(.headline)
 
-            // WIRE: bind selection to AppConfig.shared.dictationEngine.
-            Picker("", selection: $engine) {
+            Picker("", selection: $model.engine) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Local (Qwen3-ASR)")
                     Text("Private · Free · ~2.1 GB RAM when loaded")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-                .tag("local")
+                .tag(AppConfig.DictationEngine.local)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("OpenAI Cloud")
-                    Text("~$0.003–0.0045/min by model · No model RAM")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text("\(rateText(model.openAIRate)) · No model RAM")
+                        .font(.caption).foregroundStyle(.secondary)
                     HStack(spacing: 8) {
                         Text("Model:")
-                        Picker("", selection: $openAIModel) {
+                        Picker("", selection: $model.openAIModel) {
                             Text("gpt-4o-mini-transcribe (recommended)").tag("gpt-4o-mini-transcribe")
                             Text("gpt-transcribe").tag("gpt-transcribe")
                         }
                         .labelsHidden()
-                        .disabled(engine != "openai") // WIRE: enabled only when this engine is selected
+                        .disabled(model.engine != .openai)
                     }
                 }
-                .tag("openai")
+                .tag(AppConfig.DictationEngine.openai)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Gemini Cloud")
-                    Text("Free tier, then ~$0.0006–0.0014/min by model · No model RAM")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text("Free tier; metered at \(rateText(model.geminiRate)) · No model RAM")
+                        .font(.caption).foregroundStyle(.secondary)
                     HStack(spacing: 8) {
                         Text("Model:")
-                        Picker("", selection: $geminiModel) {
+                        Picker("", selection: $model.geminiModel) {
                             Text("gemini-3.7-flash (quality)").tag("gemini-3.7-flash")
                             Text("gemini-3.5-flash-lite (budget)").tag("gemini-3.5-flash-lite")
                         }
                         .labelsHidden()
-                        .disabled(engine != "gemini") // WIRE: enabled only when this engine is selected
+                        .disabled(model.engine != .gemini)
                     }
                 }
-                .tag("gemini")
+                .tag(AppConfig.DictationEngine.gemini)
             }
             .labelsHidden()
             .pickerStyle(.radioGroup)
@@ -107,69 +192,73 @@ struct DictationEngineSettingsView: View {
 
     private var sectionGuardrails: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Cost guardrails", systemImage: "dollarsign.circle")
-                .font(.headline)
+            Label("Cost guardrails", systemImage: "dollarsign.circle").font(.headline)
 
             HStack {
                 Text("Warn me when daily spend hits:")
-                Stepper(value: $dailyCap, in: 0.5...100.0, step: 0.5) {
-                    Text(String(format: "$%.2f", dailyCap))
+                Stepper(value: $model.dailyCap, in: 0.5...100.0, step: 0.5) {
+                    Text(CloudUsageTracker.formatDollars(model.dailyCap))
                         .frame(minWidth: 60, alignment: .trailing)
                         .monospacedDigit()
                 }
             }
 
             HStack {
-                // WIRE: replace with formatted line from
-                // CloudUsageTracker.shared.snapshot() (dictation vs translated
-                // caption split).
-                Text("Today's cloud usage: $0.00 total — dictation $0.00 (0 min), translated caption $0.00 (0 min)")
+                Text(model.usageLine)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer()
-                Button("Reset counter") {
-                    // WIRE: call CloudUsageTracker.shared.resetDailyCounter() and refresh the usage line.
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                Button("Reset counter") { model.resetCounter() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
             }
         }
     }
 
     private var sectionAPIKeys: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("API keys", systemImage: "key.fill")
-                .font(.headline)
-
-            apiKeySubsection(provider: "OpenAI", path: "~/Library/Application Support/HushType/openai.json")
-            apiKeySubsection(provider: "Gemini", path: "~/Library/Application Support/HushType/gemini.json")
+            Label("API keys", systemImage: "key.fill").font(.headline)
+            apiKeySubsection(
+                provider: "OpenAI",
+                path: OpenAIKeyStore.displayPath,
+                status: model.openAIKeyStatus,
+                providerID: .openai
+            )
+            apiKeySubsection(
+                provider: "Gemini",
+                path: GeminiKeyStore.displayPath,
+                status: model.geminiKeyStatus,
+                providerID: .gemini
+            )
         }
     }
 
-    private func apiKeySubsection(provider: String, path: String) -> some View {
+    private func apiKeySubsection(
+        provider: String,
+        path: String,
+        status: String,
+        providerID: CloudUsageTracker.Provider
+    ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(provider).font(.body.bold())
             Text(path)
-                // WIRE: OpenAIKeyStore.displayPath / GeminiKeyStore.displayPath
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
             HStack {
-                Button("Open file in TextEdit") {
-                    // WIRE: OpenAIKeyStore.openInDefaultEditor() /
-                    // GeminiKeyStore.openInDefaultEditor()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                Button("Open file in TextEdit") { model.openKeyFile(provider: providerID) }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
                 Spacer()
             }
-            // WIRE: key status line from OpenAIKeyStore.load() /
-            // GeminiKeyStore.load() (mirrors LiveCaptionEngineSettingsModel).
-            Text("Status: —")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text(status).font(.caption).foregroundStyle(.secondary)
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor)))
+    }
+
+    private func rateText(_ rate: Double) -> String {
+        String(format: "$%.3f/min", rate)
     }
 }

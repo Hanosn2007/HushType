@@ -15,8 +15,12 @@ final class DictationEngineSettingsWindowController: NSWindowController, NSWindo
         return controller
     }()
 
+    private var onSwitchEngine: ((AppConfig.DictationEngine) -> Void)?
+
     private init() {
-        let hosting = NSHostingController(rootView: DictationEngineSettingsView())
+        let hosting = NSHostingController(rootView: DictationEngineSettingsView { engine in
+            DictationEngineSettingsWindowController.shared.onSwitchEngine?(engine)
+        })
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 460, height: 600),
@@ -41,7 +45,8 @@ final class DictationEngineSettingsWindowController: NSWindowController, NSWindo
 
     /// Bring the window to front, activating the app if necessary so the
     /// window can take focus from any frontmost menu-bar invocation.
-    func presentAndFocus() {
+    func presentAndFocus(onSwitchEngine: @escaping (AppConfig.DictationEngine) -> Void) {
+        self.onSwitchEngine = onSwitchEngine
         NSApp.activate(ignoringOtherApps: true)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)

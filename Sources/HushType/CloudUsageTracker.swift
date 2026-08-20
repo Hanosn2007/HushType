@@ -3,162 +3,351 @@ import os
 
 private let log = Logger(subsystem: "com.felix.hushtype", category: "cloudUsage")
 
-/// Tracks audio-second usage for the cloud Live Caption engine and projects it
-/// to a cost figure for the in-panel ticker and daily cap.
-///
-/// Pricing (gpt-realtime-translate, 2026-05-14): **$0.034 / minute of audio**.
-/// Counter formula: `seconds_sent / 60 * 0.034`. We count what we send (the
-/// backend calls `recordChunk` per outbound `session.input_audio_buffer.append`),
-/// not what OpenAI's dashboard bills — slightly conservative (over-counts
-/// silence buffers OpenAI may discount), which is the safe direction for a
-/// budget cap.
-///
-/// **Daily rollover (lazy, no daemon):** every `recordChunk` call checks whether
-/// today's `yyyy-MM-dd` key still matches the cached `dayKey`. If midnight has
-/// passed since the last chunk, the old total has already been persisted under
-/// the prior day's key — the in-memory `dayTotalDollars` is just reset to zero
-/// for the new day. No background timer required.
-///
-/// **Settings "Today's usage" read path** uses the same lazy-rollover read in
-/// `todayCostDollars()` so a session-less peek after midnight is also correct.
+/// One daily cloud budget shared by dictation and Live Translated Caption.
+/// Dollars and audio seconds are persisted per feature/provider bucket so the
+/// settings panes can explain the aggregate without splitting the user's cap.
 actor CloudUsageTracker {
+    enum Feature: String, CaseIterable, Sendable {
+        case dictation
+        case liveCaption
+    }
 
-    /// Per-minute pricing. Tuning constant; if OpenAI publishes a different
-    /// rate we patch here.
-    static let dollarsPerMinute: Double = 0.034
+    enum Provider: String, CaseIterable, Sendable {
+        case openai
+        case gemini
+    }
 
-    /// Singleton — the cost meter is global state (a chip in the panel header,
-    /// a daily total in Settings). One tracker shared across sessions.
+    enum Rate {
+        static let liveTranslatedCaption = 0.034
+        static let openAIGPTTranscribe = 0.006
+        static let openAIMiniTranscribe = 0.004
+        static let geminiFlash = 0.002
+        static let geminiFlashLite = 0.001
+    }
+
     static let shared = CloudUsageTracker()
 
-    private var sessionSeconds: Double = 0
-    private var cachedDayKey: String
-    private var cachedDayTotalDollars: Double
+    private struct Usage: Sendable {
+        var seconds: Double = 0
+        var dollars: Double = 0
+    }
 
-    /// Daily cap notification fires at most once per calendar day. Reset on
-    /// rollover.
-    private var dailyCapWarnedToday: Bool = false
-
-    /// Snapshot returned by mutating ops so the caller can update the ticker
-    /// chip and check cap thresholds without a second hop into the actor.
     struct Snapshot: Sendable {
+        /// Current Live Translated Caption session (kept for its ticker and
+        /// auto-stop logic). Dictation never contributes to session fields.
         let sessionSeconds: Double
         let sessionDollars: Double
+        /// Aggregate for all features/providers today.
         let dayDollars: Double
         let dayKey: String
+        let dictationSeconds: Double
+        let dictationDollars: Double
+        let translatedCaptionSeconds: Double
+        let translatedCaptionDollars: Double
     }
+
+    private var sessionSeconds: Double = 0
+    private var sessionDollars: Double = 0
+    private var cachedDayKey: String
+    private var buckets: [String: Usage] = [:]
+    private var dailyCapWarnedToday: Bool
 
     private init() {
         let today = Self.dayKey(for: Date())
-        self.cachedDayKey = today
-        self.cachedDayTotalDollars = UserDefaults.standard.double(forKey: Self.defaultsKey(for: today))
+        cachedDayKey = today
+        Self.migrateLegacyUsageIfNeeded(dayKey: today)
+        buckets = Self.loadBuckets(dayKey: today)
+        dailyCapWarnedToday = UserDefaults.standard.bool(
+            forKey: Self.capWarnedKey(for: today)
+        )
     }
 
-    /// Record an outbound audio chunk's duration. Returns the post-record
-    /// snapshot so the caller can drive UI without an extra round-trip.
+    /// Back-compatible entry point for the existing realtime translation
+    /// backend. Its rate is supplied per call rather than being global state.
     @discardableResult
     func recordChunk(seconds: Double) -> Snapshot {
-        rolloverIfNeeded()
-        sessionSeconds += seconds
-        let dollars = seconds / 60.0 * Self.dollarsPerMinute
-        cachedDayTotalDollars += dollars
-        // Persist the daily total to UserDefaults. UserDefaults is thread-safe
-        // for primitive sets and the write coalesces — no fsync required per
-        // chunk because the OS flushes opportunistically and on app exit.
-        UserDefaults.standard.set(cachedDayTotalDollars, forKey: Self.defaultsKey(for: cachedDayKey))
-        return Snapshot(
-            sessionSeconds: sessionSeconds,
-            sessionDollars: sessionSeconds / 60.0 * Self.dollarsPerMinute,
-            dayDollars: cachedDayTotalDollars,
-            dayKey: cachedDayKey
+        record(
+            seconds: seconds,
+            feature: .liveCaption,
+            provider: .openai,
+            dollarsPerMinute: Rate.liveTranslatedCaption,
+            contributesToCaptionSession: true
         )
     }
 
-    /// Read-only snapshot. Lazy-rolls midnight too so a session-less peek
-    /// (e.g. opening Settings after midnight) reflects the fresh day.
+    /// Record one completed cloud dictation at the selected model's rate.
+    @discardableResult
+    func recordDictation(
+        seconds: Double,
+        provider: Provider,
+        dollarsPerMinute: Double
+    ) -> Snapshot {
+        record(
+            seconds: seconds,
+            feature: .dictation,
+            provider: provider,
+            dollarsPerMinute: dollarsPerMinute,
+            contributesToCaptionSession: false
+        )
+    }
+
     func snapshot() -> Snapshot {
         rolloverIfNeeded()
-        return Snapshot(
-            sessionSeconds: sessionSeconds,
-            sessionDollars: sessionSeconds / 60.0 * Self.dollarsPerMinute,
-            dayDollars: cachedDayTotalDollars,
-            dayKey: cachedDayKey
-        )
+        return makeSnapshot()
     }
 
-    /// Reset session totals for a new cloud session. Daily totals are
-    /// untouched.
     func resetSession() {
         sessionSeconds = 0
+        sessionDollars = 0
     }
 
-    /// Mark the daily-cap warning as fired so we don't fire it again before
-    /// midnight rollover. Caller checks `shouldFireDailyCapWarning(cap:)`
-    /// first.
     func markDailyCapWarned() {
+        rolloverIfNeeded()
         dailyCapWarnedToday = true
+        UserDefaults.standard.set(true, forKey: Self.capWarnedKey(for: cachedDayKey))
     }
 
-    /// Check whether today's total has crossed the cap AND we haven't fired
-    /// the one-time notification yet today.
     func shouldFireDailyCapWarning(cap: Double) -> Bool {
         rolloverIfNeeded()
-        return !dailyCapWarnedToday && cachedDayTotalDollars >= cap
+        guard !dailyCapWarnedToday, totalDollars() >= cap else { return false }
+        // Claim atomically inside the actor. Existing callers still invoke
+        // markDailyCapWarned() after a true result; that idempotent write is
+        // retained for API compatibility with LiveCaptionManager.
+        dailyCapWarnedToday = true
+        UserDefaults.standard.set(true, forKey: Self.capWarnedKey(for: cachedDayKey))
+        return true
     }
 
-    /// Reset today's daily counter to zero — wired to the [Reset counter]
-    /// button in Settings.
+    /// Reset every feature/provider bucket for today. This intentionally
+    /// includes the legacy key so it cannot be migrated back on next launch.
     func resetDailyCounter() {
-        cachedDayTotalDollars = 0
-        UserDefaults.standard.set(0.0, forKey: Self.defaultsKey(for: cachedDayKey))
+        rolloverIfNeeded()
+        let defaults = UserDefaults.standard
+        for feature in Feature.allCases {
+            for provider in Provider.allCases {
+                defaults.set(0.0, forKey: Self.dollarsKey(
+                    feature: feature,
+                    provider: provider,
+                    dayKey: cachedDayKey
+                ))
+                defaults.set(0.0, forKey: Self.secondsKey(
+                    feature: feature,
+                    provider: provider,
+                    dayKey: cachedDayKey
+                ))
+            }
+        }
+        defaults.set(0.0, forKey: Self.legacyDollarsKey(for: cachedDayKey))
+        defaults.set(true, forKey: Self.migrationKey(for: cachedDayKey))
+        defaults.set(false, forKey: Self.capWarnedKey(for: cachedDayKey))
+        buckets = Self.loadBuckets(dayKey: cachedDayKey)
         dailyCapWarnedToday = false
-        log.info("Reset daily cloud usage counter for \(self.cachedDayKey, privacy: .public)")
+        log.info("Reset daily cloud usage family for \(self.cachedDayKey, privacy: .public)")
+    }
+
+    static func dictationRate(provider: Provider, model: String) -> Double {
+        switch (provider, model) {
+        case (.openai, "gpt-transcribe"):
+            return Rate.openAIGPTTranscribe
+        case (.openai, _):
+            return Rate.openAIMiniTranscribe
+        case (.gemini, "gemini-3.5-flash-lite"):
+            return Rate.geminiFlashLite
+        case (.gemini, _):
+            return Rate.geminiFlash
+        }
     }
 
     // MARK: - Private
 
-    private func rolloverIfNeeded() {
-        let today = Self.dayKey(for: Date())
-        if today != cachedDayKey {
-            log.info("Cloud usage day rollover: \(self.cachedDayKey, privacy: .public) → \(today, privacy: .public)")
-            cachedDayKey = today
-            // Load any pre-existing value for today (e.g. user opened the app
-            // earlier today, closed it, reopened tonight) instead of
-            // overwriting it with zero.
-            cachedDayTotalDollars = UserDefaults.standard.double(forKey: Self.defaultsKey(for: today))
-            dailyCapWarnedToday = false
+    private func record(
+        seconds: Double,
+        feature: Feature,
+        provider: Provider,
+        dollarsPerMinute: Double,
+        contributesToCaptionSession: Bool
+    ) -> Snapshot {
+        rolloverIfNeeded()
+        let safeSeconds = max(0, seconds)
+        let dollars = safeSeconds / 60.0 * max(0, dollarsPerMinute)
+        let bucketID = Self.bucketID(feature: feature, provider: provider)
+        var usage = buckets[bucketID] ?? Usage()
+        usage.seconds += safeSeconds
+        usage.dollars += dollars
+        buckets[bucketID] = usage
+
+        let defaults = UserDefaults.standard
+        defaults.set(usage.dollars, forKey: Self.dollarsKey(
+            feature: feature,
+            provider: provider,
+            dayKey: cachedDayKey
+        ))
+        defaults.set(usage.seconds, forKey: Self.secondsKey(
+            feature: feature,
+            provider: provider,
+            dayKey: cachedDayKey
+        ))
+
+        if contributesToCaptionSession {
+            sessionSeconds += safeSeconds
+            sessionDollars += dollars
+        }
+        return makeSnapshot()
+    }
+
+    private func makeSnapshot() -> Snapshot {
+        let dictation = usage(for: .dictation)
+        let caption = usage(for: .liveCaption)
+        return Snapshot(
+            sessionSeconds: sessionSeconds,
+            sessionDollars: sessionDollars,
+            dayDollars: dictation.dollars + caption.dollars,
+            dayKey: cachedDayKey,
+            dictationSeconds: dictation.seconds,
+            dictationDollars: dictation.dollars,
+            translatedCaptionSeconds: caption.seconds,
+            translatedCaptionDollars: caption.dollars
+        )
+    }
+
+    private func usage(for feature: Feature) -> Usage {
+        Provider.allCases.reduce(into: Usage()) { total, provider in
+            let usage = buckets[Self.bucketID(feature: feature, provider: provider)] ?? Usage()
+            total.seconds += usage.seconds
+            total.dollars += usage.dollars
         }
     }
 
-    private static func dayKey(for date: Date) -> String {
-        let fmt = DateFormatter()
-        fmt.calendar = Calendar(identifier: .gregorian)
-        fmt.locale = Locale(identifier: "en_US_POSIX")
-        fmt.timeZone = .current
-        fmt.dateFormat = "yyyy-MM-dd"
-        return fmt.string(from: date)
+    private func totalDollars() -> Double {
+        buckets.values.reduce(0) { $0 + $1.dollars }
     }
 
-    private static func defaultsKey(for dayKey: String) -> String {
+    private func rolloverIfNeeded() {
+        let today = Self.dayKey(for: Date())
+        guard today != cachedDayKey else { return }
+        log.info("Cloud usage day rollover: \(self.cachedDayKey, privacy: .public) → \(today, privacy: .public)")
+        cachedDayKey = today
+        Self.migrateLegacyUsageIfNeeded(dayKey: today)
+        buckets = Self.loadBuckets(dayKey: today)
+        sessionSeconds = 0
+        sessionDollars = 0
+        dailyCapWarnedToday = UserDefaults.standard.bool(
+            forKey: Self.capWarnedKey(for: today)
+        )
+    }
+
+    private static func loadBuckets(dayKey: String) -> [String: Usage] {
+        let defaults = UserDefaults.standard
+        var result: [String: Usage] = [:]
+        for feature in Feature.allCases {
+            for provider in Provider.allCases {
+                result[bucketID(feature: feature, provider: provider)] = Usage(
+                    seconds: defaults.double(forKey: secondsKey(
+                        feature: feature,
+                        provider: provider,
+                        dayKey: dayKey
+                    )),
+                    dollars: defaults.double(forKey: dollarsKey(
+                        feature: feature,
+                        provider: provider,
+                        dayKey: dayKey
+                    ))
+                )
+            }
+        }
+        return result
+    }
+
+    /// The old tracker stored one daily Live Translated Caption total at
+    /// `hushtype.cloud.dailyUsage.<day>`. Move it once into the new
+    /// liveCaption/openai bucket so an upgrade does not erase today's spend.
+    private static func migrateLegacyUsageIfNeeded(dayKey: String) {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: migrationKey(for: dayKey)) else { return }
+        let legacyKey = legacyDollarsKey(for: dayKey)
+        let legacyDollars = defaults.double(forKey: legacyKey)
+        let destination = dollarsKey(
+            feature: .liveCaption,
+            provider: .openai,
+            dayKey: dayKey
+        )
+        if legacyDollars > 0, defaults.object(forKey: destination) == nil {
+            defaults.set(legacyDollars, forKey: destination)
+            // The legacy bucket used one fixed $0.034/min rate, so recover
+            // its duration exactly enough for the new feature breakdown.
+            // Without this, upgraded users would see non-zero caption spend
+            // paired with a misleading "(0 min)" label.
+            let legacySeconds = legacyDollars / Rate.liveTranslatedCaption * 60.0
+            defaults.set(
+                legacySeconds,
+                forKey: secondsKey(
+                    feature: .liveCaption,
+                    provider: .openai,
+                    dayKey: dayKey
+                )
+            )
+        }
+        defaults.set(true, forKey: migrationKey(for: dayKey))
+    }
+
+    private static func bucketID(feature: Feature, provider: Provider) -> String {
+        "\(feature.rawValue).\(provider.rawValue)"
+    }
+
+    private static func dollarsKey(feature: Feature, provider: Provider, dayKey: String) -> String {
+        "hushtype.cloud.dailyUsage.\(feature.rawValue).\(provider.rawValue).\(dayKey)"
+    }
+
+    private static func secondsKey(feature: Feature, provider: Provider, dayKey: String) -> String {
+        "hushtype.cloud.dailyUsage.seconds.\(feature.rawValue).\(provider.rawValue).\(dayKey)"
+    }
+
+    private static func legacyDollarsKey(for dayKey: String) -> String {
         "hushtype.cloud.dailyUsage.\(dayKey)"
+    }
+
+    private static func migrationKey(for dayKey: String) -> String {
+        "hushtype.cloud.dailyUsage.migrated.\(dayKey)"
+    }
+
+    private static func capWarnedKey(for dayKey: String) -> String {
+        "hushtype.cloud.dailyUsage.capWarned.\(dayKey)"
+    }
+
+    private static func dayKey(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
     }
 }
 
 extension CloudUsageTracker {
-    /// Pretty-print the session timer as `MM:SS` (or `H:MM:SS` past an hour).
     static func formatSessionTime(seconds: Double) -> String {
         let total = Int(seconds)
-        let h = total / 3600
-        let m = (total % 3600) / 60
-        let s = total % 60
-        if h > 0 {
-            return String(format: "%d:%02d:%02d", h, m, s)
-        } else {
-            return String(format: "%d:%02d", m, s)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let seconds = total % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
         }
+        return String(format: "%d:%02d", minutes, seconds)
     }
 
     static func formatDollars(_ dollars: Double) -> String {
         String(format: "$%.2f", dollars)
+    }
+
+    static func formatDailyBreakdown(_ snapshot: Snapshot) -> String {
+        String(
+            format: "Today's cloud usage: %@ total — dictation %@ (%d min), translated caption %@ (%d min)",
+            formatDollars(snapshot.dayDollars),
+            formatDollars(snapshot.dictationDollars),
+            Int(snapshot.dictationSeconds / 60.0),
+            formatDollars(snapshot.translatedCaptionDollars),
+            Int(snapshot.translatedCaptionSeconds / 60.0)
+        )
     }
 }

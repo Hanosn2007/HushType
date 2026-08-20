@@ -1,6 +1,7 @@
 import AppKit
 import MLX
 import os
+import UserNotifications
 
 private let log = Logger(subsystem: "com.felix.hushtype", category: "app")
 
@@ -103,6 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var translationManager: TranslationManager!
     private var liveCaptionManager: LiveCaptionManager?
     private let tapArbiter = TapArbiter()
+    private var consecutiveCloudNetworkFailures = 0
 
     private enum SelectionSource {
         case copySelection
@@ -175,8 +177,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         audioCapture.onRMSLevel = { [weak self] level in
             DispatchQueue.main.async {
                 guard let self else { return }
-                if case .recording = self.overlayState.state {
-                    self.overlayState.state = .recording(level: level)
+                if case .recording(_, let provider) = self.overlayState.state {
+                    self.overlayState.state = .recording(level: level, provider: provider)
                 }
             }
         }
@@ -195,6 +197,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         statusBar.onReloadModel = { [weak self] in
             self?.reloadModel()
+        }
+        statusBar.onDictationEngineChanged = { [weak self] engine in
+            self?.switchDictationEngine(to: engine)
         }
 
         // Wire Live Caption (local) submenu. The manager exists from launch;
@@ -305,14 +310,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showOverlayRecording() {
         guard AppConfig.shared.floatingOverlayEnabled else { return }
-        overlayState.state = .recording(level: 0)
+        let provider: String?
+        switch AppConfig.shared.dictationEngine {
+        case .local: provider = nil
+        case .openai: provider = "OpenAI"
+        case .gemini: provider = "Gemini"
+        }
+        overlayState.state = .recording(level: 0, provider: provider)
         overlayWindow.show()
     }
 
     private func switchOverlayToTranscribing() {
         guard AppConfig.shared.floatingOverlayEnabled else { return }
         // Window stays visible; only the inner state changes.
-        overlayState.state = .transcribing
+        let provider: String?
+        switch AppConfig.shared.dictationEngine {
+        case .local: provider = nil
+        case .openai: provider = "OpenAI"
+        case .gemini: provider = "Gemini"
+        }
+        overlayState.state = .transcribing(provider: provider)
     }
 
     private func showOverlayPolishing() {
@@ -430,47 +447,165 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         print("[HushType] Transcribing...")
 
         let language = AppConfig.shared.language
+        let selection = AppConfig.shared.dictationEngine
+        let insertionFocus = captureInsertionFocus()
 
-        Task.detached { [weak self] in
-            let text: String
-            do {
-                text = try await self?.activeEngine.transcribe(
-                    audio: samples,
-                    language: language
-                ) ?? ""
-            } catch {
-                log.error("Transcription failed: \(error.localizedDescription, privacy: .public)")
-                if AppConfig.shared.dictationEngine != .local {
-                    await MainActor.run {
-                        self?.presentCloudFailureAlert(error: error) {
-                            // T4 wires Use Local Once / Switch to Local / Cancel
-                            // here while retaining `samples` for the retry.
-                        }
-                    }
-                }
-                text = ""
-            }
-
-            print("[HushType] Transcription result: '\(text)'")
-
-            await MainActor.run {
-                guard let self, !text.isEmpty else {
-                    print("[HushType] Empty transcription, skipping insert")
-                    self?.state = .idle
-                    self?.statusBar.setState(.idle)
-                    self?.hideOverlay()
-                    return
-                }
-
-                print("[HushType] Inserting text...")
-                self.state = .inserting
-                TextInserter.insert(text)
-                self.state = .idle
-                self.statusBar.setState(.idle)
-                self.hideOverlay()
-                print("[HushType] Done")
+        if selection == .local {
+            launchTranscription(
+                samples: samples,
+                language: language,
+                selection: selection,
+                insertionFocus: insertionFocus
+            )
+        } else {
+            // The hotkey callbacks originate inside CGEventTap. Queue consent
+            // for the next main-loop turn so NSAlert never blocks that tap.
+            DispatchQueue.main.async { [weak self] in
+                self?.continueCloudTranscriptionAfterConsent(
+                    samples: samples,
+                    language: language,
+                    selection: selection,
+                    insertionFocus: insertionFocus
+                )
             }
         }
+    }
+
+    private func continueCloudTranscriptionAfterConsent(
+        samples: [Float],
+        language: String?,
+        selection: AppConfig.DictationEngine,
+        insertionFocus: NSRunningApplication?
+    ) {
+        guard state == .transcribing else { return }
+        let provider = consentProvider(for: selection)
+        guard let provider else { return }
+
+        if !CloudDictationOnboardingAlert.shared.hasConsent(for: provider),
+           CloudDictationOnboardingAlert.shared.requestConsent(for: provider) == .revertToLocal {
+            switchDictationEngine(to: .local)
+            hideOverlay()
+            if localEngine.isLoaded {
+                state = .idle
+                statusBar.setState(.idle)
+            }
+            Task { @MainActor [weak self] in
+                _ = await self?.restoreInsertionFocus(insertionFocus)
+            }
+            return
+        }
+
+        // Guard before WAV encoding or request construction. The cloud engine
+        // repeats the guard as defense in depth.
+        guard samples.count <= 16_000 * 600 else {
+            Task { @MainActor [weak self] in
+                await self?.handleCloudFailure(
+                    .payloadTooLarge,
+                    samples: samples,
+                    language: language,
+                    selection: selection,
+                    insertionFocus: insertionFocus
+                )
+            }
+            return
+        }
+
+        launchTranscription(
+            samples: samples,
+            language: language,
+            selection: selection,
+            insertionFocus: insertionFocus
+        )
+    }
+
+    private func launchTranscription(
+        samples: [Float],
+        language: String?,
+        selection: AppConfig.DictationEngine,
+        insertionFocus: NSRunningApplication?
+    ) {
+        let engine = activeEngine!
+        let metering: (CloudUsageTracker.Provider, Double)? = {
+            guard let provider = Self.usageProvider(for: selection) else { return nil }
+            let model: String
+            switch selection {
+            case .openai: model = AppConfig.shared.cloudDictationModelOpenAI
+            case .gemini: model = AppConfig.shared.cloudDictationModelGemini
+            case .local: return nil
+            }
+            return (
+                provider,
+                CloudUsageTracker.dictationRate(provider: provider, model: model)
+            )
+        }()
+        Task.detached { [weak self, engine] in
+            do {
+                let text = try await engine.transcribe(audio: samples, language: language)
+                if let (provider, rate) = metering {
+                    let snapshot = await CloudUsageTracker.shared.recordDictation(
+                        seconds: Double(samples.count) / 16_000.0,
+                        provider: provider,
+                        dollarsPerMinute: rate
+                    )
+                    let cap = AppConfig.shared.cloudDailyCapDollars
+                    if await CloudUsageTracker.shared.shouldFireDailyCapWarning(cap: cap) {
+                        await CloudUsageTracker.shared.markDailyCapWarned()
+                        await self?.postCloudCapNotification(snapshot: snapshot, cap: cap)
+                    }
+                }
+                await self?.finishSuccessfulTranscription(
+                    text,
+                    insertionFocus: insertionFocus,
+                    resetNetworkFailures: selection != .local
+                )
+            } catch {
+                log.error("Transcription failed: \(error.localizedDescription, privacy: .public)")
+                guard selection != .local else {
+                    await self?.finishWithoutInsertion(restoreFocus: insertionFocus)
+                    return
+                }
+                let mapped = error as? TranscriptionError ?? .network
+                await self?.handleCloudFailure(
+                    mapped,
+                    samples: samples,
+                    language: language,
+                    selection: selection,
+                    insertionFocus: insertionFocus
+                )
+            }
+        }
+    }
+
+    private func finishSuccessfulTranscription(
+        _ text: String,
+        insertionFocus: NSRunningApplication?,
+        resetNetworkFailures: Bool
+    ) async {
+        if resetNetworkFailures { consecutiveCloudNetworkFailures = 0 }
+        _ = await restoreInsertionFocus(insertionFocus)
+        guard !text.isEmpty else {
+            print("[HushType] Empty transcription, skipping insert")
+            state = .idle
+            statusBar.setState(.idle)
+            hideOverlay()
+            return
+        }
+
+        print("[HushType] Transcription result: '\(text)'")
+        print("[HushType] Inserting text...")
+        state = .inserting
+        TextInserter.insert(text)
+        state = .idle
+        statusBar.setState(.idle)
+        hideOverlay()
+        print("[HushType] Done")
+    }
+
+    private func finishWithoutInsertion(restoreFocus application: NSRunningApplication?) async {
+        _ = await restoreInsertionFocus(application)
+        state = .idle
+        statusBar.setState(.idle)
+        hideOverlay()
     }
 
     private func handleTapDetected() {
@@ -898,6 +1033,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         AppConfig.shared.dictationEngine = engine
         activeEngine = makeDictationEngine(for: engine)
+        NotificationCenter.default.post(name: .hushTypeDictationEngineDidChange, object: nil)
 
         if engine == .local {
             if !localEngine.isLoaded {
@@ -1038,12 +1174,243 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// T4 replaces this stub with the async failure alert and buffer-retaining
-    /// choices. Keeping the named seam here prevents a cloud placeholder error
-    /// from being silently mistaken for an empty local transcript.
-    private func presentCloudFailureAlert(error: Error, completion: @escaping () -> Void) {
-        log.info("Cloud dictation failure alert deferred to T4: \(error.localizedDescription, privacy: .public)")
-        completion()
+    private enum CloudFailureChoice {
+        case useLocalOnce
+        case switchToLocal
+        case cancel
+        case openSettings
+        case openKeyFile
+    }
+
+    private func handleCloudFailure(
+        _ error: TranscriptionError,
+        samples: [Float],
+        language: String?,
+        selection: AppConfig.DictationEngine,
+        insertionFocus: NSRunningApplication?
+    ) async {
+        switch error {
+        case .network, .timeout:
+            consecutiveCloudNetworkFailures += 1
+        default:
+            consecutiveCloudNetworkFailures = 0
+        }
+
+        let choice = presentCloudFailureAlert(
+            error: error,
+            selection: selection,
+            preferSwitchToLocal: consecutiveCloudNetworkFailures >= 2
+        )
+
+        switch choice {
+        case .useLocalOnce:
+            await transcribeLocallyOnce(
+                samples: samples,
+                language: language,
+                insertionFocus: insertionFocus
+            )
+        case .switchToLocal:
+            switchDictationEngine(to: .local)
+            hideOverlay()
+            if localEngine.isLoaded {
+                state = .idle
+                statusBar.setState(.idle)
+            }
+            _ = await restoreInsertionFocus(insertionFocus)
+        case .cancel:
+            await finishWithoutInsertion(restoreFocus: insertionFocus)
+        case .openSettings:
+            state = .idle
+            statusBar.setState(.idle)
+            hideOverlay()
+            DictationEngineSettingsWindowController.shared.presentAndFocus(
+                onSwitchEngine: { [weak self] engine in
+                    self?.switchDictationEngine(to: engine)
+                }
+            )
+        case .openKeyFile:
+            state = .idle
+            statusBar.setState(.idle)
+            hideOverlay()
+            switch selection {
+            case .openai: OpenAIKeyStore.openInDefaultEditor()
+            case .gemini: GeminiKeyStore.openInDefaultEditor()
+            case .local: break
+            }
+        }
+    }
+
+    private func transcribeLocallyOnce(
+        samples: [Float],
+        language: String?,
+        insertionFocus: NSRunningApplication?
+    ) async {
+        do {
+            if !localEngine.isLoaded {
+                state = .loading
+                statusBar.setState(.loading(0))
+                try await localEngine.load { [weak self] progress, _ in
+                    DispatchQueue.main.async {
+                        self?.statusBar.setState(.loading(progress))
+                    }
+                }
+            }
+            state = .transcribing
+            statusBar.setState(.transcribing)
+            if AppConfig.shared.floatingOverlayEnabled {
+                overlayState.state = .transcribing(provider: nil)
+            }
+            let text = try await localEngine.transcribe(audio: samples, language: language)
+            await finishSuccessfulTranscription(
+                text,
+                insertionFocus: insertionFocus,
+                resetNetworkFailures: false
+            )
+        } catch {
+            log.error("Use Local Once failed: \(error.localizedDescription, privacy: .public)")
+            let alert = NSAlert()
+            alert.messageText = "Local transcription failed"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            await finishWithoutInsertion(restoreFocus: insertionFocus)
+        }
+    }
+
+    private func presentCloudFailureAlert(
+        error: TranscriptionError,
+        selection: AppConfig.DictationEngine,
+        preferSwitchToLocal: Bool
+    ) -> CloudFailureChoice {
+        let provider = providerName(for: selection)
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+
+        switch error {
+        case .noKey:
+            alert.messageText = "API key not set"
+            alert.informativeText = "Add your \(provider) API key in Dictation Engine Settings before using cloud dictation."
+            alert.addButton(withTitle: "Open Settings")
+            alert.addButton(withTitle: "Switch to Local")
+            alert.addButton(withTitle: "Cancel")
+            switch alert.runModal() {
+            case .alertFirstButtonReturn: return .openSettings
+            case .alertSecondButtonReturn: return .switchToLocal
+            default: return .cancel
+            }
+
+        case .auth:
+            let path = selection == .gemini ? GeminiKeyStore.displayPath : OpenAIKeyStore.displayPath
+            alert.messageText = "\(provider) rejected the API key"
+            alert.informativeText = "Check \(path)."
+            alert.addButton(withTitle: "Open File")
+            alert.addButton(withTitle: "Use Local Once")
+            return alert.runModal() == .alertFirstButtonReturn ? .openKeyFile : .useLocalOnce
+
+        case .rateLimited:
+            alert.messageText = "\(provider) rate limit hit"
+            alert.informativeText = selection == .gemini
+                ? "You may have exhausted today's free tier."
+                : "Wait a moment before trying cloud dictation again."
+            alert.addButton(withTitle: "Use Local Once")
+            alert.addButton(withTitle: "Cancel")
+            return alert.runModal() == .alertFirstButtonReturn ? .useLocalOnce : .cancel
+
+        case .payloadTooLarge:
+            alert.messageText = "Recording too long for cloud transcription"
+            alert.informativeText = "This recording exceeds the cloud upload limit. No audio was uploaded."
+            alert.addButton(withTitle: "Use Local Once")
+            alert.addButton(withTitle: "Cancel")
+            return alert.runModal() == .alertFirstButtonReturn ? .useLocalOnce : .cancel
+
+        case .network, .timeout:
+            let timedOut: Bool
+            if case .timeout = error { timedOut = true } else { timedOut = false }
+            alert.messageText = timedOut
+                ? "Cloud transcription timed out"
+                : "Cloud transcription unavailable"
+            alert.informativeText = "HushType could not reach \(provider). The recording is still available for local transcription."
+            addStandardCloudFailureButtons(to: alert, preferSwitchToLocal: preferSwitchToLocal)
+            return standardCloudFailureChoice(from: alert.runModal())
+
+        case .malformedResponse:
+            alert.messageText = "\(provider) returned an unreadable transcript"
+            alert.informativeText = "Nothing was inserted. The recording is still available for local transcription."
+            addStandardCloudFailureButtons(to: alert, preferSwitchToLocal: false)
+            return standardCloudFailureChoice(from: alert.runModal())
+
+        case .safetyBlocked:
+            alert.messageText = "Gemini blocked this transcription"
+            alert.informativeText = "Nothing was inserted. The recording is still available for local transcription."
+            addStandardCloudFailureButtons(to: alert, preferSwitchToLocal: false)
+            return standardCloudFailureChoice(from: alert.runModal())
+        }
+    }
+
+    private func addStandardCloudFailureButtons(
+        to alert: NSAlert,
+        preferSwitchToLocal: Bool
+    ) {
+        alert.addButton(withTitle: "Use Local Once")
+        alert.addButton(withTitle: "Switch to Local")
+        alert.addButton(withTitle: "Cancel")
+        if preferSwitchToLocal {
+            alert.buttons[0].keyEquivalent = ""
+            alert.buttons[1].keyEquivalent = "\r"
+        }
+    }
+
+    private func standardCloudFailureChoice(from response: NSApplication.ModalResponse) -> CloudFailureChoice {
+        switch response {
+        case .alertFirstButtonReturn: return .useLocalOnce
+        case .alertSecondButtonReturn: return .switchToLocal
+        default: return .cancel
+        }
+    }
+
+    private func consentProvider(
+        for selection: AppConfig.DictationEngine
+    ) -> CloudDictationOnboardingAlert.Provider? {
+        switch selection {
+        case .local: return nil
+        case .openai: return .openai
+        case .gemini: return .gemini
+        }
+    }
+
+    nonisolated private static func usageProvider(
+        for selection: AppConfig.DictationEngine
+    ) -> CloudUsageTracker.Provider? {
+        switch selection {
+        case .local: return nil
+        case .openai: return .openai
+        case .gemini: return .gemini
+        }
+    }
+
+    private func providerName(for selection: AppConfig.DictationEngine) -> String {
+        switch selection {
+        case .local: return "Local"
+        case .openai: return "OpenAI"
+        case .gemini: return "Gemini"
+        }
+    }
+
+    private func postCloudCapNotification(
+        snapshot: CloudUsageTracker.Snapshot,
+        cap: Double
+    ) {
+        let content = UNMutableNotificationContent()
+        content.title = "Cloud daily-spend warning"
+        content.body = "Today's total is \(CloudUsageTracker.formatDollars(snapshot.dayDollars)) (cap: \(CloudUsageTracker.formatDollars(cap)))."
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(
+                identifier: "hushtype-cloud-cap-\(snapshot.dayKey)",
+                content: content,
+                trigger: nil
+            )
+        )
     }
 
     /// Capture before a modal that may lead to insertion, then reactivate and

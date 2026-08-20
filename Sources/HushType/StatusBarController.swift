@@ -19,6 +19,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let statusMenuItem: NSMenuItem
     private let languageMenu: NSMenu
     private var languageItems: [NSMenuItem] = []
+    private let dictationEngineMenu: NSMenu
+    private var dictationEngineItems: [NSMenuItem] = []
     private let punctuationMenu: NSMenu
     private var punctuationItems: [NSMenuItem] = []
     private var iosServerMenuItem: NSMenuItem!
@@ -51,6 +53,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     var onQuit: (() -> Void)?
     var onUnloadModel: (() -> Void)?
     var onReloadModel: (() -> Void)?
+    /// Both the menu radios and the settings window route through this one
+    /// AppDelegate switch path so Cloud → Local always reloads when needed.
+    var onDictationEngineChanged: ((AppConfig.DictationEngine) -> Void)?
     /// Fires when the user clicks the Live Caption menu item. AppDelegate
     /// wires this to start/stop the manager (and beeps if the manager isn't
     /// constructed yet because the ASR model is still loading).
@@ -128,6 +133,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         statusMenuItem.isEnabled = false
 
         languageMenu = NSMenu(title: "Speech-to-Text Language")
+        dictationEngineMenu = NSMenu(title: "Dictation Engine")
         punctuationMenu = NSMenu(title: "Punctuation Cleanup")
 
         super.init()
@@ -150,6 +156,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         // Refresh the combined status · memory row each time the menu opens
         refreshStatusLine()
+        updateDictationEngineCheckmarks()
+        updateUnloadMenuItem(for: currentState)
 
         // Refresh dictionary subtitle (entry count may change if user edited file externally)
         let dictSubAttrs: [NSAttributedString.Key: Any] = [
@@ -468,6 +476,37 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private func buildDictationSettingsSubmenu() -> NSMenu {
         let sub = NSMenu(title: "Dictation Settings")
 
+        let engineItem = NSMenuItem(title: "Dictation Engine", action: nil, keyEquivalent: "")
+        engineItem.submenu = dictationEngineMenu
+        let engines: [(String, AppConfig.DictationEngine)] = [
+            ("Local (Qwen3-ASR)", .local),
+            ("OpenAI Cloud", .openai),
+            ("Gemini Cloud", .gemini),
+        ]
+        for (title, engine) in engines {
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(dictationEngineSelected(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = engine.rawValue
+            dictationEngineMenu.addItem(item)
+            dictationEngineItems.append(item)
+        }
+        dictationEngineMenu.addItem(.separator())
+        let settingsItem = NSMenuItem(
+            title: "Engine Settings…",
+            action: #selector(openDictationEngineSettings),
+            keyEquivalent: ""
+        )
+        settingsItem.target = self
+        dictationEngineMenu.addItem(settingsItem)
+        updateDictationEngineCheckmarks()
+        sub.addItem(engineItem)
+
+        sub.addItem(.separator())
+
         // Language submenu
         let languageItem = NSMenuItem(title: "Speech-to-Text Language", action: nil, keyEquivalent: "")
         languageItem.submenu = languageMenu
@@ -554,6 +593,40 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         sub.addItem(dictionarySubtitleItem)
 
         return sub
+    }
+
+    // MARK: - Dictation Engine
+
+    @objc private func dictationEngineSelected(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let engine = AppConfig.DictationEngine(rawValue: raw) else { return }
+        onDictationEngineChanged?(engine)
+        updateDictationEngineCheckmarks()
+        refreshStatusLine()
+        updateUnloadMenuItem(for: currentState)
+    }
+
+    @objc private func openDictationEngineSettings() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            DictationEngineSettingsWindowController.shared.presentAndFocus(
+                onSwitchEngine: { [weak self] engine in
+                    guard let self else { return }
+                    self.onDictationEngineChanged?(engine)
+                    self.updateDictationEngineCheckmarks()
+                    self.refreshStatusLine()
+                    self.updateUnloadMenuItem(for: self.currentState)
+                }
+            )
+        }
+    }
+
+    private func updateDictationEngineCheckmarks() {
+        let selected = AppConfig.shared.dictationEngine.rawValue
+        for item in dictationEngineItems {
+            let raw = item.representedObject as? String
+            updateRadioAppearance(item, title: item.title, selected: raw == selected)
+        }
     }
 
     // MARK: - Language
@@ -1253,10 +1326,23 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     /// Re-renders the combined "<status> · Memory <footprint>" row.
     private func refreshStatusLine() {
-        statusMenuItem.title = "\(statusText(for: currentState)) · Memory \(MemoryUtils.formattedMemory())"
+        switch AppConfig.shared.dictationEngine {
+        case .local:
+            statusMenuItem.title = "\(statusText(for: currentState)) · Memory \(MemoryUtils.formattedMemory())"
+        case .openai:
+            statusMenuItem.title = "\(statusText(for: currentState)) · Cloud (OpenAI) · No model loaded"
+        case .gemini:
+            statusMenuItem.title = "\(statusText(for: currentState)) · Cloud (Gemini) · No model loaded"
+        }
     }
 
     private func updateUnloadMenuItem(for state: State) {
+        let localSelected = AppConfig.shared.dictationEngine == .local
+        unloadMenuItem.isHidden = !localSelected
+        guard localSelected else {
+            unloadMenuItem.isEnabled = false
+            return
+        }
         switch state {
         case .idle:
             unloadMenuItem.isEnabled = true
