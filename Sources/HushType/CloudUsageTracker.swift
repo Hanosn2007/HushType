@@ -229,8 +229,6 @@ actor CloudUsageTracker {
         cachedDayKey = today
         Self.migrateLegacyUsageIfNeeded(dayKey: today)
         buckets = Self.loadBuckets(dayKey: today)
-        sessionSeconds = 0
-        sessionDollars = 0
         dailyCapWarnedToday = UserDefaults.standard.bool(
             forKey: Self.capWarnedKey(for: today)
         )

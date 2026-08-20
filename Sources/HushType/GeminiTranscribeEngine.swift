@@ -7,7 +7,7 @@ private let geminiTranscribeLog = Logger(
 )
 
 final class GeminiTranscribeEngine: TranscriptionEngine {
-    private static let maxSampleCount = 16_000 * 600
+    private static let providerMaxSampleCount = 16_000 * 420
     private static let instruction = "Transcribe this audio verbatim. The speech may mix Mandarin and English; transcribe each language exactly as spoken. Use Traditional Chinese (繁體中文) characters for all Mandarin. Output only the transcript."
 
     private let redirectDelegate: RedirectRefusingDelegate
@@ -28,7 +28,12 @@ final class GeminiTranscribeEngine: TranscriptionEngine {
         )
     }
 
+    deinit {
+        session.finishTasksAndInvalidate()
+    }
+
     var isLoaded: Bool { true }
+    var maxSampleCount: Int? { Self.providerMaxSampleCount }
 
     func load(progressHandler: ((Double, String) -> Void)?) async throws {}
 
@@ -41,7 +46,7 @@ final class GeminiTranscribeEngine: TranscriptionEngine {
             throw TranscriptionError.noKey
         }
 
-        guard audio.count <= Self.maxSampleCount else {
+        guard audio.count <= Self.providerMaxSampleCount else {
             throw TranscriptionError.payloadTooLarge
         }
         guard !audio.isEmpty else { return "" }

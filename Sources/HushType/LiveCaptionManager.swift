@@ -233,6 +233,11 @@ final class LiveCaptionManager {
                         }
                     }
                     asrModel = localEngine.loadedModel
+                } catch is CancellationError {
+                    asrModel = nil
+                    vm.headerState = .live
+                    hidePanel()
+                    return
                 } catch {
                     log.error("Qwen model load failed: \(error.localizedDescription, privacy: .public)")
                     showASRLoadFailedAlert(error)

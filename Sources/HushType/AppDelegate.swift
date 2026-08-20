@@ -139,10 +139,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // little more OS alloc/free churn.
         MLX.Memory.cacheLimit = 1024 * 1024 * 1024  // 1 GB
 
-        statusBar = StatusBarController()
+        localEngine = Qwen3TranscriptionEngine()
+        statusBar = StatusBarController(localEngine: localEngine)
         hotkeyManager = HotkeyManager()
         audioCapture = AudioCaptureService()
-        localEngine = Qwen3TranscriptionEngine()
         activeEngine = makeDictationEngine(for: AppConfig.shared.dictationEngine)
         translationManager = TranslationManager()
         let manager = LiveCaptionManager(
@@ -497,7 +497,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Guard before WAV encoding or request construction. The cloud engine
         // repeats the guard as defense in depth.
-        guard samples.count <= 16_000 * 600 else {
+        if let maxSampleCount = activeEngine.maxSampleCount,
+           samples.count > maxSampleCount {
             Task { @MainActor [weak self] in
                 await self?.handleCloudFailure(
                     .payloadTooLarge,
@@ -565,6 +566,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
                 let mapped = error as? TranscriptionError ?? .network
+                switch mapped {
+                case .malformedResponse, .safetyBlocked, .timeout:
+                    if let (provider, rate) = metering {
+                        let snapshot = await CloudUsageTracker.shared.recordDictation(
+                            seconds: Double(samples.count) / 16_000.0,
+                            provider: provider,
+                            dollarsPerMinute: rate
+                        )
+                        let cap = AppConfig.shared.cloudDailyCapDollars
+                        if await CloudUsageTracker.shared.shouldFireDailyCapWarning(cap: cap) {
+                            await CloudUsageTracker.shared.markDailyCapWarned()
+                            await self?.postCloudCapNotification(snapshot: snapshot, cap: cap)
+                        }
+                    }
+                default:
+                    break
+                }
                 await self?.handleCloudFailure(
                     mapped,
                     samples: samples,

@@ -8,8 +8,13 @@ private let log = Logger(subsystem: "com.felix.hushtype", category: "transcripti
 
 protocol TranscriptionEngine: AnyObject {
     var isLoaded: Bool { get }
+    var maxSampleCount: Int? { get }
     func load(progressHandler: ((Double, String) -> Void)?) async throws
     func transcribe(audio: [Float], language: String?) async throws -> String
+}
+
+extension TranscriptionEngine {
+    var maxSampleCount: Int? { nil }
 }
 
 enum TranscriptionError: Error {

@@ -39,7 +39,7 @@ final class CloudDictationReachability: @unchecked Sendable {
 
 final class OpenAITranscribeEngine: TranscriptionEngine {
     private static let endpoint = URL(string: "https://api.openai.com/v1/audio/transcriptions")!
-    private static let maxSampleCount = 16_000 * 600
+    private static let providerMaxSampleCount = 16_000 * 600
     private static let primer = "上週的簡報我已經更新到 Notion，請大家確認。"
 
     private let redirectDelegate: RedirectRefusingDelegate
@@ -60,20 +60,27 @@ final class OpenAITranscribeEngine: TranscriptionEngine {
         )
     }
 
+    deinit {
+        session.finishTasksAndInvalidate()
+    }
+
     var isLoaded: Bool { true }
+    var maxSampleCount: Int? { Self.providerMaxSampleCount }
 
     func load(progressHandler: ((Double, String) -> Void)?) async throws {}
 
     func transcribe(audio: [Float], language: String?) async throws -> String {
         let apiKey: String
+        let organization: String?
         switch OpenAIKeyStore.load() {
-        case .ok(let key, _), .unusualFormat(let key, _):
+        case .ok(let key, let org), .unusualFormat(let key, let org):
             apiKey = key
+            organization = org
         case .empty:
             throw TranscriptionError.noKey
         }
 
-        guard audio.count <= Self.maxSampleCount else {
+        guard audio.count <= Self.providerMaxSampleCount else {
             throw TranscriptionError.payloadTooLarge
         }
         guard !audio.isEmpty else { return "" }
@@ -89,6 +96,9 @@ final class OpenAITranscribeEngine: TranscriptionEngine {
         request.httpMethod = "POST"
         request.timeoutInterval = 15
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        if let organization, !organization.isEmpty {
+            request.setValue(organization, forHTTPHeaderField: "OpenAI-Organization")
+        }
         request.setValue(
             "multipart/form-data; boundary=\(boundary)",
             forHTTPHeaderField: "Content-Type"
@@ -96,7 +106,8 @@ final class OpenAITranscribeEngine: TranscriptionEngine {
         request.httpBody = makeMultipartBody(
             boundary: boundary,
             wavData: wavData,
-            model: model
+            model: model,
+            language: language
         )
 
         let data: Data
@@ -141,7 +152,8 @@ final class OpenAITranscribeEngine: TranscriptionEngine {
     private func makeMultipartBody(
         boundary: String,
         wavData: Data,
-        model: String
+        model: String,
+        language: String?
     ) -> Data {
         var body = Data()
 
@@ -157,7 +169,14 @@ final class OpenAITranscribeEngine: TranscriptionEngine {
 
         appendTextPart(name: "model", value: model, boundary: boundary, to: &body)
         appendTextPart(name: "response_format", value: "json", boundary: boundary, to: &body)
-        appendTextPart(name: "prompt", value: Self.primer, boundary: boundary, to: &body)
+        switch language {
+        case "english":
+            appendTextPart(name: "language", value: "en", boundary: boundary, to: &body)
+        case "japanese":
+            appendTextPart(name: "language", value: "ja", boundary: boundary, to: &body)
+        default:
+            appendTextPart(name: "prompt", value: Self.primer, boundary: boundary, to: &body)
+        }
         append("--\(boundary)--\r\n")
 
         return body

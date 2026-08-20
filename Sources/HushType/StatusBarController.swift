@@ -15,6 +15,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     private let statusItem: NSStatusItem
+    private let localEngine: Qwen3TranscriptionEngine
     /// Combined status + memory row, e.g. "Ready · Memory 2.1 GB".
     private let statusMenuItem: NSMenuItem
     private let languageMenu: NSMenu
@@ -127,7 +128,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     /// independently of the parent's active checkmark.
     private var liveCaptionActiveSource: AudioSourceKind?
 
-    override init() {
+    init(localEngine: Qwen3TranscriptionEngine) {
+        self.localEngine = localEngine
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusMenuItem = NSMenuItem(title: "Loading...", action: nil, keyEquivalent: "")
         statusMenuItem.isEnabled = false
@@ -1330,25 +1332,44 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case .local:
             statusMenuItem.title = "\(statusText(for: currentState)) · Memory \(MemoryUtils.formattedMemory())"
         case .openai:
-            statusMenuItem.title = "\(statusText(for: currentState)) · Cloud (OpenAI) · No model loaded"
+            let modelStatus = localEngine.isLoaded
+                ? "Model loaded (\(MemoryUtils.formattedMemory()))"
+                : "No model loaded"
+            statusMenuItem.title = "\(statusText(for: currentState)) · Cloud (OpenAI) · \(modelStatus)"
         case .gemini:
-            statusMenuItem.title = "\(statusText(for: currentState)) · Cloud (Gemini) · No model loaded"
+            let modelStatus = localEngine.isLoaded
+                ? "Model loaded (\(MemoryUtils.formattedMemory()))"
+                : "No model loaded"
+            statusMenuItem.title = "\(statusText(for: currentState)) · Cloud (Gemini) · \(modelStatus)"
         }
     }
 
     private func updateUnloadMenuItem(for state: State) {
-        let localSelected = AppConfig.shared.dictationEngine == .local
-        unloadMenuItem.isHidden = !localSelected
-        guard localSelected else {
-            unloadMenuItem.isEnabled = false
+        let localModelLoaded = localEngine.isLoaded
+        if !localModelLoaded {
+            let localSelected = AppConfig.shared.dictationEngine == .local
+            unloadMenuItem.isHidden = !localSelected
+            if localSelected {
+                if case .loading = state {
+                    setModelLoaded()
+                    unloadMenuItem.isEnabled = false
+                } else {
+                    setModelUnloaded()
+                    unloadMenuItem.isEnabled = true
+                }
+            } else {
+                unloadMenuItem.isEnabled = false
+            }
             return
         }
+
+        unloadMenuItem.isHidden = false
+        setModelLoaded()
         switch state {
         case .idle:
             unloadMenuItem.isEnabled = true
         case .unloaded:
-            unloadMenuItem.isEnabled = true
-            setModelUnloaded()
+            unloadMenuItem.isEnabled = false
         case .loading:
             unloadMenuItem.isEnabled = false
         default:
