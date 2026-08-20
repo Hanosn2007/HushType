@@ -22,8 +22,9 @@ enum AudioSourceKind: Equatable, Sendable {
 
 /// Top-level coordinator for the live caption pipeline.
 ///
-/// Lifecycle: constructed by `AppDelegate` AFTER `Qwen3TranscriptionEngine.load()`
-/// completes successfully, with the loaded model passed by reference. Owns
+/// Lifecycle: constructed by `AppDelegate` at launch with the shared local
+/// engine. The local model is derived lazily from that engine when local
+/// captions start; cloud-translated captions never load it. Owns
 /// the panel, the active `TranscriptionBackend` (`LocalQwen3Backend` or
 /// `OpenAITranslateBackend`), the audio source, and the post-processing
 /// queue. All start/stop flips of `AppConfig.shared.liveCaptionEnabled` MUST
@@ -34,7 +35,8 @@ final class LiveCaptionManager {
 
     // MARK: - Wiring
 
-    private let asrModel: Qwen3ASRModel
+    private let localEngine: Qwen3TranscriptionEngine
+    private weak var asrModel: Qwen3ASRModel?
     private let captureService: AudioCaptureService
 
     /// Called whenever the active state flips. AppDelegate forwards to
@@ -59,6 +61,7 @@ final class LiveCaptionManager {
     private var viewModel: LiveCaptionViewModel?
 
     private var backendEventTask: Task<Void, Never>?
+    private var stopTeardownTask: Task<Void, Never>?
     private var forceSplitTimer: DispatchSourceTimer?
     private var flashHideWork: DispatchWorkItem?
 
@@ -98,8 +101,9 @@ final class LiveCaptionManager {
     /// at every `start()` so the user can edit and toggle to apply.
     private var tuning: LiveCaptionTuning = .init()
 
-    init(asrModel: Qwen3ASRModel, captureService: AudioCaptureService) {
-        self.asrModel = asrModel
+    init(localEngine: Qwen3TranscriptionEngine, captureService: AudioCaptureService) {
+        self.localEngine = localEngine
+        self.asrModel = localEngine.loadedModel
         self.captureService = captureService
     }
 
@@ -211,6 +215,32 @@ final class LiveCaptionManager {
         // VAD model is local-engine-only. The cloud endpoint owns its own
         // server-side segmentation; we don't run SileroVAD on cloud sessions.
         if engine == .local {
+            // The dictation engine is the single owner/loader of Qwen. A
+            // cloud-dictation launch intentionally arrives here with no
+            // model; local captions load it lazily and derive a weak handle.
+            asrModel = localEngine.loadedModel
+            if asrModel == nil {
+                vm.headerState = .loadingModel(0)
+                do {
+                    try await localEngine.load { [weak self] progress, _ in
+                        // Qwen's progress callback fires off-main. Every
+                        // @Published write must explicitly return to main.
+                        DispatchQueue.main.async { [weak self] in
+                            guard let self,
+                                  AppConfig.shared.liveCaptionEngine == .local,
+                                  self.isPanelVisible else { return }
+                            self.viewModel?.headerState = .loadingModel(progress)
+                        }
+                    }
+                    asrModel = localEngine.loadedModel
+                } catch {
+                    log.error("Qwen model load failed: \(error.localizedDescription, privacy: .public)")
+                    showASRLoadFailedAlert(error)
+                    hidePanel()
+                    throw error
+                }
+            }
+
             if vadModel == nil {
                 vm.headerState = .loadingVAD
                 do {
@@ -229,9 +259,9 @@ final class LiveCaptionManager {
         let newBackend: any TranscriptionBackend
         switch engine {
         case .local:
-            guard let vadModel else {
+            guard let asrModel, let vadModel else {
                 throw NSError(domain: "LiveCaption", code: 20,
-                              userInfo: [NSLocalizedDescriptionKey: "VAD model unavailable after load"])
+                              userInfo: [NSLocalizedDescriptionKey: "Local caption model unavailable after load"])
             }
             newBackend = LocalQwen3Backend(
                 asrModel: asrModel,
@@ -436,11 +466,47 @@ final class LiveCaptionManager {
         AppConfig.shared.liveCaptionEnabled = false
         AppConfig.shared.liveCaptionUsesMicSource = false
         onStateChanged?(nil, nil)
-        Task { @MainActor in
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
             await self.teardown(stopAudio: true)
             self.hidePanel()
+            self.stopTeardownTask = nil
             log.info("LiveCaption stopped, source released")
         }
+        stopTeardownTask = task
+    }
+
+    /// Release the manager's derived local-model handle. If a local caption
+    /// backend is active it must stop first because that backend strongly
+    /// retains Qwen. Cloud-translate backends never reference Qwen and remain
+    /// active across a dictation-model unload.
+    @discardableResult
+    func releaseLocalModel() async -> Bool {
+        let hasLocalBackend = backend is LocalQwen3Backend
+        let stoppedLocalSession = isActive && hasLocalBackend
+
+        if stoppedLocalSession {
+            // This is the awaited variant of stop(): synchronously publish the
+            // off state, then fully drain audio/backend ownership before the
+            // caller releases the engine or clears MLX memory.
+            log.info("LiveCaption local stop requested for model unload")
+            isActive = false
+            currentSource = nil
+            AppConfig.shared.liveCaptionEnabled = false
+            AppConfig.shared.liveCaptionUsesMicSource = false
+            onStateChanged?(nil, nil)
+            await teardown(stopAudio: true)
+            hidePanel()
+            log.info("LiveCaption local backend released for model unload")
+        } else if hasLocalBackend, let stopTeardownTask {
+            // A normal stop may already have flipped `isActive` and scheduled
+            // teardown. Join it rather than racing a second teardown against
+            // the same backend.
+            await stopTeardownTask.value
+        }
+
+        asrModel = nil
+        return stoppedLocalSession
     }
 
     /// Show the §9.d gated-flash on the panel header. No-op if the panel is
@@ -860,6 +926,14 @@ final class LiveCaptionManager {
         let alert = NSAlert()
         alert.messageText = "Failed to load voice-activity model"
         alert.informativeText = "Live Caption could not start: \(error.localizedDescription)"
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    private func showASRLoadFailedAlert(_ error: Error) {
+        let alert = NSAlert()
+        alert.messageText = "Failed to load speech model"
+        alert.informativeText = "Local Live Caption could not start: \(error.localizedDescription)"
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }

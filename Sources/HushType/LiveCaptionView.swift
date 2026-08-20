@@ -4,6 +4,7 @@ import AppKit
 /// Header state — drives the left-side content of the panel header.
 enum LiveCaptionHeaderState: Equatable {
     case loadingVAD       // "Loading VAD model…"
+    case loadingModel(Double) // local Qwen model load progress, 0...1
     case live              // "● Live"
     case gatedFlash        // "Stop Live Caption to dictate" (orange, 2s)
     case reconnecting(attempt: Int, max: Int)   // cloud transport reconnect
@@ -85,6 +86,15 @@ struct LiveCaptionView: View {
     @ViewBuilder
     private var headerLeft: some View {
         switch model.headerState {
+        case .loadingModel(let progress):
+            HStack(spacing: 6) {
+                ProgressView(value: max(0, min(1, progress)))
+                    .progressViewStyle(.linear)
+                    .frame(width: 64)
+                Text("Loading speech model… \(Int(max(0, min(1, progress)) * 100))%")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary.opacity(0.85))
+            }
         case .loadingVAD:
             HStack(spacing: 6) {
                 ProgressView()

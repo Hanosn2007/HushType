@@ -26,6 +26,42 @@ final class AppConfig {
         static let lastStartedCaptionMode = "hushtype.lastStartedCaptionMode"
         static let lastStartedCaptionUsesMicSource = "hushtype.lastStartedCaptionUsesMicSource"
         static let punctuationMode = "hushtype.punctuationMode"
+        static let dictationEngine = "hushtype.dictationEngine"
+        static let cloudDictationModelOpenAI = "hushtype.cloudDictationModelOpenAI"
+        static let cloudDictationModelGemini = "hushtype.cloudDictationModelGemini"
+    }
+
+    /// Dictation deliberately persists its engine choice across launches so
+    /// cloud users can keep the local Qwen model out of memory. Unlike Live
+    /// Caption, recording still requires an explicit hotkey hold each time.
+    enum DictationEngine: String, Equatable, Sendable {
+        case local
+        case openai
+        case gemini
+    }
+
+    var dictationEngine: DictationEngine {
+        get {
+            guard let raw = defaults.string(forKey: Keys.dictationEngine),
+                  let engine = DictationEngine(rawValue: raw) else {
+                return .local
+            }
+            return engine
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: Keys.dictationEngine)
+            log.info("Dictation engine set to: \(newValue.rawValue, privacy: .public)")
+        }
+    }
+
+    var cloudDictationModelOpenAI: String {
+        get { defaults.string(forKey: Keys.cloudDictationModelOpenAI) ?? "gpt-4o-mini-transcribe" }
+        set { defaults.set(newValue, forKey: Keys.cloudDictationModelOpenAI) }
+    }
+
+    var cloudDictationModelGemini: String {
+        get { defaults.string(forKey: Keys.cloudDictationModelGemini) ?? "gemini-3.7-flash" }
+        set { defaults.set(newValue, forKey: Keys.cloudDictationModelGemini) }
     }
 
     /// Engine for Live Caption — local Qwen3 ASR vs. OpenAI cloud translate.

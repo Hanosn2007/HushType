@@ -4,6 +4,19 @@ import os
 
 private let log = Logger(subsystem: "com.felix.hushtype", category: "app")
 
+/// T2 bridge only. T3 replaces these placeholders with the real provider
+/// engines; reporting `isLoaded == true` keeps cloud hotkey presses on the
+/// throwing error path instead of silently treating them as an unloaded model.
+private final class CloudDictationPlaceholderEngine: TranscriptionEngine {
+    let isLoaded = true
+
+    func load(progressHandler: ((Double, String) -> Void)?) async throws {}
+
+    func transcribe(audio: [Float], language: String?) async throws -> String {
+        throw TranscriptionError.noKey
+    }
+}
+
 @MainActor
 private final class TapArbiter {
     static let doubleTapWindow: TimeInterval = 0.35
@@ -85,7 +98,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBar: StatusBarController!
     private var hotkeyManager: HotkeyManager!
     private var audioCapture: AudioCaptureService!
-    private var transcriptionEngine: Qwen3TranscriptionEngine!
+    private var localEngine: Qwen3TranscriptionEngine!
+    private var activeEngine: (any TranscriptionEngine)!
     private var translationManager: TranslationManager!
     private var liveCaptionManager: LiveCaptionManager?
     private let tapArbiter = TapArbiter()
@@ -126,8 +140,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBar = StatusBarController()
         hotkeyManager = HotkeyManager()
         audioCapture = AudioCaptureService()
-        transcriptionEngine = Qwen3TranscriptionEngine()
+        localEngine = Qwen3TranscriptionEngine()
+        activeEngine = makeDictationEngine(for: AppConfig.shared.dictationEngine)
         translationManager = TranslationManager()
+        let manager = LiveCaptionManager(
+            localEngine: localEngine,
+            captureService: audioCapture
+        )
+        manager.onStateChanged = { [weak self] mode, source in
+            self?.statusBar.setLiveCaptionState(mode: mode, source: source)
+        }
+        liveCaptionManager = manager
 
         TextPolisher.refreshAvailabilityCache()
         statusBar.setTextPolishAvailability(TextPolisher.isAvailableCached)
@@ -166,15 +189,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Wire unload/reload
         statusBar.onUnloadModel = { [weak self] in
-            self?.unloadModel()
+            Task { @MainActor in
+                await self?.unloadModel()
+            }
         }
         statusBar.onReloadModel = { [weak self] in
             self?.reloadModel()
         }
 
-        // Wire Live Caption (local) submenu. The manager is constructed AFTER
-        // the ASR model finishes loading (see Task.detached block below);
-        // during that ~3s window the menu items beep instead of acting.
+        // Wire Live Caption (local) submenu. The manager exists from launch;
+        // if Qwen is absent, its local path loads the shared engine lazily.
         statusBar.onLiveCaptionStartMic = { [weak self] in
             self?.startCaptionMode(.local, source: .mic)
         }
@@ -223,11 +247,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Start hotkey listener
         hotkeyManager.start()
 
-        // Load model async
+        // A persisted cloud selection deliberately skips Qwen at launch. The
+        // app must still become ready immediately rather than remaining in
+        // its initial `.loading` state forever.
+        guard AppConfig.shared.dictationEngine == .local else {
+            state = .idle
+            statusBar.setState(.idle)
+            scheduleTextPolishPrewarmIfNeeded(reason: "cloud-engine launch")
+            log.info("HushType ready with cloud dictation; local model not loaded")
+            return
+        }
+
+        // Load local model async.
         statusBar.setState(.loading(0))
         Task.detached { [weak self] in
             do {
-                try await self?.transcriptionEngine.load { progress, description in
+                try await self?.localEngine.load { progress, description in
                     DispatchQueue.main.async {
                         self?.statusBar.setState(.loading(progress))
                     }
@@ -236,29 +271,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     guard let self else { return }
                     self.state = .idle
                     self.statusBar.setState(.idle)
-                    // Construct the live caption manager now that the ASR model
-                    // is loaded. Force-unwrap is safe — we just succeeded.
-                    if let model = self.transcriptionEngine.loadedModel {
-                        let manager = LiveCaptionManager(
-                            asrModel: model,
-                            captureService: self.audioCapture
-                        )
-                        manager.onStateChanged = { [weak self] mode, source in
-                            self?.statusBar.setLiveCaptionState(mode: mode, source: source)
-                        }
-                        self.liveCaptionManager = manager
-                    }
                     log.info("HushType ready")
                 }
-
-                if AppConfig.shared.textPolishEnabled && TextPolisher.isAvailableCached {
-                    if #available(macOS 26.0, *) {
-                        Task { @MainActor in
-                            log.info("Scheduling Text Polish prewarm after launch")
-                            FoundationModelsPolisher.warmup()
-                        }
-                    }
-                }
+                await self?.scheduleTextPolishPrewarmIfNeeded(reason: "local-model launch")
             } catch {
                 log.error("Failed to load model: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
@@ -334,9 +349,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // If model is unloaded and user holds Right ⌥, auto-reload
         if state == .unloaded {
             if claimedSecondTap { tapArbiter.reset() }
-            print("[HushType] Model unloaded — auto-reloading...")
-            reloadModel()
-            return
+            if AppConfig.shared.dictationEngine == .local {
+                print("[HushType] Model unloaded — auto-reloading...")
+                reloadModel()
+                return
+            }
+            // A cloud engine is ready without Qwen. This state can occur when
+            // the user unloads locally, then switches to cloud before T4's
+            // menu/status treatment lands.
+            state = .idle
+            statusBar.setState(.idle)
         }
 
         guard state == .idle else {
@@ -345,7 +367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        guard transcriptionEngine.isLoaded else {
+        guard activeEngine.isLoaded else {
             if claimedSecondTap { tapArbiter.reset() }
             print("[HushType] Model not loaded yet")
             return
@@ -412,12 +434,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task.detached { [weak self] in
             let text: String
             do {
-                text = try await self?.transcriptionEngine.transcribe(
+                text = try await self?.activeEngine.transcribe(
                     audio: samples,
                     language: language
                 ) ?? ""
             } catch {
                 log.error("Transcription failed: \(error.localizedDescription, privacy: .public)")
+                if AppConfig.shared.dictationEngine != .local {
+                    await MainActor.run {
+                        self?.presentCloudFailureAlert(error: error) {
+                            // T4 wires Use Local Once / Switch to Local / Cancel
+                            // here while retaining `samples` for the retry.
+                        }
+                    }
+                }
                 text = ""
             }
 
@@ -858,11 +888,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Model Unload / Reload
 
-    private func unloadModel() {
+    /// Entry point for T4's engine picker. The persisted selection and the
+    /// active protocol existential change together. Keeping a warm local
+    /// model on Local → Cloud makes switching back instant; Cloud → Local
+    /// performs the existing progress-bearing reload when needed.
+    func switchDictationEngine(to engine: AppConfig.DictationEngine) {
+        let previous = AppConfig.shared.dictationEngine
+        guard previous != engine else { return }
+
+        AppConfig.shared.dictationEngine = engine
+        activeEngine = makeDictationEngine(for: engine)
+
+        if engine == .local {
+            if !localEngine.isLoaded {
+                reloadModel()
+            }
+        } else if state == .unloaded {
+            state = .idle
+            statusBar.setState(.idle)
+        }
+    }
+
+    private func unloadModel() async {
         guard state == .idle else {
             print("[HushType] Cannot unload — state is \(state)")
             return
         }
+        // Block dictation while a local-caption backend drains. The status
+        // row stays unchanged until the final unloaded/idle transition.
+        state = .loading
 
         // Snapshot the physical footprint at each step so a user reporting
         // "memory didn't release" can post the numbers and we can see exactly
@@ -876,30 +930,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         snapshot("0_begin")
 
-        // §7 order: stop live caption first (drops its Qwen3ASRModel reference
-        // + clears the menu checkmark via onStateChanged), THEN unload the
-        // engine, THEN show the modal alert. `unloadModel` is always invoked
-        // from the menu action, which runs on the main thread, so the
-        // MainActor.assumeIsolated bridge is sound.
-        //
-        // Critical: the manager holds a STRONG `let asrModel` reference, so
-        // unloading without dropping the manager leaves the ASR model
-        // retained even though the engine's own pointer is nil'd. We MUST
-        // nil out `liveCaptionManager` unconditionally — not only when it's
-        // currently active. Reload reconstructs it via `loadedModel`.
-        var wasLiveCaptionActive = false
-        if let manager = liveCaptionManager {
-            MainActor.assumeIsolated {
-                if manager.isActive {
-                    wasLiveCaptionActive = true
-                    manager.stop()
-                }
-            }
-            self.liveCaptionManager = nil
-        }
-        snapshot("1_manager_nil")
+        // Release only the manager's local-model handle. A local caption
+        // backend is stopped because it strongly owns Qwen; a cloud-translate
+        // backend has no Qwen reference and must survive this operation.
+        let wasLocalCaptionActive = await liveCaptionManager?.releaseLocalModel() ?? false
+        snapshot("1_manager_release")
 
-        transcriptionEngine.unload()
+        localEngine.unload()
         snapshot("2_engine_unload")
 
         if AppConfig.shared.textPolishEnabled {
@@ -918,16 +955,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MLX.Memory.clearCache()
         snapshot("3_clearCache")
 
-        state = .unloaded
-        statusBar.setState(.unloaded)
+        if AppConfig.shared.dictationEngine == .local {
+            state = .unloaded
+            statusBar.setState(.unloaded)
+        } else {
+            state = .idle
+            statusBar.setState(.idle)
+        }
         print("[HushType] Model unloaded — memory freed")
 
         // Show confirmation alert with cold-start warning. If live caption
         // was active, the message changes to direct the user accordingly.
         let alert = NSAlert()
-        if wasLiveCaptionActive {
+        if wasLocalCaptionActive {
             alert.messageText = "Live Caption Stopped"
             alert.informativeText = "The speech-to-text model was unloaded. Re-enable Live Caption from the menu after reloading the model."
+        } else if AppConfig.shared.dictationEngine != .local {
+            alert.messageText = "Local Model Unloaded"
+            alert.informativeText = "The local speech recognition model has been removed from memory. Cloud dictation remains ready."
         } else {
             alert.messageText = "Model Unloaded"
             alert.informativeText = "The speech recognition model has been removed from memory.\n\nVoice input will require a cold start (~3 seconds) the next time you press Right ⌥."
@@ -939,7 +984,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func reloadModel() {
-        guard state == .unloaded || !transcriptionEngine.isLoaded else {
+        guard state == .unloaded || !localEngine.isLoaded else {
             print("[HushType] Model already loaded")
             return
         }
@@ -950,7 +995,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Task.detached { [weak self] in
             do {
-                try await self?.transcriptionEngine.load { progress, description in
+                try await self?.localEngine.load { progress, description in
                     DispatchQueue.main.async {
                         self?.statusBar.setState(.loading(progress))
                     }
@@ -959,29 +1004,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     guard let self else { return }
                     self.state = .idle
                     self.statusBar.setState(.idle)
-                    if let model = self.transcriptionEngine.loadedModel {
-                        if self.liveCaptionManager == nil {
-                            let manager = LiveCaptionManager(
-                                asrModel: model,
-                                captureService: self.audioCapture
-                            )
-                            manager.onStateChanged = { [weak self] mode, source in
-                                self?.statusBar.setLiveCaptionState(mode: mode, source: source)
-                            }
-                            self.liveCaptionManager = manager
-                        }
-                    }
                     log.info("Model reloaded")
                 }
-
-                if AppConfig.shared.textPolishEnabled && TextPolisher.isAvailableCached {
-                    if #available(macOS 26.0, *) {
-                        Task { @MainActor in
-                            log.info("Scheduling Text Polish prewarm after model reload")
-                            FoundationModelsPolisher.warmup()
-                        }
-                    }
-                }
+                await self?.scheduleTextPolishPrewarmIfNeeded(reason: "model reload")
             } catch {
                 log.error("Failed to reload model: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
@@ -990,5 +1015,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    private func makeDictationEngine(
+        for selection: AppConfig.DictationEngine
+    ) -> any TranscriptionEngine {
+        switch selection {
+        case .local:
+            return localEngine
+        case .openai, .gemini:
+            // T3 replaces this one line per case with the provider engine.
+            return CloudDictationPlaceholderEngine()
+        }
+    }
+
+    private func scheduleTextPolishPrewarmIfNeeded(reason: String) {
+        guard AppConfig.shared.textPolishEnabled && TextPolisher.isAvailableCached else { return }
+        if #available(macOS 26.0, *) {
+            log.info("Scheduling Text Polish prewarm after \(reason, privacy: .public)")
+            FoundationModelsPolisher.warmup()
+        }
+    }
+
+    /// T4 replaces this stub with the async failure alert and buffer-retaining
+    /// choices. Keeping the named seam here prevents a cloud placeholder error
+    /// from being silently mistaken for an empty local transcript.
+    private func presentCloudFailureAlert(error: Error, completion: @escaping () -> Void) {
+        log.info("Cloud dictation failure alert deferred to T4: \(error.localizedDescription, privacy: .public)")
+        completion()
+    }
+
+    /// Capture before a modal that may lead to insertion, then reactivate and
+    /// wait for the original app to confirm focus before simulating paste.
+    /// T4's consent/failure alerts use these helpers.
+    private func captureInsertionFocus() -> NSRunningApplication? {
+        NSWorkspace.shared.frontmostApplication
+    }
+
+    @discardableResult
+    private func restoreInsertionFocus(_ application: NSRunningApplication?) async -> Bool {
+        guard let application else { return false }
+        application.activate()
+        for _ in 0..<20 {
+            if application.isActive { return true }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        return application.isActive
     }
 }
