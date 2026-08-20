@@ -127,7 +127,7 @@ enum OpenAIKeyStore {
         // all for dictionaries.
         let body = """
         {
-          "_comment_overview": "HushType cloud features — OpenAI API key. This file is plaintext on disk; treat it like a .env file. Get a key at https://platform.openai.com/api-keys. Cloud features stay disabled until 'api_key' is filled in AND you switch the engine in Settings.",
+          "_comment_overview": "HushType cloud features — OpenAI API key. This file is plaintext on disk; treat it like a .env file. Get a key at https://platform.openai.com/api-keys. Cloud features stay disabled until 'api_key' is filled in AND you choose an OpenAI engine in Dictation Engine or Live Caption Engine settings.",
           "_comment_api_key": "Your OpenAI API key (sk-proj-... or sk-...). Leave empty to disable cloud features entirely.",
           "api_key": "",
           "_comment_organization": "Optional. Only set if you specifically need to scope usage to an org. Format: org-...",

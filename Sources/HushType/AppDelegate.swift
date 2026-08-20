@@ -1023,9 +1023,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch selection {
         case .local:
             return localEngine
-        case .openai, .gemini:
-            // T3 replaces this one line per case with the provider engine.
-            return CloudDictationPlaceholderEngine()
+        case .openai:
+            return OpenAITranscribeEngine()
+        case .gemini:
+            return GeminiTranscribeEngine()
         }
     }
 
