@@ -410,10 +410,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let language = AppConfig.shared.language
 
         Task.detached { [weak self] in
-            let text = await self?.transcriptionEngine.transcribe(
-                audio: samples,
-                language: language
-            ) ?? ""
+            let text: String
+            do {
+                text = try await self?.transcriptionEngine.transcribe(
+                    audio: samples,
+                    language: language
+                ) ?? ""
+            } catch {
+                log.error("Transcription failed: \(error.localizedDescription, privacy: .public)")
+                text = ""
+            }
 
             print("[HushType] Transcription result: '\(text)'")
 

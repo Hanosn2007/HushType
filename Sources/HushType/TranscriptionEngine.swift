@@ -6,10 +6,21 @@ private let log = Logger(subsystem: "com.felix.hushtype", category: "transcripti
 
 // MARK: - Protocol
 
-protocol TranscriptionEngine {
+protocol TranscriptionEngine: AnyObject {
     var isLoaded: Bool { get }
     func load(progressHandler: ((Double, String) -> Void)?) async throws
-    func transcribe(audio: [Float], language: String?) async -> String
+    func transcribe(audio: [Float], language: String?) async throws -> String
+}
+
+enum TranscriptionError: Error {
+    case noKey
+    case auth
+    case rateLimited(provider: String)
+    case network
+    case timeout
+    case payloadTooLarge
+    case malformedResponse
+    case safetyBlocked
 }
 
 // MARK: - Qwen3 Implementation
@@ -36,7 +47,7 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         log.info("Model loaded successfully")
     }
 
-    func transcribe(audio: [Float], language: String?) async -> String {
+    func transcribe(audio: [Float], language: String?) async throws -> String {
         guard let model else {
             log.error("Model not loaded")
             return ""
@@ -61,49 +72,7 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         let asrElapsed = CFAbsoluteTimeGetCurrent() - startTime
         log.info("Raw transcription (\(String(format: "%.2f", asrElapsed))s): \(rawText)")
 
-        // Classify once on the raw ASR text. Gates the Chinese-only stages
-        // (OpenCC, ITN, punctuation strip) so they never touch JP/KO/EN.
-        let script = ScriptDetector.detect(rawText)
-
-        // Apply Traditional Chinese conversion
-        let convertedText = ChineseConverter.convert(rawText)
-        if convertedText != rawText {
-            log.info("After conversion: \(convertedText)")
-        }
-
-        // Apply number conversion (ITN) if enabled. Deterministic regex-based
-        // pass that converts Chinese numerals to Arabic digits.
-        let itnResult: NumberNormalizer.Result
-        if script == .zh && AppConfig.shared.numberConversionEnabled {
-            itnResult = NumberNormalizer.normalize(convertedText)
-            if itnResult.applied {
-                log.info("After ITN: \(itnResult.text, privacy: .public) [\(itnResult.note, privacy: .public)]")
-            } else if itnResult.note != "no-op" {
-                log.debug("ITN skipped: \(itnResult.note, privacy: .public)")
-            }
-        } else {
-            itnResult = NumberNormalizer.Result(text: convertedText, applied: false, note: "disabled")
-        }
-
-        // Apply user customized dictionary as the final post-processing step.
-        // No-op if the dictionary file doesn't exist or is empty.
-        let dictText = DictionaryReplacer.apply(itnResult.text)
-        if dictText != itnResult.text {
-            log.info("After dictionary: \(dictText)")
-        }
-
-        // Final step: strip the model's over-aggressive Chinese inline
-        // punctuation. Chinese only, and last in the chain so nothing downstream
-        // can re-introduce it.
-        let finalText: String
-        if script == .zh {
-            finalText = PunctuationNormalizer.apply(dictText, mode: AppConfig.shared.punctuationMode)
-            if finalText != dictText {
-                log.info("After punctuation: \(finalText)")
-            }
-        } else {
-            finalText = dictText
-        }
+        let finalText = DictationPostProcessor.apply(rawText)
 
         let totalElapsed = CFAbsoluteTimeGetCurrent() - startTime
         let inCh = rawText.count
@@ -111,8 +80,7 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         let asrMs = Int(asrElapsed * 1000)
         let totalMs = Int(totalElapsed * 1000)
 
-        let itnLabel = itnResult.applied ? "applied" : itnResult.note
-        log.info("timings asr=\(asrMs, privacy: .public)ms itn=\(itnLabel, privacy: .public) total=\(totalMs, privacy: .public)ms in=\(inCh, privacy: .public)ch out=\(outCh, privacy: .public)ch")
+        log.info("timings asr=\(asrMs, privacy: .public)ms total=\(totalMs, privacy: .public)ms in=\(inCh, privacy: .public)ch out=\(outCh, privacy: .public)ch")
 
         return finalText
     }
