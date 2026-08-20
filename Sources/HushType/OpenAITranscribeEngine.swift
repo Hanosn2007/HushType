@@ -146,6 +146,11 @@ final class OpenAITranscribeEngine: TranscriptionEngine {
             throw TranscriptionError.malformedResponse
         }
 
+        // Silent audio can echo the prompt primer instead of a transcript.
+        if rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines) == Self.primer {
+            return ""
+        }
+
         return DictationPostProcessor.apply(rawTranscript)
     }
 
