@@ -26,6 +26,11 @@ let package = Package(
                 .linkedFramework("Carbon"),
             ]
         ),
+        .testTarget(
+            name: "HushTypeTests",
+            dependencies: ["HushType"],
+            path: "Tests/HushTypeTests"
+        ),
     ],
     swiftLanguageModes: [.v5]
 )
