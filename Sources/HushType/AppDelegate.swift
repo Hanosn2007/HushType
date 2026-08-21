@@ -1,8 +1,22 @@
 import AppKit
 import MLX
 import os
+import UserNotifications
 
 private let log = Logger(subsystem: "com.felix.hushtype", category: "app")
+
+/// T2 bridge only. T3 replaces these placeholders with the real provider
+/// engines; reporting `isLoaded == true` keeps cloud hotkey presses on the
+/// throwing error path instead of silently treating them as an unloaded model.
+private final class CloudDictationPlaceholderEngine: TranscriptionEngine {
+    let isLoaded = true
+
+    func load(progressHandler: ((Double, String) -> Void)?) async throws {}
+
+    func transcribe(audio: [Float], language: String?) async throws -> String {
+        throw TranscriptionError.noKey
+    }
+}
 
 @MainActor
 private final class TapArbiter {
@@ -85,10 +99,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBar: StatusBarController!
     private var hotkeyManager: HotkeyManager!
     private var audioCapture: AudioCaptureService!
-    private var transcriptionEngine: Qwen3TranscriptionEngine!
+    private var localEngine: Qwen3TranscriptionEngine!
+    private var activeEngine: (any TranscriptionEngine)!
     private var translationManager: TranslationManager!
     private var liveCaptionManager: LiveCaptionManager?
     private let tapArbiter = TapArbiter()
+    private var consecutiveCloudNetworkFailures = 0
 
     private enum SelectionSource {
         case copySelection
@@ -123,11 +139,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // little more OS alloc/free churn.
         MLX.Memory.cacheLimit = 1024 * 1024 * 1024  // 1 GB
 
-        statusBar = StatusBarController()
+        localEngine = Qwen3TranscriptionEngine()
+        statusBar = StatusBarController(localEngine: localEngine)
         hotkeyManager = HotkeyManager()
         audioCapture = AudioCaptureService()
-        transcriptionEngine = Qwen3TranscriptionEngine()
+        activeEngine = makeDictationEngine(for: AppConfig.shared.dictationEngine)
         translationManager = TranslationManager()
+        let manager = LiveCaptionManager(
+            localEngine: localEngine,
+            captureService: audioCapture
+        )
+        manager.onStateChanged = { [weak self] mode, source in
+            self?.statusBar.setLiveCaptionState(mode: mode, source: source)
+        }
+        liveCaptionManager = manager
 
         TextPolisher.refreshAvailabilityCache()
         statusBar.setTextPolishAvailability(TextPolisher.isAvailableCached)
@@ -152,8 +177,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         audioCapture.onRMSLevel = { [weak self] level in
             DispatchQueue.main.async {
                 guard let self else { return }
-                if case .recording = self.overlayState.state {
-                    self.overlayState.state = .recording(level: level)
+                if case .recording(_, let provider) = self.overlayState.state {
+                    self.overlayState.state = .recording(level: level, provider: provider)
                 }
             }
         }
@@ -166,15 +191,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Wire unload/reload
         statusBar.onUnloadModel = { [weak self] in
-            self?.unloadModel()
+            Task { @MainActor in
+                await self?.unloadModel()
+            }
         }
         statusBar.onReloadModel = { [weak self] in
             self?.reloadModel()
         }
+        statusBar.onDictationEngineChanged = { [weak self] engine in
+            self?.switchDictationEngine(to: engine)
+        }
 
-        // Wire Live Caption (local) submenu. The manager is constructed AFTER
-        // the ASR model finishes loading (see Task.detached block below);
-        // during that ~3s window the menu items beep instead of acting.
+        // Wire Live Caption (local) submenu. The manager exists from launch;
+        // if Qwen is absent, its local path loads the shared engine lazily.
         statusBar.onLiveCaptionStartMic = { [weak self] in
             self?.startCaptionMode(.local, source: .mic)
         }
@@ -223,11 +252,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Start hotkey listener
         hotkeyManager.start()
 
-        // Load model async
+        // A persisted cloud selection deliberately skips Qwen at launch. The
+        // app must still become ready immediately rather than remaining in
+        // its initial `.loading` state forever.
+        guard AppConfig.shared.dictationEngine == .local else {
+            state = .idle
+            statusBar.setState(.idle)
+            scheduleTextPolishPrewarmIfNeeded(reason: "cloud-engine launch")
+            log.info("HushType ready with cloud dictation; local model not loaded")
+            return
+        }
+
+        // Load local model async.
         statusBar.setState(.loading(0))
         Task.detached { [weak self] in
             do {
-                try await self?.transcriptionEngine.load { progress, description in
+                try await self?.localEngine.load { progress, description in
                     DispatchQueue.main.async {
                         self?.statusBar.setState(.loading(progress))
                     }
@@ -236,34 +276,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     guard let self else { return }
                     self.state = .idle
                     self.statusBar.setState(.idle)
-                    // Construct the live caption manager now that the ASR model
-                    // is loaded. Force-unwrap is safe — we just succeeded.
-                    if let model = self.transcriptionEngine.loadedModel {
-                        let manager = LiveCaptionManager(
-                            asrModel: model,
-                            captureService: self.audioCapture
-                        )
-                        manager.onStateChanged = { [weak self] mode, source in
-                            self?.statusBar.setLiveCaptionState(mode: mode, source: source)
-                        }
-                        self.liveCaptionManager = manager
-                    }
                     log.info("HushType ready")
                 }
-
-                if AppConfig.shared.textPolishEnabled && TextPolisher.isAvailableCached {
-                    if #available(macOS 26.0, *) {
-                        Task { @MainActor in
-                            log.info("Scheduling Text Polish prewarm after launch")
-                            FoundationModelsPolisher.warmup()
-                        }
-                    }
-                }
+                await self?.scheduleTextPolishPrewarmIfNeeded(reason: "local-model launch")
             } catch {
                 log.error("Failed to load model: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
                     self?.state = .idle
-                    self?.statusBar.setState(.error("Model load failed"))
+                    self?.statusBar.setState(.error(L10n.string(
+                        "status.model_load_failed",
+                        fallback: "Model load failed"
+                    )))
                 }
             }
         }
@@ -290,14 +313,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showOverlayRecording() {
         guard AppConfig.shared.floatingOverlayEnabled else { return }
-        overlayState.state = .recording(level: 0)
+        let provider: String?
+        switch AppConfig.shared.dictationEngine {
+        case .local: provider = nil
+        case .openai: provider = "OpenAI"
+        case .gemini: provider = "Gemini"
+        }
+        overlayState.state = .recording(level: 0, provider: provider)
         overlayWindow.show()
     }
 
     private func switchOverlayToTranscribing() {
         guard AppConfig.shared.floatingOverlayEnabled else { return }
         // Window stays visible; only the inner state changes.
-        overlayState.state = .transcribing
+        let provider: String?
+        switch AppConfig.shared.dictationEngine {
+        case .local: provider = nil
+        case .openai: provider = "OpenAI"
+        case .gemini: provider = "Gemini"
+        }
+        overlayState.state = .transcribing(provider: provider)
     }
 
     private func showOverlayPolishing() {
@@ -314,6 +349,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Hotkey Handlers
 
     private func handleHotkeyPress() {
+        // App-modal alerts must exclusively own input while they are visible.
+        guard NSApp.modalWindow == nil else { return }
+
         let claimedSecondTap = tapArbiter.cancelPendingForSecondPress()
 
         // Gate dictation only when Live Caption is active on the MIC source —
@@ -334,9 +372,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // If model is unloaded and user holds Right ⌥, auto-reload
         if state == .unloaded {
             if claimedSecondTap { tapArbiter.reset() }
-            print("[HushType] Model unloaded — auto-reloading...")
-            reloadModel()
-            return
+            if AppConfig.shared.dictationEngine == .local {
+                print("[HushType] Model unloaded — auto-reloading...")
+                reloadModel()
+                return
+            }
+            // A cloud engine is ready without Qwen. This state can occur when
+            // the user unloads locally, then switches to cloud before T4's
+            // menu/status treatment lands.
+            state = .idle
+            statusBar.setState(.idle)
         }
 
         guard state == .idle else {
@@ -345,7 +390,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        guard transcriptionEngine.isLoaded else {
+        guard activeEngine.isLoaded else {
             if claimedSecondTap { tapArbiter.reset() }
             print("[HushType] Model not loaded yet")
             return
@@ -408,33 +453,229 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         print("[HushType] Transcribing...")
 
         let language = AppConfig.shared.language
+        let selection = AppConfig.shared.dictationEngine
+        let engine = activeEngine!
+        let insertionFocus = captureInsertionFocus()
 
-        Task.detached { [weak self] in
-            let text = await self?.transcriptionEngine.transcribe(
-                audio: samples,
-                language: language
-            ) ?? ""
-
-            print("[HushType] Transcription result: '\(text)'")
-
-            await MainActor.run {
-                guard let self, !text.isEmpty else {
-                    print("[HushType] Empty transcription, skipping insert")
-                    self?.state = .idle
-                    self?.statusBar.setState(.idle)
-                    self?.hideOverlay()
-                    return
-                }
-
-                print("[HushType] Inserting text...")
-                self.state = .inserting
-                TextInserter.insert(text)
-                self.state = .idle
-                self.statusBar.setState(.idle)
-                self.hideOverlay()
-                print("[HushType] Done")
+        if selection == .local {
+            launchTranscription(
+                samples: samples,
+                language: language,
+                selection: selection,
+                engine: engine,
+                insertionFocus: insertionFocus
+            )
+        } else {
+            // The hotkey callbacks originate inside CGEventTap. Queue consent
+            // for the next main-loop turn so NSAlert never blocks that tap.
+            Task { @MainActor [weak self] in
+                await self?.continueCloudTranscriptionAfterConsent(
+                    samples: samples,
+                    language: language,
+                    selection: selection,
+                    engine: engine,
+                    insertionFocus: insertionFocus
+                )
             }
         }
+    }
+
+    private func continueCloudTranscriptionAfterConsent(
+        samples: [Float],
+        language: String?,
+        selection: AppConfig.DictationEngine,
+        engine: any TranscriptionEngine,
+        insertionFocus: NSRunningApplication?
+    ) async {
+        guard state == .transcribing else { return }
+        let provider = consentProvider(for: selection)
+        guard let provider else { return }
+
+        let keyIsEmpty: Bool
+        switch selection {
+        case .openai:
+            if case .empty = OpenAIKeyStore.load() {
+                keyIsEmpty = true
+            } else {
+                keyIsEmpty = false
+            }
+        case .gemini:
+            if case .empty = GeminiKeyStore.load() {
+                keyIsEmpty = true
+            } else {
+                keyIsEmpty = false
+            }
+        case .local:
+            keyIsEmpty = false
+        }
+        if keyIsEmpty {
+            await handleCloudFailure(
+                .noKey,
+                samples: samples,
+                language: language,
+                selection: selection,
+                engine: engine,
+                insertionFocus: insertionFocus
+            )
+            return
+        }
+
+        // Guard before consent, WAV encoding, or request construction. The
+        // cloud engine repeats the payload guard as defense in depth.
+        if let maxSampleCount = engine.maxSampleCount,
+           samples.count > maxSampleCount {
+            await handleCloudFailure(
+                .payloadTooLarge,
+                samples: samples,
+                language: language,
+                selection: selection,
+                engine: engine,
+                insertionFocus: insertionFocus
+            )
+            return
+        }
+
+        let metering = cloudDictationMetering(for: selection)
+        if let metering {
+            let projection = await CloudUsageTracker.shared.evaluateDictationUpload(
+                seconds: Double(samples.count) / 16_000.0,
+                dollarsPerMinute: metering.rate,
+                warningThreshold: AppConfig.shared.cloudDailyCapDollars
+            )
+            // The actor hop gives menu/settings actions a chance to change app
+            // state. Never upload a retained buffer after the request was
+            // cancelled or another flow took ownership.
+            guard state == .transcribing else { return }
+            if projection.shouldBlock {
+                await handleDailySpendWarning(
+                    projection,
+                    samples: samples,
+                    language: language,
+                    insertionFocus: insertionFocus
+                )
+                return
+            }
+        }
+
+        if !CloudDictationOnboardingAlert.shared.hasConsent(for: provider),
+           CloudDictationOnboardingAlert.shared.requestConsent(for: provider) == .revertToLocal {
+            switchDictationEngine(to: .local)
+            hideOverlay()
+            if localEngine.isLoaded {
+                state = .idle
+                statusBar.setState(.idle)
+            }
+            Task { @MainActor [weak self] in
+                _ = await self?.restoreInsertionFocus(insertionFocus)
+            }
+            return
+        }
+
+        launchTranscription(
+            samples: samples,
+            language: language,
+            selection: selection,
+            engine: engine,
+            metering: metering,
+            insertionFocus: insertionFocus
+        )
+    }
+
+    private func launchTranscription(
+        samples: [Float],
+        language: String?,
+        selection: AppConfig.DictationEngine,
+        engine: any TranscriptionEngine,
+        metering: CloudDictationMetering? = nil,
+        insertionFocus: NSRunningApplication?
+    ) {
+        let metering = metering ?? cloudDictationMetering(for: selection)
+        Task.detached { [weak self, engine] in
+            do {
+                let text = try await engine.transcribe(audio: samples, language: language)
+                if let metering {
+                    let snapshot = await CloudUsageTracker.shared.recordDictation(
+                        seconds: Double(samples.count) / 16_000.0,
+                        provider: metering.provider,
+                        dollarsPerMinute: metering.rate
+                    )
+                    let cap = AppConfig.shared.cloudDailyCapDollars
+                    if await CloudUsageTracker.shared.shouldFireDailyCapWarning(cap: cap) {
+                        await CloudUsageTracker.shared.markDailyCapWarned()
+                        await self?.postDailySpendWarningNotification(snapshot: snapshot, threshold: cap)
+                    }
+                }
+                await self?.finishSuccessfulTranscription(
+                    text,
+                    insertionFocus: insertionFocus,
+                    resetNetworkFailures: selection != .local
+                )
+            } catch {
+                log.error("Transcription failed: \(error.localizedDescription, privacy: .public)")
+                guard selection != .local else {
+                    await self?.finishWithoutInsertion(restoreFocus: insertionFocus)
+                    return
+                }
+                let mapped = error as? TranscriptionError ?? .network
+                switch mapped {
+                case .malformedResponse, .safetyBlocked, .timeout:
+                    if let metering {
+                        let snapshot = await CloudUsageTracker.shared.recordDictation(
+                            seconds: Double(samples.count) / 16_000.0,
+                            provider: metering.provider,
+                            dollarsPerMinute: metering.rate
+                        )
+                        let cap = AppConfig.shared.cloudDailyCapDollars
+                        if await CloudUsageTracker.shared.shouldFireDailyCapWarning(cap: cap) {
+                            await CloudUsageTracker.shared.markDailyCapWarned()
+                            await self?.postDailySpendWarningNotification(snapshot: snapshot, threshold: cap)
+                        }
+                    }
+                default:
+                    break
+                }
+                await self?.handleCloudFailure(
+                    mapped,
+                    samples: samples,
+                    language: language,
+                    selection: selection,
+                    engine: engine,
+                    insertionFocus: insertionFocus
+                )
+            }
+        }
+    }
+
+    private func finishSuccessfulTranscription(
+        _ text: String,
+        insertionFocus: NSRunningApplication?,
+        resetNetworkFailures: Bool
+    ) async {
+        if resetNetworkFailures { consecutiveCloudNetworkFailures = 0 }
+        _ = await restoreInsertionFocus(insertionFocus)
+        guard !text.isEmpty else {
+            print("[HushType] Empty transcription, skipping insert")
+            state = .idle
+            statusBar.setState(.idle)
+            hideOverlay()
+            return
+        }
+
+        print("[HushType] Transcription result: '\(text)'")
+        print("[HushType] Inserting text...")
+        state = .inserting
+        TextInserter.insert(text)
+        state = .idle
+        statusBar.setState(.idle)
+        hideOverlay()
+        print("[HushType] Done")
+    }
+
+    private func finishWithoutInsertion(restoreFocus application: NSRunningApplication?) async {
+        _ = await restoreInsertionFocus(application)
+        state = .idle
+        statusBar.setState(.idle)
+        hideOverlay()
     }
 
     private func handleTapDetected() {
@@ -504,7 +745,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the menu toggle for that path too.
         if case .provided = source, !AppConfig.shared.textTranslationEnabled {
             showTranslationError(TranslationError.translationFailed(
-                "Text Translation is turned off in the HushType menu."))
+                L10n.string(
+                    "error.translation.disabled",
+                    fallback: "Text Translation is turned off in the HushType menu."
+                )))
             return
         }
 
@@ -523,7 +767,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // explicit Services path earns an alert.
                     print("[HushType] No text on clipboard for translation")
                 case .provided:
-                    self.showTranslationError(TranslationError.translationFailed("No text was selected."))
+                    self.showTranslationError(TranslationError.translationFailed(
+                        L10n.string(
+                            "error.selection.none",
+                            fallback: "No text was selected."
+                        )
+                    ))
                 }
                 return
             }
@@ -607,9 +856,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.alertStyle = .warning
         alert.icon = NSImage(named: "AppIcon")
             ?? NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: nil)
-        alert.messageText = "Text Polish Failed"
-        alert.informativeText = "Unable to polish the selected text.\n\n\(error.localizedDescription)"
-        alert.addButton(withTitle: "OK")
+        alert.messageText = L10n.string(
+            "alert.polish_failed.title",
+            fallback: "Text Polish Failed"
+        )
+        alert.informativeText = L10n.format(
+            "alert.polish_failed.message",
+            "Unable to polish the selected text.\n\n%1$@",
+            arguments: [error.localizedDescription]
+        )
+        alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
         alert.runModal()
     }
 
@@ -713,16 +969,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let translationError = error as? TranslationError {
             switch translationError {
             case .unsupportedLanguage(let lang):
-                alert.messageText = "Language Not Supported"
-                alert.informativeText = "The detected language (\(lang)) is not supported by Apple Translation Framework.\n\nSupported languages include English, Chinese, Japanese, Korean, French, German, Spanish, and others."
-                alert.addButton(withTitle: "OK")
+                alert.messageText = L10n.string(
+                    "alert.translation.unsupported.title",
+                    fallback: "Language Not Supported"
+                )
+                alert.informativeText = L10n.format(
+                    "alert.translation.unsupported.message",
+                    "The detected language (%1$@) is not supported by Apple Translation Framework.\n\nSupported languages include English, Chinese, Japanese, Korean, French, German, Spanish, and others.",
+                    arguments: [lang]
+                )
+                alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
                 alert.runModal()
 
             case .languagePackMissing(let source, let target):
-                alert.messageText = "Language Pack Not Installed"
-                alert.informativeText = "Translation from \(source) to \(target) requires downloading the language pack.\n\nSystem Settings → General → Language & Region → Translation Languages → Download"
-                alert.addButton(withTitle: "OK")
-                alert.addButton(withTitle: "Open Settings")
+                alert.messageText = L10n.string(
+                    "alert.translation.pack_missing.title",
+                    fallback: "Language Pack Not Installed"
+                )
+                alert.informativeText = L10n.format(
+                    "alert.translation.pack_missing.message",
+                    "Translation from %1$@ to %2$@ requires downloading the language pack.\n\nSystem Settings → General → Language & Region → Translation Languages → Download",
+                    arguments: [source, target]
+                )
+                alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
+                alert.addButton(withTitle: L10n.string(
+                    "common.button.open_translation_settings",
+                    fallback: "Open Settings"
+                ))
                 let response = alert.runModal()
                 if response == .alertSecondButtonReturn {
                     if let url = URL(string: "x-apple.systempreferences:com.apple.Localization") {
@@ -731,15 +1004,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
 
             case .translationFailed(let detail):
-                alert.messageText = "Translation Failed"
-                alert.informativeText = "Unable to translate the selected text.\n\n\(detail)"
-                alert.addButton(withTitle: "OK")
+                alert.messageText = L10n.string(
+                    "alert.translation.failed.title",
+                    fallback: "Translation Failed"
+                )
+                alert.informativeText = L10n.format(
+                    "alert.translation.failed.message",
+                    "Unable to translate the selected text.\n\n%1$@",
+                    arguments: [detail]
+                )
+                alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
                 alert.runModal()
             }
         } else {
-            alert.messageText = "Translation Failed"
-            alert.informativeText = "Unable to translate the selected text.\n\n\(error.localizedDescription)"
-            alert.addButton(withTitle: "OK")
+            alert.messageText = L10n.string(
+                "alert.translation.failed.title",
+                fallback: "Translation Failed"
+            )
+            alert.informativeText = L10n.format(
+                "alert.translation.failed.message",
+                "Unable to translate the selected text.\n\n%1$@",
+                arguments: [error.localizedDescription]
+            )
+            alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
             alert.runModal()
         }
     }
@@ -852,11 +1139,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Model Unload / Reload
 
-    private func unloadModel() {
+    /// Entry point for T4's engine picker. The persisted selection and the
+    /// active protocol existential change together. Keeping a warm local
+    /// model on Local → Cloud makes switching back instant; Cloud → Local
+    /// performs the existing progress-bearing reload when needed.
+    func switchDictationEngine(to engine: AppConfig.DictationEngine) {
+        let previous = AppConfig.shared.dictationEngine
+        guard previous != engine else { return }
+
+        AppConfig.shared.dictationEngine = engine
+        activeEngine = makeDictationEngine(for: engine)
+        NotificationCenter.default.post(name: .hushTypeDictationEngineDidChange, object: nil)
+
+        if engine == .local {
+            if !localEngine.isLoaded {
+                reloadModel()
+            }
+        } else if state == .unloaded || state == .loading {
+            localEngine.unload()
+            state = .idle
+            statusBar.setState(.idle)
+        }
+    }
+
+    private func unloadModel() async {
         guard state == .idle else {
             print("[HushType] Cannot unload — state is \(state)")
             return
         }
+        // Block dictation while a local-caption backend drains. The status
+        // row stays unchanged until the final unloaded/idle transition.
+        state = .loading
 
         // Snapshot the physical footprint at each step so a user reporting
         // "memory didn't release" can post the numbers and we can see exactly
@@ -870,30 +1183,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         snapshot("0_begin")
 
-        // §7 order: stop live caption first (drops its Qwen3ASRModel reference
-        // + clears the menu checkmark via onStateChanged), THEN unload the
-        // engine, THEN show the modal alert. `unloadModel` is always invoked
-        // from the menu action, which runs on the main thread, so the
-        // MainActor.assumeIsolated bridge is sound.
-        //
-        // Critical: the manager holds a STRONG `let asrModel` reference, so
-        // unloading without dropping the manager leaves the ASR model
-        // retained even though the engine's own pointer is nil'd. We MUST
-        // nil out `liveCaptionManager` unconditionally — not only when it's
-        // currently active. Reload reconstructs it via `loadedModel`.
-        var wasLiveCaptionActive = false
-        if let manager = liveCaptionManager {
-            MainActor.assumeIsolated {
-                if manager.isActive {
-                    wasLiveCaptionActive = true
-                    manager.stop()
-                }
-            }
-            self.liveCaptionManager = nil
-        }
-        snapshot("1_manager_nil")
+        // Release only the manager's local-model handle. A local caption
+        // backend is stopped because it strongly owns Qwen; a cloud-translate
+        // backend has no Qwen reference and must survive this operation.
+        let wasLocalCaptionActive = await liveCaptionManager?.releaseLocalModel() ?? false
+        snapshot("1_manager_release")
 
-        transcriptionEngine.unload()
+        localEngine.unload()
         snapshot("2_engine_unload")
 
         if AppConfig.shared.textPolishEnabled {
@@ -912,28 +1208,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MLX.Memory.clearCache()
         snapshot("3_clearCache")
 
-        state = .unloaded
-        statusBar.setState(.unloaded)
+        if AppConfig.shared.dictationEngine == .local {
+            state = .unloaded
+            statusBar.setState(.unloaded)
+        } else {
+            state = .idle
+            statusBar.setState(.idle)
+        }
         print("[HushType] Model unloaded — memory freed")
 
         // Show confirmation alert with cold-start warning. If live caption
         // was active, the message changes to direct the user accordingly.
         let alert = NSAlert()
-        if wasLiveCaptionActive {
-            alert.messageText = "Live Caption Stopped"
-            alert.informativeText = "The speech-to-text model was unloaded. Re-enable Live Caption from the menu after reloading the model."
+        if wasLocalCaptionActive {
+            alert.messageText = L10n.string(
+                "alert.model_unloaded.live_caption.title",
+                fallback: "Live Caption Stopped"
+            )
+            alert.informativeText = L10n.string(
+                "alert.model_unloaded.live_caption.message",
+                fallback: "The speech-to-text model was unloaded. Re-enable Live Caption from the menu after reloading the model."
+            )
+        } else if AppConfig.shared.dictationEngine != .local {
+            alert.messageText = L10n.string(
+                "alert.model_unloaded.cloud.title",
+                fallback: "Local Model Unloaded"
+            )
+            alert.informativeText = L10n.string(
+                "alert.model_unloaded.cloud.message",
+                fallback: "The local speech recognition model has been removed from memory. Cloud dictation remains ready."
+            )
         } else {
-            alert.messageText = "Model Unloaded"
-            alert.informativeText = "The speech recognition model has been removed from memory.\n\nVoice input will require a cold start (~3 seconds) the next time you press Right ⌥."
+            alert.messageText = L10n.string(
+                "alert.model_unloaded.local.title",
+                fallback: "Model Unloaded"
+            )
+            alert.informativeText = L10n.string(
+                "alert.model_unloaded.local.message",
+                fallback: "The speech recognition model has been removed from memory.\n\nVoice input will require a cold start (~3 seconds) the next time you press Right ⌥."
+            )
         }
         alert.alertStyle = .informational
         alert.icon = NSImage(systemSymbolName: "memorychip", accessibilityDescription: nil)
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
         alert.runModal()
     }
 
     private func reloadModel() {
-        guard state == .unloaded || !transcriptionEngine.isLoaded else {
+        guard state == .unloaded || !localEngine.isLoaded else {
             print("[HushType] Model already loaded")
             return
         }
@@ -944,7 +1266,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Task.detached { [weak self] in
             do {
-                try await self?.transcriptionEngine.load { progress, description in
+                try await self?.localEngine.load { progress, description in
                     DispatchQueue.main.async {
                         self?.statusBar.setState(.loading(progress))
                     }
@@ -953,36 +1275,467 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     guard let self else { return }
                     self.state = .idle
                     self.statusBar.setState(.idle)
-                    if let model = self.transcriptionEngine.loadedModel {
-                        if self.liveCaptionManager == nil {
-                            let manager = LiveCaptionManager(
-                                asrModel: model,
-                                captureService: self.audioCapture
-                            )
-                            manager.onStateChanged = { [weak self] mode, source in
-                                self?.statusBar.setLiveCaptionState(mode: mode, source: source)
-                            }
-                            self.liveCaptionManager = manager
-                        }
-                    }
                     log.info("Model reloaded")
                 }
-
-                if AppConfig.shared.textPolishEnabled && TextPolisher.isAvailableCached {
-                    if #available(macOS 26.0, *) {
-                        Task { @MainActor in
-                            log.info("Scheduling Text Polish prewarm after model reload")
-                            FoundationModelsPolisher.warmup()
-                        }
-                    }
-                }
+                await self?.scheduleTextPolishPrewarmIfNeeded(reason: "model reload")
             } catch {
                 log.error("Failed to reload model: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
                     self?.state = .unloaded
-                    self?.statusBar.setState(.error("Reload failed"))
+                    self?.statusBar.setState(.error(L10n.string(
+                        "status.model_reload_failed",
+                        fallback: "Reload failed"
+                    )))
                 }
             }
         }
+    }
+
+    private func makeDictationEngine(
+        for selection: AppConfig.DictationEngine
+    ) -> any TranscriptionEngine {
+        switch selection {
+        case .local:
+            return localEngine
+        case .openai:
+            return OpenAITranscribeEngine()
+        case .gemini:
+            return GeminiTranscribeEngine()
+        }
+    }
+
+    private func scheduleTextPolishPrewarmIfNeeded(reason: String) {
+        guard AppConfig.shared.textPolishEnabled && TextPolisher.isAvailableCached else { return }
+        if #available(macOS 26.0, *) {
+            log.info("Scheduling Text Polish prewarm after \(reason, privacy: .public)")
+            FoundationModelsPolisher.warmup()
+        }
+    }
+
+    private enum CloudFailureChoice {
+        case retryCloud
+        case useLocalOnce
+        case switchToLocal
+        case cancel
+        case openSettings
+        case openKeyFile
+    }
+
+    private typealias CloudDictationMetering = (
+        provider: CloudUsageTracker.Provider,
+        rate: Double
+    )
+
+    private func cloudDictationMetering(
+        for selection: AppConfig.DictationEngine
+    ) -> CloudDictationMetering? {
+        guard let provider = Self.usageProvider(for: selection) else { return nil }
+        let model: String
+        switch selection {
+        case .openai:
+            model = AppConfig.shared.cloudDictationModelOpenAI
+        case .gemini:
+            model = AppConfig.shared.cloudDictationModelGemini
+        case .local:
+            return nil
+        }
+        return (
+            provider: provider,
+            rate: CloudUsageTracker.dictationRate(provider: provider, model: model)
+        )
+    }
+
+    private func handleDailySpendWarning(
+        _ projection: CloudUsageTracker.DictationUploadProjection,
+        samples: [Float],
+        language: String?,
+        insertionFocus: NSRunningApplication?
+    ) async {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = L10n.string(
+            "alert.daily_spend_gate.title",
+            fallback: "Daily spend warning reached"
+        )
+        alert.informativeText = L10n.format(
+            "alert.daily_spend_gate.message",
+            "This upload would bring today's estimated cloud usage to %1$@ (warning: %2$@). No audio was uploaded. Open Settings and reset today's counter to use cloud again.",
+            arguments: [
+                CloudUsageTracker.formatDollars(projection.projectedTotalDollars),
+                CloudUsageTracker.formatDollars(projection.warningThreshold)
+            ]
+        )
+        alert.addButton(withTitle: L10n.string("common.button.open_settings", fallback: "Open Settings"))
+        alert.addButton(withTitle: L10n.string("common.button.use_local_once", fallback: "Use Local Once"))
+        alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            state = .idle
+            statusBar.setState(.idle)
+            hideOverlay()
+            DictationEngineSettingsWindowController.shared.presentAndFocus(
+                onSwitchEngine: { [weak self] engine in
+                    self?.switchDictationEngine(to: engine)
+                }
+            )
+        case .alertSecondButtonReturn:
+            await transcribeLocallyOnce(
+                samples: samples,
+                language: language,
+                insertionFocus: insertionFocus
+            )
+        default:
+            await finishWithoutInsertion(restoreFocus: insertionFocus)
+        }
+    }
+
+    private func handleCloudFailure(
+        _ error: TranscriptionError,
+        samples: [Float],
+        language: String?,
+        selection: AppConfig.DictationEngine,
+        engine: any TranscriptionEngine,
+        insertionFocus: NSRunningApplication?
+    ) async {
+        switch error {
+        case .network, .timeout:
+            consecutiveCloudNetworkFailures += 1
+        default:
+            consecutiveCloudNetworkFailures = 0
+        }
+
+        let choice = presentCloudFailureAlert(
+            error: error,
+            selection: selection,
+            preferSwitchToLocal: consecutiveCloudNetworkFailures >= 2
+        )
+
+        switch choice {
+        case .retryCloud:
+            await continueCloudTranscriptionAfterConsent(
+                samples: samples,
+                language: language,
+                selection: selection,
+                engine: engine,
+                insertionFocus: insertionFocus
+            )
+        case .useLocalOnce:
+            await transcribeLocallyOnce(
+                samples: samples,
+                language: language,
+                insertionFocus: insertionFocus
+            )
+        case .switchToLocal:
+            switchDictationEngine(to: .local)
+            hideOverlay()
+            if localEngine.isLoaded {
+                state = .idle
+                statusBar.setState(.idle)
+            }
+            _ = await restoreInsertionFocus(insertionFocus)
+        case .cancel:
+            await finishWithoutInsertion(restoreFocus: insertionFocus)
+        case .openSettings:
+            state = .idle
+            statusBar.setState(.idle)
+            hideOverlay()
+            DictationEngineSettingsWindowController.shared.presentAndFocus(
+                onSwitchEngine: { [weak self] engine in
+                    self?.switchDictationEngine(to: engine)
+                }
+            )
+        case .openKeyFile:
+            state = .idle
+            statusBar.setState(.idle)
+            hideOverlay()
+            switch selection {
+            case .openai: OpenAIKeyStore.openInDefaultEditor()
+            case .gemini: GeminiKeyStore.openInDefaultEditor()
+            case .local: break
+            }
+        }
+    }
+
+    private func transcribeLocallyOnce(
+        samples: [Float],
+        language: String?,
+        insertionFocus: NSRunningApplication?
+    ) async {
+        do {
+            if !localEngine.isLoaded {
+                state = .loading
+                statusBar.setState(.loading(0))
+                try await localEngine.load { [weak self] progress, _ in
+                    DispatchQueue.main.async {
+                        self?.statusBar.setState(.loading(progress))
+                    }
+                }
+            }
+            state = .transcribing
+            statusBar.setState(.transcribing)
+            if AppConfig.shared.floatingOverlayEnabled {
+                overlayState.state = .transcribing(provider: nil)
+            }
+            let text = try await localEngine.transcribe(audio: samples, language: language)
+            await finishSuccessfulTranscription(
+                text,
+                insertionFocus: insertionFocus,
+                resetNetworkFailures: false
+            )
+        } catch {
+            log.error("Use Local Once failed: \(error.localizedDescription, privacy: .public)")
+            let alert = NSAlert()
+            alert.messageText = L10n.string(
+                "alert.local_transcription_failed.title",
+                fallback: "Local transcription failed"
+            )
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
+            alert.runModal()
+            await finishWithoutInsertion(restoreFocus: insertionFocus)
+        }
+    }
+
+    private func presentCloudFailureAlert(
+        error: TranscriptionError,
+        selection: AppConfig.DictationEngine,
+        preferSwitchToLocal: Bool
+    ) -> CloudFailureChoice {
+        let provider = providerName(for: selection)
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+
+        switch error {
+        case .noKey:
+            alert.messageText = L10n.string(
+                "alert.cloud.no_key.title",
+                fallback: "API key not set"
+            )
+            alert.informativeText = L10n.format(
+                "alert.cloud.no_key.message",
+                "Add your %1$@ API key in Dictation Engine Settings before using cloud dictation.",
+                arguments: [provider]
+            )
+            alert.addButton(withTitle: L10n.string("common.button.open_settings", fallback: "Open Settings"))
+            alert.addButton(withTitle: L10n.string("common.button.switch_to_local", fallback: "Switch to Local"))
+            alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
+            switch alert.runModal() {
+            case .alertFirstButtonReturn: return .openSettings
+            case .alertSecondButtonReturn: return .switchToLocal
+            default: return .cancel
+            }
+
+        case .auth:
+            let path = selection == .gemini ? GeminiKeyStore.displayPath : OpenAIKeyStore.displayPath
+            alert.messageText = L10n.format(
+                "alert.cloud.auth.title",
+                "%1$@ rejected the API key",
+                arguments: [provider]
+            )
+            alert.informativeText = L10n.format(
+                "alert.cloud.auth.message",
+                "Check %1$@.",
+                arguments: [path]
+            )
+            alert.addButton(withTitle: L10n.string("common.button.open_file", fallback: "Open File"))
+            alert.addButton(withTitle: L10n.string("common.button.use_local_once", fallback: "Use Local Once"))
+            return alert.runModal() == .alertFirstButtonReturn ? .openKeyFile : .useLocalOnce
+
+        case .permissionDenied(let deniedProvider):
+            let path = selection == .gemini ? GeminiKeyStore.displayPath : OpenAIKeyStore.displayPath
+            alert.messageText = L10n.format(
+                "alert.cloud.permission.title",
+                "%1$@ denied this request",
+                arguments: [deniedProvider]
+            )
+            alert.informativeText = L10n.format(
+                "alert.cloud.permission.message",
+                "The API key is present, but its project or model permissions may not allow this request. Check provider access and %1$@.",
+                arguments: [path]
+            )
+            alert.addButton(withTitle: L10n.string("common.button.open_file", fallback: "Open File"))
+            alert.addButton(withTitle: L10n.string("common.button.use_local_once", fallback: "Use Local Once"))
+            return alert.runModal() == .alertFirstButtonReturn ? .openKeyFile : .useLocalOnce
+
+        case .rateLimited(let limitedProvider):
+            alert.messageText = L10n.format(
+                "alert.cloud.rate_limit.title",
+                "%1$@ quota or rate limit reached",
+                arguments: [limitedProvider]
+            )
+            alert.informativeText = L10n.format(
+                "alert.cloud.rate_limit.message",
+                "This limit comes from %1$@, not HushType's Daily spend warning. Check provider usage or billing, or try again later.",
+                arguments: [limitedProvider]
+            )
+            alert.addButton(withTitle: L10n.string("common.button.use_local_once", fallback: "Use Local Once"))
+            alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
+            return alert.runModal() == .alertFirstButtonReturn ? .useLocalOnce : .cancel
+
+        case .payloadTooLarge:
+            alert.messageText = L10n.string(
+                "alert.cloud.payload.title",
+                fallback: "Recording too long for cloud transcription"
+            )
+            alert.informativeText = L10n.string(
+                "alert.cloud.payload.message",
+                fallback: "This recording exceeds the cloud upload limit. No audio was uploaded."
+            )
+            alert.addButton(withTitle: L10n.string("common.button.use_local_once", fallback: "Use Local Once"))
+            alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
+            return alert.runModal() == .alertFirstButtonReturn ? .useLocalOnce : .cancel
+
+        case .timeout:
+            alert.messageText = L10n.string(
+                "alert.cloud.timeout.title",
+                fallback: "Cloud transcription timed out"
+            )
+            alert.informativeText = L10n.format(
+                "alert.cloud.timeout.message",
+                "%1$@ did not respond within 180 seconds. The recording is still available.",
+                arguments: [provider]
+            )
+            alert.addButton(withTitle: L10n.string("common.button.retry_cloud", fallback: "Retry Cloud"))
+            alert.addButton(withTitle: L10n.string("common.button.use_local_once", fallback: "Use Local Once"))
+            alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
+            switch alert.runModal() {
+            case .alertFirstButtonReturn: return .retryCloud
+            case .alertSecondButtonReturn: return .useLocalOnce
+            default: return .cancel
+            }
+
+        case .network:
+            alert.messageText = L10n.string(
+                "alert.cloud.network.title",
+                fallback: "Cloud transcription unavailable"
+            )
+            alert.informativeText = L10n.format(
+                "alert.cloud.network.message",
+                "HushType could not reach %1$@. The recording is still available for local transcription.",
+                arguments: [provider]
+            )
+            addStandardCloudFailureButtons(to: alert, preferSwitchToLocal: preferSwitchToLocal)
+            return standardCloudFailureChoice(from: alert.runModal())
+
+        case .malformedResponse:
+            alert.messageText = L10n.format(
+                "alert.cloud.malformed.title",
+                "%1$@ returned an unreadable transcript",
+                arguments: [provider]
+            )
+            alert.informativeText = L10n.string(
+                "alert.cloud.no_insert_local_available",
+                fallback: "Nothing was inserted. The recording is still available for local transcription."
+            )
+            addStandardCloudFailureButtons(to: alert, preferSwitchToLocal: false)
+            return standardCloudFailureChoice(from: alert.runModal())
+
+        case .safetyBlocked:
+            alert.messageText = L10n.string(
+                "alert.cloud.safety.title",
+                fallback: "Gemini blocked this transcription"
+            )
+            alert.informativeText = L10n.string(
+                "alert.cloud.no_insert_local_available",
+                fallback: "Nothing was inserted. The recording is still available for local transcription."
+            )
+            addStandardCloudFailureButtons(to: alert, preferSwitchToLocal: false)
+            return standardCloudFailureChoice(from: alert.runModal())
+        }
+    }
+
+    private func addStandardCloudFailureButtons(
+        to alert: NSAlert,
+        preferSwitchToLocal: Bool
+    ) {
+        alert.addButton(withTitle: L10n.string("common.button.use_local_once", fallback: "Use Local Once"))
+        alert.addButton(withTitle: L10n.string("common.button.switch_to_local", fallback: "Switch to Local"))
+        alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
+        if preferSwitchToLocal {
+            alert.buttons[0].keyEquivalent = ""
+            alert.buttons[1].keyEquivalent = "\r"
+        }
+    }
+
+    private func standardCloudFailureChoice(from response: NSApplication.ModalResponse) -> CloudFailureChoice {
+        switch response {
+        case .alertFirstButtonReturn: return .useLocalOnce
+        case .alertSecondButtonReturn: return .switchToLocal
+        default: return .cancel
+        }
+    }
+
+    private func consentProvider(
+        for selection: AppConfig.DictationEngine
+    ) -> CloudDictationOnboardingAlert.Provider? {
+        switch selection {
+        case .local: return nil
+        case .openai: return .openai
+        case .gemini: return .gemini
+        }
+    }
+
+    nonisolated private static func usageProvider(
+        for selection: AppConfig.DictationEngine
+    ) -> CloudUsageTracker.Provider? {
+        switch selection {
+        case .local: return nil
+        case .openai: return .openai
+        case .gemini: return .gemini
+        }
+    }
+
+    private func providerName(for selection: AppConfig.DictationEngine) -> String {
+        switch selection {
+        case .local: return "Local"
+        case .openai: return "OpenAI"
+        case .gemini: return "Gemini"
+        }
+    }
+
+    private func postDailySpendWarningNotification(
+        snapshot: CloudUsageTracker.Snapshot,
+        threshold: Double
+    ) {
+        let content = UNMutableNotificationContent()
+        content.title = L10n.string(
+            "notification.daily_spend.title",
+            fallback: "Daily spend warning reached"
+        )
+        content.body = L10n.format(
+            "notification.daily_spend.body",
+            "Today's cloud total is %1$@ (warning: %2$@).",
+            arguments: [
+                CloudUsageTracker.formatDollars(snapshot.dayDollars),
+                CloudUsageTracker.formatDollars(threshold)
+            ]
+        )
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(
+                identifier: "hushtype-cloud-cap-\(snapshot.dayKey)",
+                content: content,
+                trigger: nil
+            )
+        )
+    }
+
+    /// Capture before a modal that may lead to insertion, then reactivate and
+    /// wait for the original app to confirm focus before simulating paste.
+    /// T4's consent/failure alerts use these helpers.
+    private func captureInsertionFocus() -> NSRunningApplication? {
+        NSWorkspace.shared.frontmostApplication
+    }
+
+    @discardableResult
+    private func restoreInsertionFocus(_ application: NSRunningApplication?) async -> Bool {
+        guard let application else { return false }
+        application.activate()
+        for _ in 0..<20 {
+            if application.isActive { return true }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        return application.isActive
     }
 }

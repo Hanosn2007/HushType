@@ -141,17 +141,16 @@ final class IOSServerManager {
 
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "iOS Server Failed to Start"
-        alert.informativeText = """
-            The server exited with code \(code). This usually means a missing Python dependency.
-
-            See the README for required packages:
-            pip3 install "mlx-audio[stt,server]" httpx webrtcvad-wheels setuptools
-
-            Error output:
-            \(truncated)
-            """
-        alert.addButton(withTitle: "OK")
+        alert.messageText = L10n.string(
+            "alert.ios_server_failed.title",
+            fallback: "iOS Server Failed to Start"
+        )
+        alert.informativeText = L10n.format(
+            "alert.ios_server_failed.message",
+            "The server exited with code %1$d. This usually means a missing Python dependency.\n\nSee the README for required packages:\npip3 install \"mlx-audio[stt,server]\" httpx webrtcvad-wheels setuptools\n\nError output:\n%2$@",
+            arguments: [code, truncated]
+        )
+        alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
         alert.runModal()
     }
 

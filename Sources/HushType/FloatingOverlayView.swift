@@ -8,8 +8,8 @@ import AppKit
 /// is ordered out instead of rendering this case.
 enum OverlayState: Equatable {
     case hidden
-    case recording(level: Float)  // 0.0–1.0 RMS
-    case transcribing
+    case recording(level: Float, provider: String?)  // 0.0–1.0 RMS
+    case transcribing(provider: String?)
     case polishing
 }
 
@@ -37,11 +37,11 @@ struct FloatingOverlayView: View {
             Text(label)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.primary)
-                .frame(width: 80, alignment: .leading)
+                .frame(width: labelWidth, alignment: .leading)
 
             ZStack {
                 switch model.state {
-                case .recording(let level):
+                case .recording(let level, _):
                     AudioBarsView(level: level)
                         .transition(.opacity)
                 case .transcribing:
@@ -78,10 +78,21 @@ struct FloatingOverlayView: View {
 
     private var label: String {
         switch model.state {
-        case .recording:    return "Listening"
-        case .transcribing: return "Transcribing"
-        case .polishing:    return "Polishing…"
-        case .hidden:       return ""
+        case .recording:
+            return L10n.string("overlay.listening", fallback: "Listening")
+        case .transcribing(let provider):
+            if let provider {
+                return L10n.format(
+                    "overlay.transcribing_provider",
+                    "Transcribing · %1$@",
+                    arguments: [provider]
+                )
+            }
+            return L10n.string("overlay.transcribing", fallback: "Transcribing")
+        case .polishing:
+            return L10n.string("overlay.polishing", fallback: "Polishing…")
+        case .hidden:
+            return ""
         }
     }
 
@@ -89,6 +100,18 @@ struct FloatingOverlayView: View {
         switch model.state {
         case .polishing: return "wand.and.sparkles"
         default:         return "mic.fill"
+        }
+    }
+
+    private var labelWidth: CGFloat {
+        // The panel sizes itself when recording begins and does not resize on
+        // the later state swap. Cloud recording reserves provider-label width
+        // up front; local recording/transcription keeps the original 80 pt.
+        switch model.state {
+        case .recording(_, let provider), .transcribing(let provider):
+            return provider == nil ? 80 : 150
+        default:
+            return 80
         }
     }
 

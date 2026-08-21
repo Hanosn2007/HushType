@@ -1,0 +1,1441 @@
+/* Generated from the frozen Gate B manifest + decisions overlay. */
+
+/* Default acknowledgement button used by HushType alerts. */
+
+"common.button.ok" = "OK";
+
+/* Cancels the current prompt without changing the underlying feature state. */
+
+"common.button.cancel" = "Cancel";
+
+/* Opens the relevant HushType settings window. */
+
+"common.button.open_settings" = "Open Settings";
+
+/* Opens the relevant macOS System Settings pane. */
+
+"common.button.open_system_settings" = "Open System Settings";
+
+/* Opens the provider key file. */
+
+"common.button.open_file" = "Open File";
+
+/* Opens a plaintext configuration file in TextEdit. */
+
+"common.button.open_in_textedit" = "Open file in TextEdit";
+
+/* Resets today's local cloud-usage counter, not provider billing. */
+
+"common.button.reset_counter" = "Reset counter";
+
+/* Runs this one transcription locally without changing the saved engine. */
+
+"common.button.use_local_once" = "Use Local Once";
+
+/* Changes the saved dictation/caption engine to local. */
+
+"common.button.switch_to_local" = "Switch to Local";
+
+/* Retries the same recording with the selected cloud provider. */
+
+"common.button.retry_cloud" = "Retry Cloud";
+
+/* New top-level status-menu submenu; distinct from speech-recognition language. */
+
+"menu.interface_language" = "Interface Language";
+
+/* Interface-language preference that follows ordered macOS app/process language preferences. */
+
+"menu.interface_language.follow_system" = "Follow System";
+
+/* Language choice shown as an autonym. */
+
+"menu.interface_language.english" = "English";
+
+/* Language choice shown as an autonym; exact spelling is product-approved. */
+
+"menu.interface_language.traditional_chinese_taiwan" = "繁體中文（台灣）";
+
+/* Disabled informational row; it must not sound actionable or imply an automatic restart. */
+
+"menu.interface_language.applied_next_launch" = "Applied Next Launch";
+
+/* Accessibility description for the disabled next-launch row; not a restart button. */
+
+"menu.interface_language.applied_next_launch.accessibility" = "Language applies the next time you open HushType";
+
+/* Informational alert title after changing the next-launch interface language. */
+
+"alert.language_saved.title" = "Language Saved";
+
+/* Passive next-launch explanation; does not offer or imply programmatic quit/restart. */
+
+"alert.language_saved.message" = "It will be used the next time you open HushType. Finish any active work before quitting.";
+
+/* Initial status-menu state. */
+
+"status.loading" = "Loading...";
+
+/* Combined status row; argument 1 is an integer percentage. */
+
+"status.loading_model_percent" = "Loading model (%1$d%%)...";
+
+/* Status-menu idle state. */
+
+"status.ready" = "Ready";
+
+/* Status-menu recording state. */
+
+"status.recording" = "Recording...";
+
+/* Status-menu transcription state. */
+
+"status.transcribing" = "Transcribing...";
+
+/* Status-menu Text Polish state. */
+
+"status.polishing" = "Polishing…";
+
+/* Status-menu wrapper around an app-owned localized state error; argument 1 is error text. */
+
+"status.error" = "Error: %1$@";
+
+/* Status-menu state after unloading the local speech model. */
+
+"status.model_unloaded" = "Model unloaded";
+
+/* App-owned status fragment after initial local-model load failure. */
+
+"status.model_load_failed" = "Model load failed";
+
+/* App-owned status fragment after model reload failure. */
+
+"status.model_reload_failed" = "Reload failed";
+
+/* Combined status row; argument 1 is localized state, argument 2 is locale-neutral memory text. */
+
+"status.memory" = "%1$@ · Memory %2$@";
+
+/* Combined cloud-engine status row; arguments are localized state, provider name, model status. */
+
+"status.cloud_engine" = "%1$@ · Cloud (%2$@) · %3$@";
+
+/* Cloud-engine row notes local model remains loaded; argument is memory text. */
+
+"status.model_loaded_memory" = "Model loaded (%1$@)";
+
+/* Cloud-engine row when the local model is absent. */
+
+"status.no_model_loaded" = "No model loaded";
+
+/* Local on-device caption product name. */
+
+"menu.live_caption" = "Live Caption";
+
+/* Opt-in cloud translated-caption product name. */
+
+"menu.live_translated_caption" = "Live Translated Caption";
+
+/* Selected-text translation feature name. */
+
+"menu.text_translation" = "Text Translation";
+
+/* Text Polish feature and activation hint. */
+
+"menu.text_polish" = "Text Polish (double-tap ⌥)";
+
+/* Temporary validation state after enabling Text Polish. */
+
+"menu.text_polish.validating" = "Text Polish (validating…)";
+
+/* Opens polish_rules.txt. */
+
+"menu.edit_polish_instructions" = "Edit Polish Instructions";
+
+/* Status-menu submenu for dictation engine and processing options. */
+
+"menu.dictation_settings" = "Dictation Settings";
+
+/* Starts the local iOS companion server. */
+
+"menu.ios_server.start" = "Start iOS Server";
+
+/* Stops the local iOS companion server; numeric port is exact. */
+
+"menu.ios_server.stop" = "Stop iOS Server (port 8000)";
+
+/* Frees the local speech-to-text model from memory. */
+
+"menu.model.unload" = "Unload Speech-to-Text Model";
+
+/* Reloads the local speech-to-text model. */
+
+"menu.model.reload" = "Reload Speech-to-Text Model";
+
+/* Opens the About alert. */
+
+"menu.about" = "About HushType";
+
+/* Normal explicit Quit command; unrelated to interface-language selection. */
+
+"menu.quit" = "Quit HushType";
+
+/* Privacy/cost subtitle for local Live Caption. */
+
+"menu.live_caption.subtitle" = "Local transcription — free, on-device";
+
+/* Cloud/provider/cost marker subtitle; dollar glyph is retained. */
+
+"menu.live_translated_caption.subtitle" = "Real-time foreign-language → text via OpenAI · $";
+
+/* Starts the selected caption product with its last source. */
+
+"menu.caption.start_last_source" = "Start with Last Source";
+
+/* Caption audio-source choice. */
+
+"menu.caption.from_microphone" = "From Microphone";
+
+/* Caption system-audio source choice; opens a picker/permission flow. */
+
+"menu.caption.from_system_audio" = "From System Audio…";
+
+/* Opens the running-app system-audio picker. */
+
+"menu.caption.change_system_audio_source" = "Change System Audio Source…";
+
+/* Stops local Live Caption. */
+
+"menu.live_caption.stop" = "Stop Live Caption";
+
+/* Stops the paid cloud translated-caption session. */
+
+"menu.live_translated_caption.stop" = "Stop Live Translated Caption";
+
+/* Opens live_caption.json. */
+
+"menu.live_caption.edit_settings" = "Edit Live Caption Settings";
+
+/* Opens translated-caption cloud settings. */
+
+"menu.live_translated_caption.settings" = "Translated Caption Settings…";
+
+/* Provider/framework subtitle for selected-text translation. */
+
+"menu.text_translation.subtitle" = "via Apple Translation Framework";
+
+/* Toggle for selected-text translation. */
+
+"menu.text_translation.enable" = "Enable Text Translation";
+
+/* Target-language submenu label. */
+
+"menu.translate_to" = "Translate to";
+
+/* Disabled activation hint; preserve shortcut glyph. */
+
+"menu.translation_hint" = "Tap Right ⌥ to translate selection";
+
+/* Automatic target/detection choice in translation and speech-to-text language menus. */
+
+"menu.choice.auto" = "Auto";
+
+/* Dictation engine submenu and settings heading. */
+
+"menu.dictation_engine" = "Dictation Engine";
+
+/* Local dictation engine choice; model name is immutable. */
+
+"menu.engine.local_qwen" = "Local (Qwen3-ASR)";
+
+/* OpenAI cloud dictation engine choice. */
+
+"menu.engine.openai_cloud" = "OpenAI Cloud";
+
+/* Gemini cloud dictation engine choice. */
+
+"menu.engine.gemini_cloud" = "Gemini Cloud";
+
+/* Opens Dictation Engine Settings. */
+
+"menu.engine_settings" = "Engine Settings…";
+
+/* Recognition-language submenu; explicitly not interface language. */
+
+"menu.speech_to_text_language" = "Speech-to-Text Language";
+
+/* Toggle for deterministic Chinese numeral conversion. */
+
+"menu.number_conversion" = "Number Conversion";
+
+/* Disabled explanation beneath Number Conversion. */
+
+"menu.number_conversion.subtitle" = "Chinese numerals → Arabic digits";
+
+/* Punctuation cleanup submenu. */
+
+"menu.punctuation_cleanup" = "Punctuation Cleanup";
+
+/* Punctuation mode that trims inline Chinese commas. */
+
+"menu.punctuation.soft" = "Soft — trim inline commas";
+
+/* Punctuation mode that trims all configured marks. */
+
+"menu.punctuation.hard" = "Hard — trim all marks";
+
+/* Punctuation mode that preserves model output. */
+
+"menu.punctuation.off" = "Off — keep model output";
+
+/* Disabled explanation beneath Punctuation Cleanup. */
+
+"menu.punctuation.subtitle" = "Trim Chinese over-punctuation";
+
+/* Toggle for the dictation state overlay. */
+
+"menu.floating_indicator" = "Show Floating Indicator";
+
+/* Creates/opens dictionary.txt. */
+
+"menu.edit_dictionary" = "Edit Customized Dictionary";
+
+/* Dictionary subtitle before dictionary.txt is created. */
+
+"menu.dictionary.no_file" = "No dictionary file";
+
+/* Accessibility description for the custom green checkmark image. */
+
+"accessibility.checkmark.enabled" = "enabled";
+
+/* Resource-conflict alert title. */
+
+"alert.caption_conflict.stop_live_caption.title" = "Stop Live Caption first";
+
+/* Explains GPU-memory conflict between local caption and iOS server. */
+
+"alert.caption_conflict.stop_live_caption.message" = "Live Caption is running. Stop it before starting the iOS Server — they share GPU memory.";
+
+/* Resource-conflict alert title. */
+
+"alert.caption_conflict.stop_ios_server.title" = "Stop iOS Server first";
+
+/* Explains GPU-memory conflict before local caption. */
+
+"alert.caption_conflict.stop_ios_server.local_message" = "The iOS Server is running. Stop it before starting Live Caption — they share GPU memory.";
+
+/* Explains GPU-memory conflict before cloud translated caption. */
+
+"alert.caption_conflict.stop_ios_server.translated_message" = "The iOS Server is running. Stop it before starting Live Translated Caption — they share GPU memory.";
+
+/* Shown when live_caption.json could not be created/opened. */
+
+"alert.file_create.live_caption.title" = "Could not open Live Caption settings";
+
+/* Argument 1 is a filesystem path and remains untouched. */
+
+"alert.file_create.live_caption.message" = "Failed to create the settings file at:\n%1$@";
+
+/* Shown when dictionary.txt could not be created/opened. */
+
+"alert.file_create.dictionary.title" = "Could not open dictionary";
+
+/* Argument 1 is a filesystem path and remains untouched. */
+
+"alert.file_create.dictionary.message" = "Failed to create the dictionary file at:\n%1$@";
+
+/* Shown when polish_rules.txt could not be created/opened. */
+
+"alert.file_create.polish.title" = "Could not open Polish instructions";
+
+/* Argument 1 is a filesystem path and remains untouched. */
+
+"alert.file_create.polish.message" = "Failed to create the instructions file at:\n%1$@";
+
+/* Validation alert title when Text Polish cannot run. */
+
+"alert.text_polish.unavailable.title" = "Text Polish unavailable";
+
+/* Argument 1 is an app-owned localized or system-provided availability reason. */
+
+"alert.text_polish.unavailable.message" = "Text Polish requires macOS 26 + Apple Intelligence.\n\n%1$@";
+
+/* About alert title; argument is the app version. */
+
+"about.title" = "HushType v%1$@";
+
+/* About body; product names, author, language codes, license identity, and URL remain literal. */
+
+"about.body" = "Local voice-to-text for macOS and iOS.\nMultilingual (EN/ZH/JP) with Traditional Chinese output.\n\nAuthor: Felix Fu\nCo-authored with: Claude (Anthropic)\nLicense: MIT\n\ngithub.com/felixfu824/HushType";
+
+/* Starts the explicit-consent GitHub update check. */
+
+"about.check_updates" = "Check for Updates";
+
+/* Consent title shown every time before the app makes a GitHub API request. */
+
+"alert.update_consent.title" = "Connect to GitHub?";
+
+/* Privacy-sensitive consent copy; do not broaden or weaken the data claim. */
+
+"alert.update_consent.message" = "HushType will connect to GitHub to check for new releases.\n\nNo personal data is sent — only a public API call to compare version numbers.";
+
+/* Explicitly authorizes the one-time GitHub network request. */
+
+"alert.update_consent.check_now" = "Check Now";
+
+/* Update-check result title. */
+
+"alert.update.up_to_date.title" = "Up to Date";
+
+/* Argument 1 is the current app version. */
+
+"alert.update.up_to_date.message" = "You're running the latest version (v%1$@).";
+
+/* Update-check result title. */
+
+"alert.update.available.title" = "Update Available";
+
+/* Argument 1 is the latest version. */
+
+"alert.update.available.message" = "A new version is available: v%1$@\n\nYou can download it from the GitHub Releases page.";
+
+/* Opens the release page in the browser. */
+
+"alert.update.view_github" = "View on GitHub";
+
+/* Update network/parse error title. */
+
+"alert.update.error.title" = "Could Not Check for Updates";
+
+/* Argument 1 is a system/app error description and is inserted without machine translation. */
+
+"alert.update.error.message" = "Unable to connect to GitHub.\n\n%1$@\n\nCheck your internet connection and try again.";
+
+/* HushType-owned version-check diagnostic; argument is HTTP status. */
+
+"error.version.http" = "GitHub returned HTTP %1$d";
+
+/* HushType-owned version-check diagnostic. */
+
+"error.version.invalid_json" = "Could not parse GitHub response";
+
+/* HushType-owned version-check diagnostic; JSON key stays exact. */
+
+"error.version.missing_tag" = "GitHub response missing tag_name";
+
+/* Explicit Services-path error when Text Translation is disabled. */
+
+"error.translation.disabled" = "Text Translation is turned off in the HushType menu.";
+
+/* Explicit Services-path and Text Polish empty-selection error. */
+
+"error.selection.none" = "No text was selected.";
+
+/* Text Polish failure alert title. */
+
+"alert.polish_failed.title" = "Text Polish Failed";
+
+/* Argument 1 is a localized PolishError or system model error. */
+
+"alert.polish_failed.message" = "Unable to polish the selected text.\n\n%1$@";
+
+/* Selected-text translation unsupported-language alert title. */
+
+"alert.translation.unsupported.title" = "Language Not Supported";
+
+/* Argument 1 is a language display name/code. This is a product-level summary, not an exhaustive provider promise. */
+
+"alert.translation.unsupported.message" = "The detected language (%1$@) is not supported by Apple Translation Framework.\n\nSupported languages include English, Chinese, Japanese, Korean, French, German, Spanish, and others.";
+
+/* Selected-text translation missing language-pack alert title. */
+
+"alert.translation.pack_missing.title" = "Language Pack Not Installed";
+
+/* Arguments are source and target display names. Apple breadcrumb wording requires manual macOS 15/26 verification. */
+
+"alert.translation.pack_missing.message" = "Translation from %1$@ to %2$@ requires downloading the language pack.\n\nSystem Settings → General → Language & Region → Translation Languages → Download";
+
+/* Selected-text translation failure title. */
+
+"alert.translation.failed.title" = "Translation Failed";
+
+/* Argument 1 is an app-owned or system error description. */
+
+"alert.translation.failed.message" = "Unable to translate the selected text.\n\n%1$@";
+
+/* Opens macOS Translation Languages settings from the missing-pack alert. */
+
+"common.button.open_translation_settings" = "Open Settings";
+
+/* Model-unload confirmation when local Live Caption was active. */
+
+"alert.model_unloaded.live_caption.title" = "Live Caption Stopped";
+
+/* Explains model unload effect on local Live Caption. */
+
+"alert.model_unloaded.live_caption.message" = "The speech-to-text model was unloaded. Re-enable Live Caption from the menu after reloading the model.";
+
+/* Model-unload confirmation while a cloud dictation engine is selected. */
+
+"alert.model_unloaded.cloud.title" = "Local Model Unloaded";
+
+/* Clarifies only the local model was unloaded and cloud dictation remains available. */
+
+"alert.model_unloaded.cloud.message" = "The local speech recognition model has been removed from memory. Cloud dictation remains ready.";
+
+/* Model-unload confirmation for local dictation. */
+
+"alert.model_unloaded.local.title" = "Model Unloaded";
+
+/* Preserve approximate three-second cold-start semantics and shortcut glyph. */
+
+"alert.model_unloaded.local.message" = "The speech recognition model has been removed from memory.\n\nVoice input will require a cold start (~3 seconds) the next time you press Right ⌥.";
+
+/* Cloud-upload gate title; this is HushType's local warning, not provider billing enforcement. */
+
+"alert.daily_spend_gate.title" = "Daily spend warning reached";
+
+/* Arguments are formatted USD totals with exact two-decimal precision; explicitly says no audio was uploaded. */
+
+"alert.daily_spend_gate.message" = "This upload would bring today's estimated cloud usage to %1$@ (warning: %2$@). No audio was uploaded. Open Settings and reset today's counter to use cloud again.";
+
+/* Local notification title for HushType's daily cloud warning. */
+
+"notification.daily_spend.title" = "Daily spend warning reached";
+
+/* Arguments are formatted USD totals with exact two-decimal precision. */
+
+"notification.daily_spend.body" = "Today's cloud total is %1$@ (warning: %2$@).";
+
+/* Failure title after Use Local Once fails. */
+
+"alert.local_transcription_failed.title" = "Local transcription failed";
+
+/* Cloud dictation missing-key title. */
+
+"alert.cloud.no_key.title" = "API key not set";
+
+/* Argument 1 is provider name. */
+
+"alert.cloud.no_key.message" = "Add your %1$@ API key in Dictation Engine Settings before using cloud dictation.";
+
+/* Argument 1 is provider name; do not imply HushType rejected it. */
+
+"alert.cloud.auth.title" = "%1$@ rejected the API key";
+
+/* Argument 1 is an exact filesystem path. */
+
+"alert.cloud.auth.message" = "Check %1$@.";
+
+/* Argument 1 is provider name; provider-policy wording. */
+
+"alert.cloud.permission.title" = "%1$@ denied this request";
+
+/* Argument 1 is exact key-file path; retain uncertainty ('may'). */
+
+"alert.cloud.permission.message" = "The API key is present, but its project or model permissions may not allow this request. Check provider access and %1$@.";
+
+/* Argument 1 is provider name. */
+
+"alert.cloud.rate_limit.title" = "%1$@ quota or rate limit reached";
+
+/* Distinguishes provider quota/billing from HushType's local warning; argument is provider. */
+
+"alert.cloud.rate_limit.message" = "This limit comes from %1$@, not HushType's Daily spend warning. Check provider usage or billing, or try again later.";
+
+/* Cloud upload size-limit title. */
+
+"alert.cloud.payload.title" = "Recording too long for cloud transcription";
+
+/* Privacy-sensitive: explicitly says no audio was uploaded. */
+
+"alert.cloud.payload.message" = "This recording exceeds the cloud upload limit. No audio was uploaded.";
+
+/* Cloud transcription timeout title. */
+
+"alert.cloud.timeout.title" = "Cloud transcription timed out";
+
+/* Argument 1 is provider; preserve exact 180-second timeout and retention statement. */
+
+"alert.cloud.timeout.message" = "%1$@ did not respond within 180 seconds. The recording is still available.";
+
+/* Cloud reachability failure title. */
+
+"alert.cloud.network.title" = "Cloud transcription unavailable";
+
+/* Argument 1 is provider; says local recovery remains possible. */
+
+"alert.cloud.network.message" = "HushType could not reach %1$@. The recording is still available for local transcription.";
+
+/* Argument 1 is provider; does not expose raw response. */
+
+"alert.cloud.malformed.title" = "%1$@ returned an unreadable transcript";
+
+/* Shared recovery statement for malformed/safety-blocked provider results. */
+
+"alert.cloud.no_insert_local_available" = "Nothing was inserted. The recording is still available for local transcription.";
+
+/* Provider safety-policy result title; do not infer the reason. */
+
+"alert.cloud.safety.title" = "Gemini blocked this transcription";
+
+/* Dictation settings window title. */
+
+"window.dictation_engine_settings.title" = "Dictation Engine Settings";
+
+/* High-risk privacy architecture summary; preserve direct-to-provider/no-relay/no-HushType-server claims. */
+
+"settings.dictation.description" = "Choose where speech becomes text. Local is private and free. Cloud engines send audio directly to the provider using your own API key — no relay, no HushType server in the middle.";
+
+/* Dictation engine section heading. */
+
+"settings.dictation.engine_section" = "Engine";
+
+/* Local-engine privacy/cost/memory qualifier; preserve approximation and 2.1 GB. */
+
+"settings.engine.local.detail" = "Private · Free · ~2.1 GB RAM when loaded";
+
+/* Argument 1 is a rate string with exact three-decimal USD precision. */
+
+"settings.engine.cloud.detail" = "%1$@ · No model RAM";
+
+/* Argument 1 is configured rate. 'Free tier' and metered rate coexist in source; do not strengthen the free claim. */
+
+"settings.engine.gemini.detail" = "%1$@ · No model RAM";
+
+/* Model picker label. */
+
+"settings.engine.openai_model" = "OpenAI model:";
+
+/* Model picker label. */
+
+"settings.engine.gemini_model" = "Gemini model:";
+
+/* Model ID is immutable; only qualifier is localized. */
+
+"settings.model.recommended" = "gpt-4o-mini-transcribe (recommended)";
+
+/* Model ID is immutable; only qualifier is localized. */
+
+"settings.model.quality" = "gemini-3.7-flash (quality)";
+
+/* Model ID is immutable; 'budget' means lower-cost choice. */
+
+"settings.model.budget" = "gemini-3.5-flash-lite (budget)";
+
+/* Memory/engine behavior explanation. */
+
+"settings.engine.cloud_unloads_local" = "While a cloud engine is selected the speech model stays unloaded. The iOS companion server always uses the local model.";
+
+/* HushType local cloud-spend guardrail heading; not a provider billing cap. */
+
+"settings.daily_spend.title" = "Daily spend warning";
+
+/* Local upload-block threshold label. */
+
+"settings.daily_spend.block_at" = "Block new cloud uploads at:";
+
+/* API-key settings section heading. */
+
+"settings.api_keys.title" = "API keys";
+
+/* Initial key-status placeholder. */
+
+"settings.key.status.placeholder" = "Status: —";
+
+/* Provider API-key load status. */
+
+"settings.key.status.loaded" = "Status: ✓ Key loaded";
+
+/* Empty OpenAI key state. */
+
+"settings.key.status.openai_empty" = "Status: Key empty — OpenAI cloud features disabled";
+
+/* Empty Gemini key state. */
+
+"settings.key.status.gemini_empty" = "Status: Key empty — Gemini cloud dictation disabled";
+
+/* Warns that an unusual key is not rejected locally. */
+
+"settings.key.status.unusual" = "Status: Key format unusual — passing through anyway";
+
+/* Cloud rate with exactly three decimals; do not use generic currency rounding. */
+
+"format.usd_rate_per_minute" = "$%1$.3f/min";
+
+/* Cloud total/warning with exactly two decimals. */
+
+"format.usd_total" = "$%1$.2f";
+
+/* Translated-caption settings window title. */
+
+"window.translated_caption_settings.title" = "Translated Caption Settings";
+
+/* High-risk privacy/billing copy; preserve direct path, no-middle claim, approximation, hourly amount, and user-owned billing account. */
+
+"settings.translated_caption.description" = "Real-time cloud translation via OpenAI's realtime translate endpoint. Audio streams Mac → OpenAI directly; HushType is never in the middle. Costs ~$2/hour against your own OpenAI API key.";
+
+/* Translated-caption options section heading. */
+
+"settings.translated_caption.options" = "Translation options";
+
+/* Cloud translated-caption target-language label. */
+
+"settings.translated_caption.target" = "Target language:";
+
+/* Toggle for displaying source transcript above translated caption. */
+
+"settings.translated_caption.show_source" = "Show source text above translation";
+
+/* Translated-caption cost-protection section heading. */
+
+"settings.cost_guardrails.title" = "Cost guardrails";
+
+/* Auto-stop duration control label. */
+
+"settings.cost_guardrails.auto_stop" = "Auto-stop session after:";
+
+/* Daily translated-caption warning threshold label. */
+
+"settings.cost_guardrails.daily_warning" = "Warn me when daily spend hits:";
+
+/* Initial translated-caption usage placeholder. */
+
+"settings.usage.placeholder" = "Today's usage: —";
+
+/* Resets translated-caption auto-stop and daily warning defaults. */
+
+"settings.reset_defaults" = "Reset to defaults";
+
+/* Singular API key section heading. */
+
+"settings.api_key.title" = "API key";
+
+/* OpenAI key status without Status prefix. */
+
+"settings.key.loaded" = "✓ Key loaded";
+
+/* Empty OpenAI key status. */
+
+"settings.key.empty_cloud_disabled" = "Key empty — cloud features disabled";
+
+/* OpenAI key-format warning; prefix stays exact. */
+
+"settings.key.unusual_sk" = "Key format unusual (does not start with sk-) — passing through anyway";
+
+/* Wraps a localized key-status line. */
+
+"settings.key.status_format" = "Status: %1$@";
+
+/* Onboarding/permission-repair panel title and heading. */
+
+"window.onboarding.title" = "Set Up HushType";
+
+/* Permission-purpose summary; Right Option is a key name, not the ⌥ glyph on this surface. */
+
+"onboarding.intro" = "Allow HushType to listen for Right Option and record your voice locally.";
+
+/* Apple permission category name. */
+
+"permission.accessibility.title" = "Accessibility";
+
+/* Explains why Accessibility is required. */
+
+"permission.accessibility.subtitle" = "Required for the Right Option hotkey.";
+
+/* Permission row state after opening relevant settings. */
+
+"permission.status.restart_needed" = "Restart needed";
+
+/* Permission row state before access is granted. */
+
+"permission.status.needs_permission" = "Needs permission";
+
+/* Explicit stale Accessibility-entry repair action. */
+
+"permission.accessibility.reset_old" = "Reset Old HushType Entry";
+
+/* Stale-entry troubleshooting guidance. */
+
+"permission.accessibility.reset_help" = "Use reset if you installed an older HushType, see duplicate HushType entries, cannot find HushType, or the switch does not work.";
+
+/* Success state after tccutil reset. */
+
+"permission.accessibility.reset_complete" = "Old Accessibility entries cleared. Add or enable HushType again.";
+
+/* Apple permission category name. */
+
+"permission.microphone.title" = "Microphone";
+
+/* Explains why Microphone permission is required. */
+
+"permission.microphone.subtitle" = "Required to transcribe your voice.";
+
+/* Permission row state after grant. */
+
+"permission.status.allowed" = "Allowed";
+
+/* Microphone permission request is in flight. */
+
+"permission.status.waiting" = "Waiting...";
+
+/* Requests Microphone access. */
+
+"permission.microphone.allow" = "Allow Microphone";
+
+/* Opens macOS Microphone privacy settings. */
+
+"permission.microphone.open_settings" = "Open Microphone Settings";
+
+/* Quits onboarding without launching the app. */
+
+"onboarding.button.quit" = "Quit";
+
+/* Existing permission-flow action; unrelated to interface-language selection. */
+
+"onboarding.button.restart" = "Restart HushType";
+
+/* Disabled restart-button help. */
+
+"onboarding.restart.help" = "Allow or review Microphone access before restarting.";
+
+/* Permission sequencing guidance. */
+
+"onboarding.next_step.allow_microphone" = "After enabling HushType in Accessibility, allow Microphone access before restarting.";
+
+/* Permission restart guidance. */
+
+"onboarding.next_step.restart" = "After enabling HushType in Accessibility, restart the app so macOS applies the permission.";
+
+/* Compact permission status value. */
+
+"permission.status.waiting_short" = "Waiting";
+
+/* Microphone permission denied/restricted state. */
+
+"permission.status.blocked" = "Blocked";
+
+/* Unknown/future microphone permission state. */
+
+"permission.status.needs_review" = "Needs review";
+
+/* Confirmation title before resetting Accessibility entries. */
+
+"alert.accessibility_reset.title" = "Reset Old HushType Entry?";
+
+/* Destructive permission-reset confirmation; accurately states scope and required follow-up. */
+
+"alert.accessibility_reset.message" = "This clears HushType from the Accessibility permission list.\n\nUse this if you installed an older HushType, see duplicate HushType entries, cannot find HushType, or the switch does not work. You'll need to add or enable HushType again.";
+
+/* Confirms reset and reopens System Settings. */
+
+"alert.accessibility_reset.confirm" = "Reset and Reopen Settings";
+
+/* Runtime hotkey permission-loss alert title. */
+
+"alert.accessibility_lost.title" = "Accessibility Permission Lost";
+
+/* Runtime permission-repair path; Apple breadcrumb should be visually checked on supported macOS versions. */
+
+"alert.accessibility_lost.message" = "HushType lost Accessibility permission and the global hotkey is no longer working.\n\nRe-enable HushType in System Settings → Privacy & Security → Accessibility, then quit and relaunch HushType.";
+
+/* System-audio permission panel title. */
+
+"window.system_audio_permission.title" = "Enable System Audio";
+
+/* System-audio permission panel heading. */
+
+"permission.system_audio.heading" = "Enable System Audio for Live Caption";
+
+/* Purpose summary; running app/provider names remain literal. */
+
+"permission.system_audio.intro" = "Allow HushType to caption audio from apps like Zoom, Chrome, and Safari.";
+
+/* Draft Apple Taiwan permission-pane label. Must be visually verified on macOS 15 and 26 before implementation freeze. */
+
+"permission.screen_system_audio.name" = "Screen & System Audio Recording";
+
+/* Explains why a screen-named permission is requested for audio. */
+
+"permission.system_audio.required_by_macos" = "Required by macOS for system-audio capture.";
+
+/* Existing permission-flow restart instruction. */
+
+"permission.system_audio.restart_guidance" = "After turning on HushType in System Settings, restart the app so macOS applies the permission.";
+
+/* Expandable permission troubleshooting heading. */
+
+"permission.troubleshooting.heading" = "Having trouble?";
+
+/* Stale ScreenCapture permission troubleshooting guidance. */
+
+"permission.system_audio.reset_help" = "Use this if HushType is missing or appears twice in System Settings.";
+
+/* Explicit ScreenCapture TCC reset action. */
+
+"permission.system_audio.reset_stale" = "Reset stale permission entries";
+
+/* Success state after stale ScreenCapture entries are reset. */
+
+"permission.system_audio.reset_complete" = "Reset complete. Turn on HushType in System Settings, then restart.";
+
+/* Non-modal draggable-tile helper title; permission label needs OS verification. */
+
+"permission.system_audio.guide.title" = "Turn on HushType in Screen & System Audio Recording.";
+
+/* Non-modal draggable-tile helper title. */
+
+"permission.accessibility.guide.title" = "Turn on HushType in Accessibility.";
+
+/* Draggable app-tile helper instruction. */
+
+"permission.guide.detail" = "If HushType is missing, drag HushType into the list.";
+
+/* Help text for helper-panel close button. */
+
+"permission.guide.hide_help" = "Hide helper";
+
+/* Mid-session permission-revocation alert title. */
+
+"alert.system_audio_revoked.title" = "System Audio Capture Stopped";
+
+/* Permission-revocation guidance; permission label needs OS verification. */
+
+"alert.system_audio_revoked.message" = "Screen & System Audio Recording permission was revoked.\n\nRe-enable it in System Settings to use system-audio Live Caption.";
+
+/* Closes a warning without opening settings. */
+
+"common.button.dismiss" = "Dismiss";
+
+/* System-audio app picker window title. */
+
+"window.system_audio_picker.title" = "Pick App to Caption";
+
+/* System-audio app picker heading. */
+
+"picker.system_audio.heading" = "Pick app to caption";
+
+/* High-risk privacy claim: only audio is captured; screen contents never are. */
+
+"picker.system_audio.description" = "Choose which app's audio Live Caption should listen to. Only audio is captured — never screen contents.";
+
+/* Picker loading state. */
+
+"picker.system_audio.loading" = "Loading running apps…";
+
+/* Picker empty state. */
+
+"picker.system_audio.empty" = "No running apps found.";
+
+/* Confirms selected running app. */
+
+"picker.system_audio.pick" = "Pick";
+
+/* Argument 1 is a system framework error description. */
+
+"picker.system_audio.load_failed" = "Couldn't load running apps:\n%1$@";
+
+/* Argument 1 is a running-app identifier/name and remains untouched. */
+
+"error.system_audio.app_not_running" = "App %1$@ is not running. Pick a different source.";
+
+/* HushType-owned ScreenCaptureKit setup error. */
+
+"error.system_audio.no_display" = "No display is available to capture from.";
+
+/* HushType-owned audio-converter error. */
+
+"error.system_audio.converter" = "Could not set up the audio converter for system audio capture.";
+
+/* Argument 1 is a system framework error description. */
+
+"error.system_audio.stream" = "Could not start the system audio stream: %1$@";
+
+/* Accessibility label for the cloud cost chip. Source terminology says Cloud Live Caption, while product menu says Live Translated Caption; translate literally pending product naming decision. */
+
+"caption.accessibility.session_cost" = "Live Translated Caption session cost";
+
+/* Argument 1 is integer progress percentage. */
+
+"caption.loading_speech_model" = "Loading speech model… %1$d%%";
+
+/* Caption voice-activity model loading state. */
+
+"caption.loading_vad" = "Loading VAD model…";
+
+/* Compact local-caption live state. */
+
+"caption.live" = "Live";
+
+/* Compact cloud translated-caption live state. */
+
+"caption.live_translated" = "Live · Translated";
+
+/* Temporary gate message when Right Option dictation conflicts with caption capture. */
+
+"caption.stop_to_dictate" = "Stop Live Caption to dictate";
+
+/* Arguments are current reconnect attempt and maximum attempts. */
+
+"caption.reconnecting" = "Reconnecting (%1$d/%2$d)…";
+
+/* Header flash after cost/duration auto-stop. */
+
+"caption.auto_stopped" = "Auto-stopped";
+
+/* Accessibility label for caption panel close button. */
+
+"caption.stop.accessibility" = "Stop live caption";
+
+/* Help text for caption panel close button. */
+
+"caption.stop.help" = "Stop live caption (Esc)";
+
+/* Empty caption panel state while awaiting speech. */
+
+"caption.listening" = "Listening…";
+
+/* Visible chip for source-language text; implementation must use semantic role, not compare this label. */
+
+"caption.role.source" = "SOURCE";
+
+/* Visible chip for translated text; implementation must use semantic role. */
+
+"caption.role.translated" = "TRANSLATED";
+
+/* Accessibility label for source role chip. */
+
+"caption.role.source.accessibility" = "Source language";
+
+/* Accessibility label for translated role chip. */
+
+"caption.role.translated.accessibility" = "Translated";
+
+/* HushType-owned NSError shown through caption startup wrappers. */
+
+"error.caption.microphone_denied" = "Microphone permission denied";
+
+/* HushType-owned NSError/alert title for translated captions. */
+
+"error.caption.openai_key_missing" = "OpenAI API key not set";
+
+/* HushType-owned NSError after a nominally successful model load. */
+
+"error.caption.local_model_unavailable" = "Local caption model unavailable after load";
+
+/* HushType-owned internal startup error that can surface through an alert. */
+
+"error.caption.openai_key_lost" = "OpenAI key resolved but lost";
+
+/* Mid-session microphone source failure title. */
+
+"alert.caption.microphone_unavailable.title" = "Microphone unavailable";
+
+/* Argument 1 is a system/audio-source error description. */
+
+"alert.caption.microphone_unavailable.message" = "Live Caption was stopped: %1$@";
+
+/* Arguments are exact two-decimal USD amounts. */
+
+"notification.caption.daily_spend.body" = "You've used %1$@ today (warning: %2$@).";
+
+/* Duration auto-stop notification title. Source uses generic Live Caption even for cloud translated mode; translated literally pending naming review. */
+
+"notification.caption.auto_stop.title" = "Live Translated Caption auto-stopped";
+
+/* Caption microphone permission alert title. */
+
+"alert.caption.mic_access.title" = "Microphone Access Required";
+
+/* Apple breadcrumb should be visually checked on supported macOS versions. */
+
+"alert.caption.mic_access.message" = "Live Caption needs microphone access. Open System Settings → Privacy & Security → Microphone and enable HushType.";
+
+/* VAD load failure title. */
+
+"alert.caption.vad_failed.title" = "Failed to load voice-activity model";
+
+/* Argument 1 is a model/system error description. */
+
+"alert.caption.vad_failed.message" = "Live Caption could not start: %1$@";
+
+/* Local ASR model load failure title. */
+
+"alert.caption.asr_failed.title" = "Failed to load speech model";
+
+/* Argument 1 is a model/system error description. */
+
+"alert.caption.asr_failed.message" = "Local Live Caption could not start: %1$@";
+
+/* System-audio source startup failure title. */
+
+"alert.caption.system_audio_failed.title" = "Couldn't Start System Audio Capture";
+
+/* Source breadcrumb no longer exactly matches current menu labels and source says Cloud Live Caption rather than Live Translated Caption. Safest literal draft; product behavior/naming must be resolved before implementation. */
+
+"alert.caption.cloud_key_missing.message" = "Live Translated Caption needs an OpenAI API key. Open Translated Caption Settings and paste your key into openai.json.";
+
+/* Provider authentication failure title. */
+
+"alert.caption.cloud_key_rejected.title" = "OpenAI rejected the API key";
+
+/* Key-file guidance; filename stays exact. */
+
+"alert.caption.cloud_key_rejected.message" = "Check the value in openai.json.";
+
+/* Provider rate-limit title. */
+
+"alert.caption.rate_limit.title" = "OpenAI rate limit hit";
+
+/* Provider-policy suggestion; do not promise upgrade will definitely resolve access. */
+
+"alert.caption.rate_limit.message" = "Try again in a minute, or upgrade your OpenAI plan.";
+
+/* Source product naming differs from Live Translated Caption; literal draft marked for review. */
+
+"alert.caption.connection_lost.title" = "Live Translated Caption connection lost";
+
+/* Argument 1 is transport/provider error text. */
+
+"alert.caption.connection_lost.message" = "Could not reach OpenAI: %1$@";
+
+/* Source product naming differs from Live Translated Caption; literal draft marked for review. */
+
+"alert.caption.cloud_start_failed.title" = "Could not start Live Translated Caption";
+
+/* Local caption backend startup failure title. */
+
+"alert.caption.local_start_failed.title" = "Could not start Live Caption";
+
+/* HushType-owned NSError that can surface in caption startup wrappers. */
+
+"error.audio_capture.push_to_talk_active" = "Push-to-talk recording is active; cannot start continuous capture.";
+
+/* HushType-owned continuous-capture NSError. */
+
+"error.audio_capture.target_format" = "Failed to create target audio format.";
+
+/* HushType-owned backend NSError after authentication failure. */
+
+"error.openai_translate.auth" = "OpenAI rejected the API key.";
+
+/* HushType-owned backend NSError after rate limit. */
+
+"error.openai_translate.rate_limit" = "OpenAI rate limit hit.";
+
+/* Floating dictation overlay recording label. */
+
+"overlay.listening" = "Listening";
+
+/* Floating dictation overlay label for local transcription. */
+
+"overlay.transcribing" = "Transcribing";
+
+/* Argument 1 is provider name. */
+
+"overlay.transcribing_provider" = "Transcribing · %1$@";
+
+/* Floating overlay Text Polish state. */
+
+"overlay.polishing" = "Polishing…";
+
+/* Argument 1 is language name/code. */
+
+"error.translation.unsupported" = "Language '%1$@' is not supported by Apple Translation Framework.";
+
+/* Arguments are source and target display names; arrow stays literal. */
+
+"error.translation.pack_missing" = "Language pack for %1$@ → %2$@ is not installed.";
+
+/* Argument 1 is a system/provider detail and remains unaltered. */
+
+"error.translation.failed" = "Translation failed: %1$@";
+
+/* Fallback language name when detection fails. */
+
+"translation.language.unknown" = "unknown";
+
+/* Arguments are localized source and target language display names. */
+
+"translation.direction" = "%1$@ → %2$@";
+
+/* Translation/polish card clipboard confirmation. */
+
+"translation.card.copied" = "Copied to clipboard";
+
+/* Translation card dismissal hint. */
+
+"translation.card.dismiss" = "Esc to dismiss";
+
+/* Privacy disclosure; preserve 'may connect' uncertainty. */
+
+"translation.card.privacy" = "Powered by Apple Translation Framework. May connect to Apple servers.";
+
+/* PolishError disabled state. */
+
+"error.polish.disabled" = "Text Polish is turned off.";
+
+/* Argument 1 is localized app reason or system-provided availability reason. */
+
+"error.polish.unavailable" = "Text Polish requires macOS 26 + Apple Intelligence.\n\n%1$@";
+
+/* Guardrail result; selected user content remains untouched. */
+
+"error.polish.code_detected" = "Selection looks like code — not polished.";
+
+/* Model result validation error. */
+
+"error.polish.empty_output" = "Apple Intelligence returned an empty result.";
+
+/* Safety validation; explicitly says original text remains untouched. */
+
+"error.polish.length_guard" = "The result changed the selection length too much. The original text was left untouched.";
+
+/* Language/script validation; explicitly says original text remains untouched. */
+
+"error.polish.script_guard" = "The result changed the selection's dominant writing system. The original text was left untouched.";
+
+/* Language-mix validation; explicitly says original text remains untouched. */
+
+"error.polish.mix_guard" = "The result dropped one of the selection's languages. The original text was left untouched.";
+
+/* Model refusal validation error. */
+
+"error.polish.refusal_guard" = "Apple Intelligence returned a refusal instead of proofreading the selection.";
+
+/* Initial cached availability reason. */
+
+"error.polish.apple_unavailable" = "Apple Intelligence is unavailable.";
+
+/* Availability reason on pre-macOS-26 systems. */
+
+"error.polish.macos_too_old" = "This Mac is running an earlier version of macOS.";
+
+/* Preserve exact 30-second timeout. */
+
+"error.polish.timeout" = "Apple Intelligence timed out after 30 seconds.";
+
+/* Unknown future FoundationModels availability case. */
+
+"error.polish.unknown_availability" = "Unknown availability state";
+
+/* Polish card title when changes were made. */
+
+"polish.card.changed_title" = "Text Polished";
+
+/* Polish card title when proofreader returns unchanged text. */
+
+"polish.card.no_changes_title" = "No changes needed";
+
+/* Track-changes section label. */
+
+"polish.card.changes" = "Changes";
+
+/* Polish card dismissal hint. */
+
+"polish.card.dismiss" = "Click outside to dismiss";
+
+/* High-risk privacy claim for on-device Text Polish. */
+
+"polish.card.privacy" = "On-device Apple Intelligence — nothing leaves your Mac.";
+
+/* Track-changes deletion legend. */
+
+"polish.card.legend.removed" = "removed";
+
+/* Track-changes insertion legend. */
+
+"polish.card.legend.added" = "added";
+
+/* Local companion-server startup failure title. */
+
+"alert.ios_server_failed.title" = "iOS Server Failed to Start";
+
+/* Arguments are process exit code and raw server output. Command/package names and raw output must remain exact. */
+
+"alert.ios_server_failed.message" = "The server exited with code %1$d. This usually means a missing Python dependency.\n\nSee the README for required packages:\npip3 install \"mlx-audio[stt,server]\" httpx webrtcvad-wheels setuptools\n\nError output:\n%2$@";
+
+/* One-time cloud translated-caption disclosure title. Source terminology predates Live Translated Caption; literal draft marked for naming review. */
+
+"alert.cloud_caption_disclosure.title" = "Enable Live Translated Caption";
+
+/* High-risk opt-in/privacy/billing disclosure. Preserve exact data path, key visibility, approximate hourly cost, billing account, local fallback, and one-time behavior. Product naming needs review. */
+
+"alert.cloud_caption_disclosure.message" = "Live Translated Caption sends your audio to OpenAI for live translation.\n\n• Cost: about $2/hour, billed to your OpenAI account\n• Your API key — HushType never sees it\n• No HushType server in the middle; audio goes Mac → OpenAI directly\n• You can stop the session any time, or switch back to local\n\nThis is opt-in. You'll only see this notice once.";
+
+/* Accepts the one-time cloud disclosure. */
+
+"alert.cloud_caption_disclosure.accept" = "I understand";
+
+/* Per-session cloud dictation consent; argument is provider name. */
+
+"alert.cloud_dictation_consent.title" = "Send audio to %1$@?";
+
+/* Explicitly consents to this recording being sent to the provider; argument is provider name. */
+
+"alert.cloud_dictation_consent.use_provider" = "Use %1$@";
+
+/* Declines provider upload and returns to local dictation. */
+
+"alert.cloud_dictation_consent.use_local" = "Use Local Instead";
+
+/* Per-session privacy/billing disclosure; argument is provider. Preserve direct path, own-key, no-relay, and local warning semantics. */
+
+"alert.cloud_dictation_consent.base" = "HushType will send this recording directly to %1$@ for transcription, using your own API key. There is no relay server — audio goes straight from your Mac to the provider. Your daily cloud-spend warning applies.";
+
+/* Provider-policy claim copied from current product source; preserve may/does-not distinction without embellishment. */
+
+"alert.cloud_dictation_consent.gemini_policy" = "On Google's free tier, Google may use submitted audio to improve its products. The paid tier does not.";
+
+/* Localized display name used in translation direction/error prose; language-picker autonyms remain separate. */
+
+"language.name.english" = "English";
+
+/* Localized display name for Chinese in translation direction/error prose. */
+
+"language.name.chinese" = "Chinese";
+
+/* Localized language display name. */
+
+"language.name.japanese" = "Japanese";
+
+/* Localized language display name. */
+
+"language.name.korean" = "Korean";
+
+/* Localized language display name. */
+
+"language.name.french" = "French";
+
+/* Localized language display name. */
+
+"language.name.german" = "German";
+
+/* Localized language display name. */
+
+"language.name.spanish" = "Spanish";
+
+/* Localized language display name. */
+
+"language.name.portuguese" = "Portuguese";
+
+/* Localized language display name. */
+
+"language.name.italian" = "Italian";
+
+/* Localized language display name. */
+
+"language.name.russian" = "Russian";
+
+/* Localized language display name. */
+
+"language.name.arabic" = "Arabic";
+
+/* Localized language display name. */
+
+"language.name.thai" = "Thai";
+
+/* Localized language display name. */
+
+"language.name.vietnamese" = "Vietnamese";
+
+/* Localized language display name. */
+
+"language.name.indonesian" = "Indonesian";
+
+/* Localized language display name. */
+
+"language.name.turkish" = "Turkish";
+
+/* Localized language display name; unrelated to Text Polish. */
+
+"language.name.polish" = "Polish";
+
+/* Localized language display name. */
+
+"language.name.dutch" = "Dutch";
+
+/* Localized language display name. */
+
+"language.name.ukrainian" = "Ukrainian";
+
+/* Target-language autonym intentionally remains Simplified Chinese; reviewed false positive in Simplified-character scan. */
+
+"picker.target.simplified_chinese_autonym" = "简体中文";
+
+/* Target-language autonym remains Traditional Chinese. */
+
+"picker.target.traditional_chinese_autonym" = "繁體中文";
+
+/* Defers viewing an available update; not used by interface-language selection. */
+
+"common.button.later" = "Later";
+
+/* Opens translated-caption settings from an API-key rejection alert. */
+
+"common.button.settings" = "Settings";
+
+/* Stops a cloud caption session after connection loss. */
+
+"common.button.stop" = "Stop";
+
+/* Visible model ID; must not be localized. */
+
+"settings.model.gpt_transcribe" = "gpt-transcribe";
+
+/* Language picker autonym; stays in the language's own form. */
+
+"picker.autonym.en" = "English";
+
+/* Speech-to-text language picker autonym; recognition protocol value remains unchanged. */
+
+"picker.autonym.zh" = "中文";
+
+/* Language picker autonym. */
+
+"picker.autonym.ja" = "日本語";
+
+/* Language picker autonym. */
+
+"picker.autonym.ko" = "한국어";
+
+/* Language picker autonym. */
+
+"picker.autonym.fr" = "Français";
+
+/* Language picker autonym. */
+
+"picker.autonym.de" = "Deutsch";
+
+/* Language picker autonym. */
+
+"picker.autonym.es" = "Español";
+
+/* Translated-caption target-language autonym. */
+
+"picker.autonym.pt" = "Português";
+
+/* Translated-caption target-language autonym. */
+
+"picker.autonym.ru" = "Русский";
+
+/* Translated-caption target-language autonym. */
+
+"picker.autonym.hi" = "हिन्दी";
+
+/* Translated-caption target-language autonym. */
+
+"picker.autonym.id" = "Bahasa Indonesia";
+
+/* Translated-caption target-language autonym. */
+
+"picker.autonym.vi" = "Tiếng Việt";
+
+/* Translated-caption target-language autonym. */
+
+"picker.autonym.it" = "Italiano";
+
+/* Initial dictation settings usage line before the async snapshot returns. */
+
+"settings.daily_usage.placeholder" = "Today's cloud usage: —";

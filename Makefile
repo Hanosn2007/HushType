@@ -8,7 +8,24 @@ OPENCC_LIB_DIR = /opt/homebrew/lib
 OPENCC_DATA_DIR = /opt/homebrew/share/opencc
 MARISA_LIB_DIR = /opt/homebrew/opt/marisa/lib
 
-.PHONY: build run bundle bundle-opencc install uninstall dmg clean
+.PHONY: build run bundle bundle-opencc install uninstall dmg clean l10n-verify l10n-verify-dest
+
+# Supported interface-localization locale dirs copied into the app bundle.
+L10N_LOCALES = en.lproj zh-Hant-TW.lproj
+# Known pre-release legacy dir that must never survive in a built bundle.
+L10N_LEGACY_LOCALES = zh-Hant.lproj
+L10N_SOURCE_MANIFEST = .build/l10n_source_manifest.json
+
+# Gate: validate the source .lproj tables (structure, lint, key parity,
+# recursive format signatures, frozen-catalog cross-check) and emit the
+# semantic manifest. Fatal on any failure; stale output cannot mask it.
+l10n-verify:
+	bash scripts/check_localizations.sh --source-manifest "$(L10N_SOURCE_MANIFEST)"
+
+# Gate: validate the built bundle's .lproj dirs and require their semantic
+# manifest to equal the source manifest (run before and after codesign).
+l10n-verify-dest:
+	bash scripts/check_localizations.sh --dest "$(BUNDLE_DIR)/Contents/Resources" --source-manifest "$(L10N_SOURCE_MANIFEST)"
 
 build:
 	swift build -c release --disable-sandbox
@@ -18,7 +35,7 @@ build:
 run: build
 	$(BUILD_DIR)/$(APP_NAME)
 
-bundle: build
+bundle: build l10n-verify
 	@mkdir -p "$(BUNDLE_DIR)/Contents/MacOS"
 	@mkdir -p "$(BUNDLE_DIR)/Contents/Resources"
 	@cp "$(BUILD_DIR)/$(APP_NAME)" "$(BUNDLE_DIR)/Contents/MacOS/"
@@ -26,6 +43,14 @@ bundle: build
 	@cp Resources/Info.plist "$(BUNDLE_DIR)/Contents/"
 	@cp Resources/HushType.icns "$(BUNDLE_DIR)/Contents/Resources/" 2>/dev/null || true
 	@cp scripts/ios_server.py "$(BUNDLE_DIR)/Contents/Resources/" 2>/dev/null || true
+	@# Interface localization: remove ONLY the exact supported + known legacy
+	@# destination locale dirs, then copy the fresh source .lproj dirs. This is
+	@# what makes the negative stale-output test honest — a previous bundle
+	@# with deleted tables/keys or a stale zh-Hant.lproj can never satisfy the
+	@# post-copy destination manifest check (l10n-verify-dest).
+	@for d in $(L10N_LOCALES) $(L10N_LEGACY_LOCALES); do rm -rf "$(BUNDLE_DIR)/Contents/Resources/$$d"; done
+	@for d in $(L10N_LOCALES); do cp -R "Sources/HushType/Resources/$$d" "$(BUNDLE_DIR)/Contents/Resources/"; done
+	@$(MAKE) l10n-verify-dest
 	@# Strip debug symbols + scrub developer-path leakage from the binary
 	@# before signing. Two distinct fixes:
 	@#   (a) `strip -S` removes debug symbols.
@@ -55,6 +80,13 @@ print(f'  Scrubbed {count} dev-path occurrence(s) from binary')"
 	@# signed independently — codesign always treats them as part of the
 	@# enclosing bundle.
 	@codesign --force --deep --sign - --identifier "com.felix.hushtype" "$(BUNDLE_DIR)"
+	@# Verify the final signature on the built bundle. Fatal on any nested
+	@# invalid signature (e.g. a dylib modified after its inner sign).
+	@codesign --verify --deep --strict "$(BUNDLE_DIR)"
+	@# Re-validate the localization manifest on the signed bundle: the copy
+	@# happened before signing, but this proves the shipped signature covers a
+	@# bundle whose resources equal the source manifest.
+	@$(MAKE) l10n-verify-dest
 	@echo "Bundle created: $(BUNDLE_DIR) (signed as com.felix.hushtype, debug symbols stripped)"
 
 bundle-opencc:

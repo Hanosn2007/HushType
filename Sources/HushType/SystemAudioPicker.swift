@@ -43,7 +43,10 @@ enum SystemAudioPicker {
             backing: .buffered,
             defer: false
         )
-        panel.title = "Pick App to Caption"
+        panel.title = L10n.string(
+            "window.system_audio_picker.title",
+            fallback: "Pick App to Caption"
+        )
         panel.contentViewController = hosting
         panel.isReleasedWhenClosed = false
         panel.center()
@@ -78,10 +81,13 @@ private struct SystemAudioPickerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Pick app to caption")
+            Text(L10n.string("picker.system_audio.heading", fallback: "Pick app to caption"))
                 .font(.title3.weight(.semibold))
 
-            Text("Choose which app's audio Live Caption should listen to. Only audio is captured — never screen contents.")
+            Text(L10n.string(
+                "picker.system_audio.description",
+                fallback: "Choose which app's audio Live Caption should listen to. Only audio is captured — never screen contents."
+            ))
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -93,7 +99,10 @@ private struct SystemAudioPickerView: View {
                     HStack(spacing: 8) {
                         ProgressView()
                             .controlSize(.small)
-                        Text("Loading running apps…")
+                        Text(L10n.string(
+                            "picker.system_audio.loading",
+                            fallback: "Loading running apps…"
+                        ))
                             .font(.callout)
                             .foregroundColor(.secondary)
                     }
@@ -105,7 +114,10 @@ private struct SystemAudioPickerView: View {
                         .padding()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if apps.isEmpty {
-                    Text("No running apps found.")
+                    Text(L10n.string(
+                        "picker.system_audio.empty",
+                        fallback: "No running apps found."
+                    ))
                         .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -128,9 +140,9 @@ private struct SystemAudioPickerView: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") { onCancel() }
+                Button(L10n.string("common.button.cancel", fallback: "Cancel")) { onCancel() }
                     .keyboardShortcut(.cancelAction)
-                Button("Pick") {
+                Button(L10n.string("picker.system_audio.pick", fallback: "Pick")) {
                     if let selection {
                         onPick(selection)
                     }
@@ -238,7 +250,11 @@ private struct SystemAudioPickerView: View {
         } catch {
             log.error("Failed to load shareable content: \(error.localizedDescription, privacy: .public)")
             await MainActor.run {
-                self.loadError = "Couldn't load running apps:\n\(error.localizedDescription)"
+                self.loadError = L10n.format(
+                    "picker.system_audio.load_failed",
+                    "Couldn't load running apps:\n%1$@",
+                    arguments: [error.localizedDescription]
+                )
                 self.isLoading = false
             }
         }

@@ -40,20 +40,31 @@ final class LiveCaptionEngineSettingsModel: ObservableObject {
         let status = OpenAIKeyStore.load()
         switch status {
         case .ok:
-            keyStatusLine = "✓ Key loaded"
+            keyStatusLine = L10n.string("settings.key.loaded", fallback: "✓ Key loaded")
         case .empty:
-            keyStatusLine = "Key empty — cloud features disabled"
+            keyStatusLine = L10n.string(
+                "settings.key.empty_cloud_disabled",
+                fallback: "Key empty — cloud features disabled"
+            )
         case .unusualFormat:
-            keyStatusLine = "Key format unusual (does not start with sk-) — passing through anyway"
+            keyStatusLine = L10n.string(
+                "settings.key.unusual_sk",
+                fallback: "Key format unusual (does not start with sk-) — passing through anyway"
+            )
         }
         // Today's usage is async; kick off a refresh and update when it lands.
         Task { [weak self] in
             let snap = await CloudUsageTracker.shared.snapshot()
             await MainActor.run {
-                self?.todayUsageLine = String(
-                    format: "Today's usage: %@ (%d min)",
-                    CloudUsageTracker.formatDollars(snap.dayDollars),
-                    Int(snap.sessionSeconds / 60.0)
+                let minutes = Int(snap.sessionSeconds / 60.0)
+                self?.todayUsageLine = L10n.plural(
+                    "settings.usage.today",
+                    count: minutes,
+                    fallback: "Today's usage: %1$@ (%2$d min)",
+                    arguments: [
+                        CloudUsageTracker.formatDollars(snap.dayDollars),
+                        Int32(minutes),
+                    ]
                 )
             }
         }
@@ -75,22 +86,22 @@ final class LiveCaptionEngineSettingsModel: ObservableObject {
 struct LiveCaptionEngineSettingsView: View {
     @StateObject private var model = LiveCaptionEngineSettingsModel()
 
-    private static let targetLanguages: [(value: String, label: String)] = [
-        ("en", "English"),
-        ("zh-Hant", "繁體中文"),
-        ("zh-Hans", "简体中文"),
-        ("ja", "日本語"),
-        ("ko", "한국어"),
-        ("es", "Español"),
-        ("pt", "Português"),
-        ("fr", "Français"),
-        ("de", "Deutsch"),
-        ("ru", "Русский"),
-        ("hi", "हिन्दी"),
-        ("id", "Bahasa Indonesia"),
-        ("vi", "Tiếng Việt"),
-        ("it", "Italiano"),
-    ]
+    private static var targetLanguages: [(value: String, label: String)] {[
+        ("en", L10n.string("picker.autonym.en", fallback: "English")),
+        ("zh-Hant", L10n.string("picker.target.traditional_chinese_autonym", fallback: "繁體中文")),
+        ("zh-Hans", L10n.string("picker.target.simplified_chinese_autonym", fallback: "简体中文")),
+        ("ja", L10n.string("picker.autonym.ja", fallback: "日本語")),
+        ("ko", L10n.string("picker.autonym.ko", fallback: "한국어")),
+        ("es", L10n.string("picker.autonym.es", fallback: "Español")),
+        ("pt", L10n.string("picker.autonym.pt", fallback: "Português")),
+        ("fr", L10n.string("picker.autonym.fr", fallback: "Français")),
+        ("de", L10n.string("picker.autonym.de", fallback: "Deutsch")),
+        ("ru", L10n.string("picker.autonym.ru", fallback: "Русский")),
+        ("hi", L10n.string("picker.autonym.hi", fallback: "हिन्दी")),
+        ("id", L10n.string("picker.autonym.id", fallback: "Bahasa Indonesia")),
+        ("vi", L10n.string("picker.autonym.vi", fallback: "Tiếng Việt")),
+        ("it", L10n.string("picker.autonym.it", fallback: "Italiano")),
+    ]}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -112,9 +123,15 @@ struct LiveCaptionEngineSettingsView: View {
 
     private var sectionHeader: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label("Live Translated Caption", systemImage: "globe")
+            Label(
+                L10n.string("menu.live_translated_caption", fallback: "Live Translated Caption"),
+                systemImage: "globe"
+            )
                 .font(.headline)
-            Text("Real-time cloud translation via OpenAI's realtime translate endpoint. Audio streams Mac → OpenAI directly; HushType is never in the middle. Costs ~$2/hour against your own OpenAI API key.")
+            Text(L10n.string(
+                "settings.translated_caption.description",
+                fallback: "Real-time cloud translation via OpenAI's realtime translate endpoint. Audio streams Mac → OpenAI directly; HushType is never in the middle. Costs ~$2/hour against your own OpenAI API key."
+            ))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -123,11 +140,14 @@ struct LiveCaptionEngineSettingsView: View {
 
     private var sectionCloudOptions: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Translation options", systemImage: "captions.bubble")
+            Label(
+                L10n.string("settings.translated_caption.options", fallback: "Translation options"),
+                systemImage: "captions.bubble"
+            )
                 .font(.headline)
 
             HStack {
-                Text("Target language:")
+                Text(L10n.string("settings.translated_caption.target", fallback: "Target language:"))
                 Picker("", selection: $model.targetLanguage) {
                     ForEach(Self.targetLanguages, id: \.value) { lang in
                         Text(lang.label).tag(lang.value)
@@ -137,29 +157,46 @@ struct LiveCaptionEngineSettingsView: View {
                 .frame(maxWidth: 220)
             }
 
-            Toggle("Show source text above translation", isOn: $model.showSourceLine)
+            Toggle(L10n.string(
+                "settings.translated_caption.show_source",
+                fallback: "Show source text above translation"
+            ), isOn: $model.showSourceLine)
         }
     }
 
     private var sectionGuardrails: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Cost guardrails", systemImage: "dollarsign.circle")
+            Label(
+                L10n.string("settings.cost_guardrails.title", fallback: "Cost guardrails"),
+                systemImage: "dollarsign.circle"
+            )
                 .font(.headline)
 
             HStack {
-                Text("Auto-stop session after:")
+                Text(L10n.string(
+                    "settings.cost_guardrails.auto_stop",
+                    fallback: "Auto-stop session after:"
+                ))
                 Stepper(value: Binding(
                     get: { model.autoStopMinutes },
                     set: { model.autoStopMinutes = max(5, min(480, $0)) }
                 ), in: 5...480, step: 5) {
-                    Text("\(model.autoStopMinutes) min")
+                    Text(L10n.plural(
+                        "settings.duration.minutes",
+                        count: model.autoStopMinutes,
+                        fallback: "%1$d min",
+                        arguments: [Int32(model.autoStopMinutes)]
+                    ))
                         .frame(minWidth: 60, alignment: .trailing)
                         .monospacedDigit()
                 }
             }
 
             HStack {
-                Text("Warn me when daily spend hits:")
+                Text(L10n.string(
+                    "settings.cost_guardrails.daily_warning",
+                    fallback: "Warn me when daily spend hits:"
+                ))
                 Stepper(value: Binding(
                     get: { model.dailyCapDollars },
                     set: { model.dailyCapDollars = max(0.5, min(100.0, $0)) }
@@ -171,18 +208,24 @@ struct LiveCaptionEngineSettingsView: View {
             }
 
             HStack {
-                Text(model.todayUsageLine.isEmpty ? "Today's usage: —" : model.todayUsageLine)
+                Text(model.todayUsageLine.isEmpty
+                     ? L10n.string("settings.usage.placeholder", fallback: "Today's usage: —")
+                     : model.todayUsageLine)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Reset counter") { model.resetCounter() }
+                Button(L10n.string("common.button.reset_counter", fallback: "Reset counter")) {
+                    model.resetCounter()
+                }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
             }
 
             HStack {
                 Spacer()
-                Button("Reset to defaults") { model.resetToDefaults() }
+                Button(L10n.string("settings.reset_defaults", fallback: "Reset to defaults")) {
+                    model.resetToDefaults()
+                }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
             }
@@ -191,7 +234,10 @@ struct LiveCaptionEngineSettingsView: View {
 
     private var sectionAPIKey: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("API key", systemImage: "key.fill")
+            Label(
+                L10n.string("settings.api_key.title", fallback: "API key"),
+                systemImage: "key.fill"
+            )
                 .font(.headline)
 
             Text(OpenAIKeyStore.displayPath)
@@ -200,7 +246,10 @@ struct LiveCaptionEngineSettingsView: View {
                 .textSelection(.enabled)
 
             HStack {
-                Button("Open file in TextEdit") {
+                Button(L10n.string(
+                    "common.button.open_in_textedit",
+                    fallback: "Open file in TextEdit"
+                )) {
                     OpenAIKeyStore.openInDefaultEditor()
                     // After the user edits, refresh status when they return
                     // to settings.
@@ -210,7 +259,13 @@ struct LiveCaptionEngineSettingsView: View {
                 Spacer()
             }
 
-            Text(model.keyStatusLine.isEmpty ? "Status: —" : "Status: \(model.keyStatusLine)")
+            Text(model.keyStatusLine.isEmpty
+                 ? L10n.string("settings.key.status.placeholder", fallback: "Status: —")
+                 : L10n.format(
+                    "settings.key.status_format",
+                    "Status: %1$@",
+                    arguments: [model.keyStatusLine]
+                 ))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

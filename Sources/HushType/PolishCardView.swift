@@ -21,13 +21,18 @@ struct PolishCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(changed ? "Text Polished" : "No changes needed")
+                Text(changed
+                     ? L10n.string("polish.card.changed_title", fallback: "Text Polished")
+                     : L10n.string("polish.card.no_changes_title", fallback: "No changes needed"))
                     .font(.headline)
 
                 Spacer()
 
                 if changed {
-                    Label("Copied to clipboard", systemImage: "checkmark.circle.fill")
+                    Label(
+                        L10n.string("translation.card.copied", fallback: "Copied to clipboard"),
+                        systemImage: "checkmark.circle.fill"
+                    )
                         .font(.caption)
                         .foregroundStyle(.green)
                 }
@@ -37,7 +42,7 @@ struct PolishCardView: View {
 
             if changed {
                 HStack {
-                    Text("Changes")
+                    Text(L10n.string("polish.card.changes", fallback: "Changes"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -60,13 +65,16 @@ struct PolishCardView: View {
             .frame(maxHeight: 420)
 
             HStack(alignment: .bottom) {
-                Text("Click outside to dismiss")
+                Text(L10n.string("polish.card.dismiss", fallback: "Click outside to dismiss"))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 
                 Spacer()
 
-                Text("On-device Apple Intelligence — nothing leaves your Mac.")
+                Text(L10n.string(
+                    "polish.card.privacy",
+                    fallback: "On-device Apple Intelligence — nothing leaves your Mac."
+                ))
                     .font(.system(size: 9))
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.trailing)
@@ -86,12 +94,12 @@ struct PolishCardView: View {
 
     private var legend: some View {
         HStack(spacing: 4) {
-            Text("removed")
+            Text(L10n.string("polish.card.legend.removed", fallback: "removed"))
                 .strikethrough()
                 .foregroundStyle(Color(nsColor: .systemRed))
             Text("·")
                 .foregroundStyle(.secondary)
-            Text("added")
+            Text(L10n.string("polish.card.legend.added", fallback: "added"))
                 .underline()
                 .foregroundStyle(Color(nsColor: .systemGreen))
         }

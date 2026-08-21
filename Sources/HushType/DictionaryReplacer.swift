@@ -41,6 +41,8 @@ enum DictionaryReplacer {
         let target: String
     }
 
+    private static let lock = NSLock()
+
     /// Cached entries, sorted by source length descending (longest first).
     /// Empty when no file or all lines are comments/malformed.
     private static var entries: [Entry] = []
@@ -58,6 +60,9 @@ enum DictionaryReplacer {
     /// Cheap to call before every transcription — does a single stat() and
     /// returns immediately if mtime is unchanged.
     static func reloadIfNeeded() {
+        lock.lock()
+        defer { lock.unlock() }
+
         let url = AppConfig.dictionaryFileURL
         let fm = FileManager.default
 
@@ -95,7 +100,11 @@ enum DictionaryReplacer {
     static func apply(_ text: String) -> String {
         reloadIfNeeded()
 
-        guard !entries.isEmpty else { return text }
+        lock.lock()
+        let currentEntries = entries
+        lock.unlock()
+
+        guard !currentEntries.isEmpty else { return text }
 
         var result = ""
         result.reserveCapacity(text.count)
@@ -106,7 +115,7 @@ enum DictionaryReplacer {
 
         outer: while index < end {
             // Try each entry (already sorted longest source first)
-            for entry in entries {
+            for entry in currentEntries {
                 let sourceCount = entry.source.count
 
                 // Cheap length guard before substring comparison
@@ -140,7 +149,10 @@ enum DictionaryReplacer {
     /// Number of currently loaded entries. Used by the menu subtitle.
     static var entryCount: Int {
         reloadIfNeeded()
-        return entries.count
+        lock.lock()
+        let currentEntries = entries
+        lock.unlock()
+        return currentEntries.count
     }
 
     /// Whether the dictionary file currently exists on disk.
@@ -170,48 +182,11 @@ enum DictionaryReplacer {
             return false
         }
 
-        let template = """
-        # HushType Customized Dictionary
-        # =============================
-        #
-        # One rule per line, in this format:
-        #
-        #     what you say  ->  what gets typed
-        #
-        # Use this to fix recurring transcription errors — proper nouns the
-        # speech model always mishears, acronyms that come out spelled out,
-        # technical terms with non-standard phonetics, etc.
-        #
-        # Rules:
-        #   • Lines starting with #  are comments (ignored)
-        #   • Blank lines are ignored
-        #   • Source is CASE-INSENSITIVE: "cloud code", "Cloud Code", and
-        #     "CLOUD CODE" all match the same rule. The target is inserted
-        #     literally, so the output always matches what you wrote.
-        #   • Plain string match only — no regex, no wildcards
-        #   • Longest match wins when rules overlap
-        #   • Changes take effect on the next transcription (no restart)
-        #
-        # ---------------------------------------------------------------
-        # Examples (delete the # at the start of a line to activate it)
-        # ---------------------------------------------------------------
-
-        # Proper nouns the model mis-transcribes:
-        # 拍粉       -> Python
-        # Cloud code -> Claude Code
-        # Enfropic   -> Anthropic
-
-        # Acronym normalization:
-        # U I U X    -> UI/UX
-
-        # Technical jargon:
-        # J.S.O.N    -> JSON
-
-        # ---------------------------------------------------------------
-        # Your entries below:
-        # ---------------------------------------------------------------
-
-        """
+        let template = L10n.string(
+            "template.dictionary.starter_document",
+            table: "Templates",
+            fallback: "# HushType Customized Dictionary\n# =============================\n#\n# One rule per line, in this format:\n#\n#     what you say  ->  what gets typed\n#\n# Use this to fix recurring transcription errors — proper nouns the\n# speech model always mishears, acronyms that come out spelled out,\n# technical terms with non-standard phonetics, etc.\n#\n# Rules:\n#   • Lines starting with #  are comments (ignored)\n#   • Blank lines are ignored\n#   • Source is CASE-INSENSITIVE: \"cloud code\", \"Cloud Code\", and\n#     \"CLOUD CODE\" all match the same rule. The target is inserted\n#     literally, so the output always matches what you wrote.\n#   • Plain string match only — no regex, no wildcards\n#   • Longest match wins when rules overlap\n#   • Changes take effect on the next transcription (no restart)\n#\n# ---------------------------------------------------------------\n# Examples (delete the # at the start of a line to activate it)\n# ---------------------------------------------------------------\n\n# Proper nouns the model mis-transcribes:\n# 拍粉       -> Python\n# Cloud code -> Claude Code\n# Enfropic   -> Anthropic\n\n# Acronym normalization:\n# U I U X    -> UI/UX\n\n# Technical jargon:\n# J.S.O.N    -> JSON\n\n# ---------------------------------------------------------------\n# Your entries below:\n# ---------------------------------------------------------------\n"
+        )
 
         do {
             try template.write(to: url, atomically: true, encoding: .utf8)

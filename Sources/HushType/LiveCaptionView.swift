@@ -1,9 +1,32 @@
 import SwiftUI
 import AppKit
 
+/// Semantic role of a dual-line caption row (SPEC §4.5). The visible chip
+/// label and the accessibility label are localized renderings of this value;
+/// behavior never branches on rendered display text.
+enum CaptionLineRole: Equatable, Sendable {
+    case source
+    case translated
+
+    var label: String {
+        switch self {
+        case .source: return L10n.string("caption.role.source", fallback: "SOURCE")
+        case .translated: return L10n.string("caption.role.translated", fallback: "TRANSLATED")
+        }
+    }
+
+    var accessibilityLabel: String {
+        switch self {
+        case .source: return L10n.string("caption.role.source.accessibility", fallback: "Source language")
+        case .translated: return L10n.string("caption.role.translated.accessibility", fallback: "Translated")
+        }
+    }
+}
+
 /// Header state — drives the left-side content of the panel header.
 enum LiveCaptionHeaderState: Equatable {
     case loadingVAD       // "Loading VAD model…"
+    case loadingModel(Double) // local Qwen model load progress, 0...1
     case live              // "● Live"
     case gatedFlash        // "Stop Live Caption to dictate" (orange, 2s)
     case reconnecting(attempt: Int, max: Int)   // cloud transport reconnect
@@ -76,7 +99,10 @@ struct LiveCaptionView: View {
                 Text(chip)
                     .font(.system(size: 11, weight: .regular, design: .monospaced))
                     .foregroundStyle(.secondary)
-                    .accessibilityLabel("Cloud Live Caption session cost")
+                    .accessibilityLabel(L10n.string(
+                        "caption.accessibility.session_cost",
+                        fallback: "Cloud Live Caption session cost"
+                    ))
             }
             stopButton
         }
@@ -85,12 +111,25 @@ struct LiveCaptionView: View {
     @ViewBuilder
     private var headerLeft: some View {
         switch model.headerState {
+        case .loadingModel(let progress):
+            HStack(spacing: 6) {
+                ProgressView(value: max(0, min(1, progress)))
+                    .progressViewStyle(.linear)
+                    .frame(width: 64)
+                Text(L10n.format(
+                    "caption.loading_speech_model",
+                    "Loading speech model… %1$d%%",
+                    arguments: [Int32(Int(max(0, min(1, progress)) * 100))]
+                ))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary.opacity(0.85))
+            }
         case .loadingVAD:
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.small)
                     .scaleEffect(0.7)
-                Text("Loading VAD model…")
+                Text(L10n.string("caption.loading_vad", fallback: "Loading VAD model…"))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.primary.opacity(0.85))
             }
@@ -103,13 +142,16 @@ struct LiveCaptionView: View {
                 // products with different cost/privacy profiles, so the
                 // header label distinguishes them at a glance.
                 Text(AppConfig.shared.liveCaptionEngine == .cloudTranslate
-                     ? "Live · Translated"
-                     : "Live")
+                     ? L10n.string("caption.live_translated", fallback: "Live · Translated")
+                     : L10n.string("caption.live", fallback: "Live"))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.primary.opacity(0.85))
             }
         case .gatedFlash:
-            Text("Stop Live Caption to dictate")
+            Text(L10n.string(
+                "caption.stop_to_dictate",
+                fallback: "Stop Live Caption to dictate"
+            ))
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.orange)
         case .reconnecting(let attempt, let max):
@@ -117,12 +159,16 @@ struct LiveCaptionView: View {
                 ProgressView()
                     .controlSize(.small)
                     .scaleEffect(0.7)
-                Text("Reconnecting (\(attempt)/\(max))…")
+                Text(L10n.format(
+                    "caption.reconnecting",
+                    "Reconnecting (%1$d/%2$d)…",
+                    arguments: [Int32(attempt), Int32(max)]
+                ))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.orange)
             }
         case .autoStopped:
-            Text("Auto-stopped")
+            Text(L10n.string("caption.auto_stopped", fallback: "Auto-stopped"))
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.secondary)
         }
@@ -136,8 +182,11 @@ struct LiveCaptionView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Stop live caption")
-        .help("Stop live caption (Esc)")
+        .accessibilityLabel(L10n.string(
+            "caption.stop.accessibility",
+            fallback: "Stop live caption"
+        ))
+        .help(L10n.string("caption.stop.help", fallback: "Stop live caption (Esc)"))
     }
 
     // MARK: - Body
@@ -149,7 +198,7 @@ struct LiveCaptionView: View {
         if model.segments.isEmpty && !hasCurrentLine {
             HStack {
                 Spacer()
-                Text("Listening…")
+                Text(L10n.string("caption.listening", fallback: "Listening…"))
                     .font(.system(size: 13, weight: .regular))
                     .foregroundStyle(.tertiary)
                 Spacer()
@@ -209,10 +258,10 @@ struct LiveCaptionView: View {
     }
 
     /// Pinned dual-line region below the scrollback: source line on top
-    /// (small grey, "SOURCE" chip), translated line below (main caption
-    /// font, "TRANSLATED" chip). Both share a single left accent rule so the
-    /// user reads them as one translation pair rather than two unrelated
-    /// lines. Collapses when both are nil.
+    /// (small grey, source chip), translated line below (main caption font,
+    /// translated chip). Both share a single left accent rule so the user
+    /// reads them as one translation pair rather than two unrelated lines.
+    /// Collapses when both are nil.
     private var dualLineRegion: some View {
         HStack(alignment: .top, spacing: 10) {
             Rectangle()
@@ -223,7 +272,7 @@ struct LiveCaptionView: View {
             VStack(alignment: .leading, spacing: 6) {
                 if let source = model.currentSourceLine, !source.isEmpty {
                     dualLineRow(
-                        roleLabel: "SOURCE",
+                        role: .source,
                         text: source,
                         fontSize: 12,
                         color: .secondary
@@ -231,7 +280,7 @@ struct LiveCaptionView: View {
                 }
                 if let target = model.currentTargetLine, !target.isEmpty {
                     dualLineRow(
-                        roleLabel: "TRANSLATED",
+                        role: .translated,
                         text: target,
                         fontSize: 17,
                         color: .primary
@@ -243,14 +292,14 @@ struct LiveCaptionView: View {
     }
 
     /// One line of the dual-line region. Fixed-width pill chip on the left
-    /// (so SOURCE / TRANSLATED stack vertically aligned), then the caption.
-    /// The chip is intentionally bold + capsule-shaped so the role is
-    /// readable at panel viewing distance — the previous SF Symbol glyphs
-    /// at 10pt tertiary opacity were near-invisible.
+    /// (so the role chips stack vertically aligned), then the caption. The
+    /// chip is intentionally bold + capsule-shaped so the role is readable at
+    /// panel viewing distance. The role is a semantic enum: visible text and
+    /// accessibility text are both localized output of it.
     @ViewBuilder
-    private func dualLineRow(roleLabel: String, text: String, fontSize: CGFloat, color: Color) -> some View {
+    private func dualLineRow(role: CaptionLineRole, text: String, fontSize: CGFloat, color: Color) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(roleLabel)
+            Text(role.label)
                 .font(.system(size: 9, weight: .heavy, design: .rounded))
                 .foregroundStyle(.secondary)
                 .tracking(0.5)
@@ -258,7 +307,7 @@ struct LiveCaptionView: View {
                 .padding(.vertical, 3)
                 .background(Color.primary.opacity(0.14), in: Capsule())
                 .frame(width: 92, alignment: .leading)
-                .accessibilityLabel(roleLabel == "SOURCE" ? "Source language" : "Translated")
+                .accessibilityLabel(role.accessibilityLabel)
             Text(text)
                 .font(.system(size: fontSize, weight: .regular))
                 .foregroundStyle(color)

@@ -64,7 +64,7 @@ final class OnboardingSetupWindowController: NSWindowController, NSWindowDelegat
             backing: .buffered,
             defer: false
         )
-        panel.title = "Set Up HushType"
+        panel.title = L10n.string("window.onboarding.title", fallback: "Set Up HushType")
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.isOpaque = false
@@ -224,11 +224,14 @@ private struct OnboardingSetupView: View {
                 .shadow(color: .black.opacity(0.16), radius: 8, x: 0, y: 3)
 
             VStack(spacing: 5) {
-                Text("Set Up HushType")
+                Text(L10n.string("window.onboarding.title", fallback: "Set Up HushType"))
                     .font(.system(size: 22, weight: .semibold))
                     .multilineTextAlignment(.center)
 
-                Text("Allow HushType to listen for Right Option and record your voice locally.")
+                Text(L10n.string(
+                    "onboarding.intro",
+                    fallback: "Allow HushType to listen for Right Option and record your voice locally."
+                ))
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -242,31 +245,51 @@ private struct OnboardingSetupView: View {
         permissionCard(
             symbol: "figure.stand",
             tint: .blue,
-            title: "Accessibility",
-            subtitle: "Required for the Right Option hotkey.",
-            status: model.accessibilitySettingsOpened ? "Restart needed" : "Needs permission",
+            title: L10n.string("permission.accessibility.title", fallback: "Accessibility"),
+            subtitle: L10n.string(
+                "permission.accessibility.subtitle",
+                fallback: "Required for the Right Option hotkey."
+            ),
+            status: model.accessibilitySettingsOpened
+                ? L10n.string("permission.status.restart_needed", fallback: "Restart needed")
+                : L10n.string("permission.status.needs_permission", fallback: "Needs permission"),
             statusTint: model.accessibilitySettingsOpened ? .orange : .secondary
         ) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
-                    Button("Open System Settings") {
+                    Button(L10n.string(
+                        "common.button.open_system_settings",
+                        fallback: "Open System Settings"
+                    )) {
                         onOpenAccessibilitySettings()
                     }
                     .buttonStyle(.borderedProminent)
 
-                    Button("Reset Old HushType Entry") {
+                    Button(L10n.string(
+                        "permission.accessibility.reset_old",
+                        fallback: "Reset Old HushType Entry"
+                    )) {
                         onResetOldAccessibilityEntry()
                     }
                     .buttonStyle(.bordered)
                 }
 
-                Text("Use reset if you installed an older HushType, see duplicate HushType entries, cannot find HushType, or the switch does not work.")
+                Text(L10n.string(
+                    "permission.accessibility.reset_help",
+                    fallback: "Use reset if you installed an older HushType, see duplicate HushType entries, cannot find HushType, or the switch does not work."
+                ))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if model.didResetAccessibility {
-                    Label("Old Accessibility entries cleared. Add or enable HushType again.", systemImage: "checkmark.circle.fill")
+                    Label(
+                        L10n.string(
+                            "permission.accessibility.reset_complete",
+                            fallback: "Old Accessibility entries cleared. Add or enable HushType again."
+                        ),
+                        systemImage: "checkmark.circle.fill"
+                    )
                         .font(.system(size: 11))
                         .foregroundStyle(.green)
                 }
@@ -278,30 +301,44 @@ private struct OnboardingSetupView: View {
         permissionCard(
             symbol: "mic.fill",
             tint: .green,
-            title: "Microphone",
-            subtitle: "Required to transcribe your voice.",
+            title: L10n.string("permission.microphone.title", fallback: "Microphone"),
+            subtitle: L10n.string(
+                "permission.microphone.subtitle",
+                fallback: "Required to transcribe your voice."
+            ),
             status: microphoneStatusTitle,
             statusTint: microphoneStatusTint
         ) {
             HStack(spacing: 8) {
                 switch model.microphoneStatus {
                 case .authorized:
-                    Label("Allowed", systemImage: "checkmark.circle.fill")
+                    Label(
+                        L10n.string("permission.status.allowed", fallback: "Allowed"),
+                        systemImage: "checkmark.circle.fill"
+                    )
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.green)
                 case .notDetermined:
-                    Button(model.microphoneRequestInFlight ? "Waiting..." : "Allow Microphone") {
+                    Button(model.microphoneRequestInFlight
+                           ? L10n.string("permission.status.waiting", fallback: "Waiting...")
+                           : L10n.string("permission.microphone.allow", fallback: "Allow Microphone")) {
                         onRequestMicrophone()
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(model.microphoneRequestInFlight)
                 case .denied, .restricted:
-                    Button("Open Microphone Settings") {
+                    Button(L10n.string(
+                        "permission.microphone.open_settings",
+                        fallback: "Open Microphone Settings"
+                    )) {
                         onOpenMicrophoneSettings()
                     }
                     .buttonStyle(.bordered)
                 @unknown default:
-                    Button("Open Microphone Settings") {
+                    Button(L10n.string(
+                        "permission.microphone.open_settings",
+                        fallback: "Open Microphone Settings"
+                    )) {
                         onOpenMicrophoneSettings()
                     }
                     .buttonStyle(.bordered)
@@ -329,7 +366,7 @@ private struct OnboardingSetupView: View {
 
     private var footer: some View {
         HStack(spacing: 10) {
-            Button("Quit") {
+            Button(L10n.string("onboarding.button.quit", fallback: "Quit")) {
                 onQuit()
             }
             .keyboardShortcut(.cancelAction)
@@ -337,13 +374,18 @@ private struct OnboardingSetupView: View {
             Spacer()
 
             if model.accessibilitySettingsOpened {
-                Button("Restart HushType") {
+                Button(L10n.string("onboarding.button.restart", fallback: "Restart HushType")) {
                     onRestart()
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canRestart)
-                .help(canRestart ? "Restart HushType" : "Allow or review Microphone access before restarting.")
+                .help(canRestart
+                      ? L10n.string("onboarding.button.restart", fallback: "Restart HushType")
+                      : L10n.string(
+                        "onboarding.restart.help",
+                        fallback: "Allow or review Microphone access before restarting."
+                      ))
             }
         }
     }
@@ -357,9 +399,15 @@ private struct OnboardingSetupView: View {
 
     private var restartGuidanceText: String {
         if model.microphoneStatus == .notDetermined {
-            return "After enabling HushType in Accessibility, allow Microphone access before restarting."
+            return L10n.string(
+                "onboarding.next_step.allow_microphone",
+                fallback: "After enabling HushType in Accessibility, allow Microphone access before restarting."
+            )
         }
-        return "After enabling HushType in Accessibility, restart the app so macOS applies the permission."
+        return L10n.string(
+            "onboarding.next_step.restart",
+            fallback: "After enabling HushType in Accessibility, restart the app so macOS applies the permission."
+        )
     }
 
     private func permissionCard<Actions: View>(
@@ -423,13 +471,15 @@ private struct OnboardingSetupView: View {
     private var microphoneStatusTitle: String {
         switch model.microphoneStatus {
         case .authorized:
-            return "Allowed"
+            return L10n.string("permission.status.allowed", fallback: "Allowed")
         case .notDetermined:
-            return model.microphoneRequestInFlight ? "Waiting" : "Needs permission"
+            return model.microphoneRequestInFlight
+                ? L10n.string("permission.status.waiting_short", fallback: "Waiting")
+                : L10n.string("permission.status.needs_permission", fallback: "Needs permission")
         case .denied, .restricted:
-            return "Blocked"
+            return L10n.string("permission.status.blocked", fallback: "Blocked")
         @unknown default:
-            return "Needs review"
+            return L10n.string("permission.status.needs_review", fallback: "Needs review")
         }
     }
 

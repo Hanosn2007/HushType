@@ -105,17 +105,22 @@ enum OnboardingManager {
 
     private static func confirmAccessibilityReset() -> Bool {
         let alert = NSAlert()
-        alert.messageText = "Reset Old HushType Entry?"
-        alert.informativeText = """
-            This clears HushType from the Accessibility permission list.
-
-            Use this if you installed an older HushType, see duplicate HushType entries, cannot find HushType, or the switch does not work. You'll need to add or enable HushType again.
-            """
+        alert.messageText = L10n.string(
+            "alert.accessibility_reset.title",
+            fallback: "Reset Old HushType Entry?"
+        )
+        alert.informativeText = L10n.string(
+            "alert.accessibility_reset.message",
+            fallback: "This clears HushType from the Accessibility permission list.\n\nUse this if you installed an older HushType, see duplicate HushType entries, cannot find HushType, or the switch does not work. You'll need to add or enable HushType again."
+        )
         alert.icon = NSImage(named: "AppIcon")
             ?? NSImage(systemSymbolName: "lock.shield", accessibilityDescription: nil)
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "Reset and Reopen Settings")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L10n.string(
+            "alert.accessibility_reset.confirm",
+            fallback: "Reset and Reopen Settings"
+        ))
+        alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
 
         return alert.runModal() == .alertFirstButtonReturn
     }

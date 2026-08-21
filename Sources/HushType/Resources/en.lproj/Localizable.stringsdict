@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+
+	<key>menu.dictionary.entries_loaded</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringFormatSpecTypeInt</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>l</string>
+			<key>one</key>
+			<string>%1$ld entry loaded</string>
+			<key>other</key>
+			<string>%1$ld entries loaded</string>
+		</dict>
+	</dict>
+
+	<key>usage.daily_breakdown</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringFormatSpecTypeInt</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>l</string>
+			<key>one</key>
+			<string>Today's cloud usage: %1$@ total — dictation %2$@ (%3$d min), translated caption %4$@ (%5$d min)</string>
+			<key>other</key>
+			<string>Today's cloud usage: %1$@ total — dictation %2$@ (%3$d min), translated caption %4$@ (%5$d min)</string>
+		</dict>
+	</dict>
+
+	<key>settings.duration.minutes</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringFormatSpecTypeInt</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>l</string>
+			<key>one</key>
+			<string>%1$d min</string>
+			<key>other</key>
+			<string>%1$d min</string>
+		</dict>
+	</dict>
+
+	<key>settings.usage.today</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringFormatSpecTypeInt</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>l</string>
+			<key>one</key>
+			<string>Today's usage: %1$@ (%2$d min)</string>
+			<key>other</key>
+			<string>Today's usage: %1$@ (%2$d min)</string>
+		</dict>
+	</dict>
+
+	<key>notification.caption.auto_stop.body</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringFormatSpecTypeInt</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>l</string>
+			<key>one</key>
+			<string>Stopped after %1$d minute (%2$@ used today).</string>
+			<key>other</key>
+			<string>Stopped after %1$d minutes (%2$@ used today).</string>
+		</dict>
+	</dict>
+
+</dict>
+</plist>

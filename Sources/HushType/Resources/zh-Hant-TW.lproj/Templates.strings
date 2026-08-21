@@ -1,0 +1,77 @@
+/* Generated from the frozen Gate B manifest + decisions overlay. */
+
+/* Complete first-created dictionary.txt starter document. Comment prose is localized; executable example lines, separators, case examples, product/proper names, and syntax remain byte-semantic equivalents. */
+
+"template.dictionary.starter_document" = "# HushType 自訂字典\n# ==================\n#\n# 每行一條規則，格式如下：\n#\n#     你說出的內容  ->  要輸入的內容\n#\n# 用來修正常見的轉錄錯誤，例如語音模型總是聽錯的專有名詞、\n# 被逐字母拼出的縮寫，或發音不尋常的技術用語等。\n#\n# 規則：\n#   • 以 # 開頭的行是註解（會忽略）\n#   • 空白行會忽略\n#   • 來源不區分大小寫：\"cloud code\"、\"Cloud Code\" 和\n#     \"CLOUD CODE\" 都會符合相同規則。目標內容會照原樣插入，\n#     因此輸出會與你寫的內容完全相同。\n#   • 僅比對純文字字串 — 不支援 regex 或萬用字元\n#   • 規則重疊時，以最長的相符項目為準\n#   • 變更會在下一次轉錄時生效（不需重新啟動）\n#\n# ---------------------------------------------------------------\n# 範例（刪除行首的 # 即可啟用）\n# ---------------------------------------------------------------\n\n# 模型轉錄錯誤的專有名詞：\n# 拍粉       -> Python\n# Cloud code -> Claude Code\n# Enfropic   -> Anthropic\n\n# 縮寫正規化：\n# U I U X    -> UI/UX\n\n# 技術用語：\n# J.S.O.N    -> JSON\n\n# ---------------------------------------------------------------\n# 請在下方加入你的項目：\n# ---------------------------------------------------------------\n";
+
+/* Complete first-created polish_rules.txt starter document. Commented examples become model instructions if uncommented, so their behavioral meaning is preserved exactly. Service name uses its localized ServicesMenu value. */
+
+"template.polish_rules.starter_document" = "# HushType 校對指示\n# ==================\n#\n# 文字校對的額外指示（連按兩下右側 Option，或\n# 按右鍵 → 服務 →「使用 HushType 校對」）。\n#\n# 這些指示會加入 HushType 的內建校對規則；內建規則仍會生效：\n# 僅修正錯誤、保留原意與語言混用，絕不回答或翻譯選取的內容。\n#\n# 規則：\n#   • 以 # 開頭的行是註解（會忽略）\n#   • 每條指示請保持簡短並使用祈使句；裝置上的模型較小，\n#     少量清楚的規則會比大量規則更有效\n#   • 變更會在下一次校對時生效（不需重新啟動）\n#\n# ---------------------------------------------------------------\n# 範例（刪除行首的 # 即可啟用）\n# ---------------------------------------------------------------\n#\n# 一律使用 Oxford comma。\n# 偏好台灣華語用詞（寫成「計程車」，不要「出租車」）。\n# 完全依照輸入保留 ALL CAPS 的文字。\n# 不要變更換行。\n#\n# ---------------------------------------------------------------\n# 請在下方加入你的指示：\n# ---------------------------------------------------------------\n";
+
+/* live_caption.json _comment_about value; JSON key prefix remains exact. */
+
+"template.live_caption.about" = "HushType — 即時字幕可調整參數。編輯數值後，關閉再開啟即時字幕即可套用變更。以 _comment_ 開頭的鍵僅供說明，解析器會忽略。";
+
+/* live_caption.json documentation; technical terms and exact numeric semantics remain. */
+
+"template.live_caption.max_tokens" = "每個區段的 ASR 解碼器最大產生 token 數。額度越大，每次呼叫會使用越多解碼器 KV cache，並可能在 EOS 後持續失控產生內容。Speech-swift 預設值為 448，已在 15 分鐘長時間工作階段測試中驗證穩定。觀察到提高至 1024 以上時，統一記憶體用量會急遽增加。";
+
+/* live_caption.json technical documentation; preserve units and values. */
+
+"template.live_caption.mlx_cache" = "MLX GPU 緩衝池上限（MB）。較低 = RAM 使用量較少，但每次轉錄都需冷啟動；較高 = 使用暖快取。128 太低；1024 是針對 Apple Silicon 效能調校的預設值。若要更嚴格限制 RAM，可降至 256 或 512。";
+
+/* live_caption.json VAD threshold documentation. */
+
+"template.live_caption.vad_thresholds" = "進入與離開語音狀態的 VAD 機率門檻（0.0–1.0）。Silero 預設值為 0.5 / 0.35。開始門檻越低 = 越敏感（在吵雜環境中會產生更多片段）。";
+
+/* live_caption.json VAD duration documentation; JSON concepts and exact defaults remain. */
+
+"template.live_caption.vad_durations" = "minSpeech：確認為語音後，必須持續多久才能輸出區段。minSilence：多長的停頓會結束區段。兩者單位皆為秒。Silero 預設值為 0.25 / 0.10。";
+
+/* live_caption.json force-split documentation. */
+
+"template.live_caption.force_split" = "連續獨白達到此時長（秒）時強制分段。規格預設值為 10。";
+
+/* live_caption.json backpressure documentation. Source contains 'first-cold'; translated by intended literal technical meaning and flagged for English cleanup review. */
+
+"template.live_caption.backpressure" = "worker actor 待處理的 feed 超過此數量時，捨棄新的音訊緩衝區。50 約等於 2 秒音訊，足以容納首次冷啟動轉錄，又不會讓佇列無限增長。";
+
+/* live_caption.json panel-size documentation. */
+
+"template.live_caption.panel" = "面板預設大小（像素）。拖移視窗或調整大小的數值會另外儲存，並在下次啟動時覆寫這項設定。";
+
+/* live_caption.json one-shot reset documentation; Boolean/properties remain exact. */
+
+"template.live_caption.reset_panel" = "設為 true 後，下次開啟即時字幕時會捨棄已儲存的視窗框架，並重新套用 panelDefaultWidth/Height。App 套用後會將值改回 false。";
+
+/* live_caption.json protocol-value documentation; mic/system remain exact. */
+
+"template.live_caption.audio_source" = "即時字幕的來源：'mic' 或 'system'。預設為 'mic'。可透過選單（即時字幕子選單）切換，或在此編輯後關閉再開啟即時字幕。發生衝突時一律以選單為準。";
+
+/* live_caption.json system-audio bundle identifier documentation. */
+
+"template.live_caption.system_bundle_id" = "上次為系統音訊即時字幕選取的 App bundle identifier。由選擇器自動設定，也可手動編輯。空白表示下次啟動時顯示選擇器。";
+
+/* openai.json _comment_overview value. Security/privacy-sensitive; URL, JSON key, provider and filename syntax remain exact. 'Live Caption Engine settings' does not match current UI exactly and needs product copy review. */
+
+"template.openai.overview" = "HushType 雲端功能 — OpenAI API 金鑰。這個檔案會以純文字儲存在磁碟上，請像保護 .env 檔案一樣保護它。請前往 https://platform.openai.com/api-keys 取得金鑰。在填入 'api_key'，且於語音輸入引擎或翻譯字幕設定中選擇 OpenAI 引擎之前，雲端功能會維持停用。";
+
+/* openai.json _comment_api_key value; prefixes remain exact. */
+
+"template.openai.api_key" = "你的 OpenAI API 金鑰（sk-proj-... 或 sk-...）。留空即可完全停用雲端功能。";
+
+/* openai.json _comment_organization value; prefix remains exact. */
+
+"template.openai.organization" = "選填。只有在你確實需要將用量限定至某個組織時才設定。格式：org-...";
+
+/* gemini.json _comment_overview value. Security/privacy-sensitive; URL, JSON key and provider remain exact. */
+
+"template.gemini.overview" = "HushType 雲端功能 — Gemini API 金鑰。這個檔案會以純文字儲存在磁碟上，請像保護 .env 檔案一樣保護它。請前往 https://aistudio.google.com/apikey 取得金鑰。在填入 'api_key' 之前，雲端功能會維持停用。引擎可在 HushType 的語音輸入引擎設定中選擇。";
+
+/* gemini.json _comment_api_key value; prefix remains exact. */
+
+"template.gemini.api_key" = "你的 Gemini API 金鑰（AIza...）。留空即可完全停用雲端功能。";
+
+/* gemini.json provider-policy comment; preserve may/does-not distinction. */
+
+"template.gemini.free_tier_policy" = "使用 Google 免費方案時，Google 可能會使用提交的音訊來改進其產品；付費方案則不會。";

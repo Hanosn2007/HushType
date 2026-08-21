@@ -6,38 +6,186 @@ private let log = Logger(subsystem: "com.felix.hushtype", category: "transcripti
 
 // MARK: - Protocol
 
-protocol TranscriptionEngine {
+protocol TranscriptionEngine: AnyObject {
     var isLoaded: Bool { get }
+    var maxSampleCount: Int? { get }
     func load(progressHandler: ((Double, String) -> Void)?) async throws
-    func transcribe(audio: [Float], language: String?) async -> String
+    func transcribe(audio: [Float], language: String?) async throws -> String
+}
+
+extension TranscriptionEngine {
+    var maxSampleCount: Int? { nil }
+}
+
+enum TranscriptionError: Error, Equatable, Sendable {
+    case noKey
+    case auth
+    case permissionDenied(provider: String)
+    case rateLimited(provider: String)
+    case network
+    case timeout
+    case payloadTooLarge
+    case malformedResponse
+    case safetyBlocked
 }
 
 // MARK: - Qwen3 Implementation
 
 final class Qwen3TranscriptionEngine: TranscriptionEngine {
+    private let loadLock = NSLock()
     private var model: Qwen3ASRModel?
+    private var inFlightLoad: Task<Qwen3ASRModel, Error>?
+    private var inFlightGeneration: UInt = 0
+    private var loadGeneration: UInt = 0
+    private var progressHandlers: [UUID: (Double, String) -> Void] = [:]
+    private var latestProgress: (Double, String)?
 
-    var isLoaded: Bool { model != nil }
+    private struct PreparedLoad {
+        let task: Task<Qwen3ASRModel, Error>
+        let generation: UInt
+        let replayProgress: (Double, String)?
+    }
+
+    var isLoaded: Bool {
+        loadLock.lock()
+        defer { loadLock.unlock() }
+        return model != nil
+    }
 
     /// Read-only handle for the live-caption pipeline. Returns the loaded
     /// model instance so `LiveCaptionManager` can call `transcribe()` directly
     /// without going through the dictation post-processing chain.
-    var loadedModel: Qwen3ASRModel? { model }
-
-    func load(progressHandler: ((Double, String) -> Void)? = nil) async throws {
-        let modelId = AppConfig.shared.modelId
-        log.info("Loading model: \(modelId)")
-
-        model = try await Qwen3ASRModel.fromPretrained(
-            modelId: modelId,
-            progressHandler: progressHandler
-        )
-
-        log.info("Model loaded successfully")
+    var loadedModel: Qwen3ASRModel? {
+        loadLock.lock()
+        defer { loadLock.unlock() }
+        return model
     }
 
-    func transcribe(audio: [Float], language: String?) async -> String {
-        guard let model else {
+    func load(progressHandler: ((Double, String) -> Void)? = nil) async throws {
+        let handlerID = progressHandler.map { _ in UUID() }
+        guard let prepared = prepareLoad(
+            handlerID: handlerID,
+            progressHandler: progressHandler
+        ) else { return }
+
+        if let replayProgress = prepared.replayProgress, let progressHandler {
+            progressHandler(replayProgress.0, replayProgress.1)
+        }
+
+        do {
+            let loadedModel = try await prepared.task.value
+            guard commitLoadedModel(
+                loadedModel,
+                generation: prepared.generation,
+                handlerID: handlerID
+            ) else {
+                throw CancellationError()
+            }
+            log.info("Model loaded successfully")
+        } catch {
+            finishFailedLoad(generation: prepared.generation, handlerID: handlerID)
+            throw error
+        }
+    }
+
+    /// Keep NSLock acquisition in a synchronous helper. Swift warns against
+    /// directly holding even a short-lived mutex in an async function because
+    /// suspension while locked would deadlock; this helper cannot suspend.
+    private func prepareLoad(
+        handlerID: UUID?,
+        progressHandler: ((Double, String) -> Void)?
+    ) -> PreparedLoad? {
+        loadLock.lock()
+        defer { loadLock.unlock() }
+        guard model == nil else { return nil }
+
+        if let handlerID, let progressHandler {
+            progressHandlers[handlerID] = progressHandler
+        }
+        let replayProgress = latestProgress
+
+        if let existing = inFlightLoad {
+            return PreparedLoad(
+                task: existing,
+                generation: inFlightGeneration,
+                replayProgress: replayProgress
+            )
+        }
+
+        let modelId = AppConfig.shared.modelId
+        let generation = loadGeneration
+        inFlightGeneration = generation
+        log.info("Loading model: \(modelId)")
+        let task = Task { [weak self] in
+            try await Qwen3ASRModel.fromPretrained(
+                modelId: modelId,
+                progressHandler: { progress, description in
+                    self?.publishLoadProgress(
+                        progress,
+                        description: description,
+                        generation: generation
+                    )
+                }
+            )
+        }
+        inFlightLoad = task
+        return PreparedLoad(task: task, generation: generation, replayProgress: replayProgress)
+    }
+
+    private func commitLoadedModel(
+        _ loadedModel: Qwen3ASRModel,
+        generation: UInt,
+        handlerID: UUID?
+    ) -> Bool {
+        loadLock.lock()
+        defer { loadLock.unlock() }
+        guard generation == loadGeneration else {
+            if let handlerID { progressHandlers.removeValue(forKey: handlerID) }
+            return false
+        }
+        model = loadedModel
+        if inFlightLoad != nil && inFlightGeneration == generation {
+            inFlightLoad = nil
+            progressHandlers.removeAll()
+            latestProgress = nil
+        } else if let handlerID {
+            progressHandlers.removeValue(forKey: handlerID)
+        }
+        return true
+    }
+
+    private func finishFailedLoad(generation: UInt, handlerID: UUID?) {
+        loadLock.lock()
+        defer { loadLock.unlock() }
+        if inFlightLoad != nil && inFlightGeneration == generation {
+            inFlightLoad = nil
+            progressHandlers.removeAll()
+            latestProgress = nil
+        } else if let handlerID {
+            progressHandlers.removeValue(forKey: handlerID)
+        }
+    }
+
+    private func publishLoadProgress(
+        _ progress: Double,
+        description: String,
+        generation: UInt
+    ) {
+        loadLock.lock()
+        guard inFlightLoad != nil && inFlightGeneration == generation else {
+            loadLock.unlock()
+            return
+        }
+        latestProgress = (progress, description)
+        let handlers = Array(progressHandlers.values)
+        loadLock.unlock()
+        for handler in handlers {
+            handler(progress, description)
+        }
+    }
+
+    func transcribe(audio: [Float], language: String?) async throws -> String {
+        guard let model = loadedModel else {
             log.error("Model not loaded")
             return ""
         }
@@ -61,49 +209,7 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         let asrElapsed = CFAbsoluteTimeGetCurrent() - startTime
         log.info("Raw transcription (\(String(format: "%.2f", asrElapsed))s): \(rawText)")
 
-        // Classify once on the raw ASR text. Gates the Chinese-only stages
-        // (OpenCC, ITN, punctuation strip) so they never touch JP/KO/EN.
-        let script = ScriptDetector.detect(rawText)
-
-        // Apply Traditional Chinese conversion
-        let convertedText = ChineseConverter.convert(rawText)
-        if convertedText != rawText {
-            log.info("After conversion: \(convertedText)")
-        }
-
-        // Apply number conversion (ITN) if enabled. Deterministic regex-based
-        // pass that converts Chinese numerals to Arabic digits.
-        let itnResult: NumberNormalizer.Result
-        if script == .zh && AppConfig.shared.numberConversionEnabled {
-            itnResult = NumberNormalizer.normalize(convertedText)
-            if itnResult.applied {
-                log.info("After ITN: \(itnResult.text, privacy: .public) [\(itnResult.note, privacy: .public)]")
-            } else if itnResult.note != "no-op" {
-                log.debug("ITN skipped: \(itnResult.note, privacy: .public)")
-            }
-        } else {
-            itnResult = NumberNormalizer.Result(text: convertedText, applied: false, note: "disabled")
-        }
-
-        // Apply user customized dictionary as the final post-processing step.
-        // No-op if the dictionary file doesn't exist or is empty.
-        let dictText = DictionaryReplacer.apply(itnResult.text)
-        if dictText != itnResult.text {
-            log.info("After dictionary: \(dictText)")
-        }
-
-        // Final step: strip the model's over-aggressive Chinese inline
-        // punctuation. Chinese only, and last in the chain so nothing downstream
-        // can re-introduce it.
-        let finalText: String
-        if script == .zh {
-            finalText = PunctuationNormalizer.apply(dictText, mode: AppConfig.shared.punctuationMode)
-            if finalText != dictText {
-                log.info("After punctuation: \(finalText)")
-            }
-        } else {
-            finalText = dictText
-        }
+        let finalText = DictationPostProcessor.apply(rawText)
 
         let totalElapsed = CFAbsoluteTimeGetCurrent() - startTime
         let inCh = rawText.count
@@ -111,14 +217,20 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         let asrMs = Int(asrElapsed * 1000)
         let totalMs = Int(totalElapsed * 1000)
 
-        let itnLabel = itnResult.applied ? "applied" : itnResult.note
-        log.info("timings asr=\(asrMs, privacy: .public)ms itn=\(itnLabel, privacy: .public) total=\(totalMs, privacy: .public)ms in=\(inCh, privacy: .public)ch out=\(outCh, privacy: .public)ch")
+        log.info("timings asr=\(asrMs, privacy: .public)ms total=\(totalMs, privacy: .public)ms in=\(inCh, privacy: .public)ch out=\(outCh, privacy: .public)ch")
 
         return finalText
     }
 
     func unload() {
+        loadLock.lock()
+        loadGeneration &+= 1
+        inFlightLoad?.cancel()
+        inFlightLoad = nil
+        progressHandlers.removeAll()
+        latestProgress = nil
         model = nil
+        loadLock.unlock()
         log.info("Model unloaded")
     }
 }

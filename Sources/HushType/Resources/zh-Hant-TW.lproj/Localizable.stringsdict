@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+
+	<key>menu.dictionary.entries_loaded</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringFormatSpecTypeInt</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>l</string>
+			<key>other</key>
+			<string>已載入 %1$ld 個項目</string>
+		</dict>
+	</dict>
+
+	<key>usage.daily_breakdown</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringFormatSpecTypeInt</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>l</string>
+			<key>other</key>
+			<string>今天的雲端費用：合計 %1$@ — 語音輸入 %2$@（%3$d 分鐘），即時翻譯字幕 %4$@（%5$d 分鐘）</string>
+		</dict>
+	</dict>
+
+	<key>settings.duration.minutes</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringFormatSpecTypeInt</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>l</string>
+			<key>other</key>
+			<string>%1$d 分鐘</string>
+		</dict>
+	</dict>
+
+	<key>settings.usage.today</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringFormatSpecTypeInt</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>l</string>
+			<key>other</key>
+			<string>今天的費用：%1$@（%2$d 分鐘）</string>
+		</dict>
+	</dict>
+
+	<key>notification.caption.auto_stop.body</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringFormatSpecTypeInt</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>l</string>
+			<key>other</key>
+			<string>已在 %1$d 分鐘後停止（今天已使用 %2$@）。</string>
+		</dict>
+	</dict>
+
+</dict>
+</plist>

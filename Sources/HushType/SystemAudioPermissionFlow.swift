@@ -58,17 +58,22 @@ enum SystemAudioPermissionFlow {
     @MainActor
     static func showRevocationAlert() {
         let alert = NSAlert()
-        alert.messageText = "System Audio Capture Stopped"
-        alert.informativeText = """
-            Screen & System Audio Recording permission was revoked.
-
-            Re-enable it in System Settings to use system-audio Live Caption.
-            """
+        alert.messageText = L10n.string(
+            "alert.system_audio_revoked.title",
+            fallback: "System Audio Capture Stopped"
+        )
+        alert.informativeText = L10n.string(
+            "alert.system_audio_revoked.message",
+            fallback: "Screen & System Audio Recording permission was revoked.\n\nRe-enable it in System Settings to use system-audio Live Caption."
+        )
         alert.icon = NSImage(named: "AppIcon")
             ?? NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Dismiss")
+        alert.addButton(withTitle: L10n.string(
+            "common.button.open_system_settings",
+            fallback: "Open System Settings"
+        ))
+        alert.addButton(withTitle: L10n.string("common.button.dismiss", fallback: "Dismiss"))
 
         if alert.runModal() == .alertFirstButtonReturn {
             openScreenCaptureSettings()

@@ -33,7 +33,10 @@ enum FoundationModelsPolisher {
         case .unavailable(let reason):
             return String(describing: reason)
         @unknown default:
-            return "Unknown availability state"
+            return L10n.string(
+                "error.polish.unknown_availability",
+                fallback: "Unknown availability state"
+            )
         }
     }
 

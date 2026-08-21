@@ -26,6 +26,62 @@ final class AppConfig {
         static let lastStartedCaptionMode = "hushtype.lastStartedCaptionMode"
         static let lastStartedCaptionUsesMicSource = "hushtype.lastStartedCaptionUsesMicSource"
         static let punctuationMode = "hushtype.punctuationMode"
+        static let dictationEngine = "hushtype.dictationEngine"
+        static let cloudDictationModelOpenAI = "hushtype.cloudDictationModelOpenAI"
+        static let cloudDictationModelGemini = "hushtype.cloudDictationModelGemini"
+        static let interfaceLanguage = "hushtype.interfaceLanguage"
+    }
+
+    /// Dictation deliberately persists its engine choice across launches so
+    /// cloud users can keep the local Qwen model out of memory. Unlike Live
+    /// Caption, recording still requires an explicit hotkey hold each time.
+    enum DictationEngine: String, Equatable, Sendable {
+        case local
+        case openai
+        case gemini
+    }
+
+    var dictationEngine: DictationEngine {
+        get {
+            guard let raw = defaults.string(forKey: Keys.dictationEngine),
+                  let engine = DictationEngine(rawValue: raw) else {
+                return .local
+            }
+            return engine
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: Keys.dictationEngine)
+            log.info("Dictation engine set to: \(newValue.rawValue, privacy: .public)")
+        }
+    }
+
+    var cloudDictationModelOpenAI: String {
+        get { defaults.string(forKey: Keys.cloudDictationModelOpenAI) ?? "gpt-4o-mini-transcribe" }
+        set { defaults.set(newValue, forKey: Keys.cloudDictationModelOpenAI) }
+    }
+
+    var cloudDictationModelGemini: String {
+        get { defaults.string(forKey: Keys.cloudDictationModelGemini) ?? "gemini-3.5-flash-lite" }
+        set { defaults.set(newValue, forKey: Keys.cloudDictationModelGemini) }
+    }
+
+    /// Interface (UI) language — deliberately separate from `language`
+    /// (speech-recognition language), `translateTargetLanguage`, and
+    /// `cloudTargetLanguage` (SPEC §4.4). Persisted as
+    /// `hushtype.interfaceLanguage`; a new key, so no migration is needed.
+    /// Corrupt/unknown raw values resolve to `.system` (SPEC §5.3/§5.6) and
+    /// are normalized only by the next explicit user choice.
+    var interfaceLanguageRaw: String? {
+        get { defaults.string(forKey: Keys.interfaceLanguage) }
+        set {
+            defaults.set(newValue, forKey: Keys.interfaceLanguage)
+            log.info("Interface language set to: \(newValue ?? "system", privacy: .public)")
+        }
+    }
+
+    var interfaceLanguage: InterfaceLanguage {
+        get { InterfaceLanguage(rawValue: interfaceLanguageRaw ?? InterfaceLanguage.system.rawValue) ?? .system }
+        set { interfaceLanguageRaw = newValue.rawValue }
     }
 
     /// Engine for Live Caption — local Qwen3 ASR vs. OpenAI cloud translate.
@@ -220,8 +276,9 @@ final class AppConfig {
         }
     }
 
-    /// Daily soft-cap warning threshold in USD. Default $5. Clamped to
-    /// 0.5...100.0 on set.
+    /// Daily spend warning threshold in USD. Cloud dictation latches off
+    /// before an upload would reach it; Reset counter clears the daily latch.
+    /// Default $5. Clamped to 0.5...100.0 on set.
     var cloudDailyCapDollars: Double {
         get {
             if defaults.object(forKey: Keys.cloudDailyCapDollars) == nil {

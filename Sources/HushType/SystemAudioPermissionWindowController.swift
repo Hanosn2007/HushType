@@ -69,7 +69,10 @@ final class SystemAudioPermissionWindowController: NSWindowController, NSWindowD
             backing: .buffered,
             defer: false
         )
-        panel.title = "Enable System Audio"
+        panel.title = L10n.string(
+            "window.system_audio_permission.title",
+            fallback: "Enable System Audio"
+        )
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.isOpaque = false
@@ -168,11 +171,17 @@ private struct SystemAudioPermissionView: View {
                 .shadow(color: .black.opacity(0.16), radius: 8, x: 0, y: 3)
 
             VStack(spacing: 5) {
-                Text("Enable System Audio for Live Caption")
+                Text(L10n.string(
+                    "permission.system_audio.heading",
+                    fallback: "Enable System Audio for Live Caption"
+                ))
                     .font(.system(size: 22, weight: .semibold))
                     .multilineTextAlignment(.center)
 
-                Text("Allow HushType to caption audio from apps like Zoom, Chrome, and Safari.")
+                Text(L10n.string(
+                    "permission.system_audio.intro",
+                    fallback: "Allow HushType to caption audio from apps like Zoom, Chrome, and Safari."
+                ))
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -194,10 +203,16 @@ private struct SystemAudioPermissionView: View {
             .frame(width: 44, height: 44)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Screen & System Audio Recording")
+                Text(L10n.string(
+                    "permission.screen_system_audio.name",
+                    fallback: "Screen & System Audio Recording"
+                ))
                     .font(.system(size: 14, weight: .semibold))
                     .lineLimit(1)
-                Text("Required by macOS for system-audio capture.")
+                Text(L10n.string(
+                    "permission.system_audio.required_by_macos",
+                    fallback: "Required by macOS for system-audio capture."
+                ))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -217,7 +232,9 @@ private struct SystemAudioPermissionView: View {
     }
 
     private var statusPill: some View {
-        Text(model.settingsOpened ? "Restart needed" : "Needs permission")
+        Text(model.settingsOpened
+             ? L10n.string("permission.status.restart_needed", fallback: "Restart needed")
+             : L10n.string("permission.status.needs_permission", fallback: "Needs permission"))
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(model.settingsOpened ? .orange : .secondary)
             .padding(.horizontal, 9)
@@ -236,7 +253,10 @@ private struct SystemAudioPermissionView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.orange)
                     .padding(.top, 1)
-                Text("After turning on HushType in System Settings, restart the app so macOS applies the permission.")
+                Text(L10n.string(
+                    "permission.system_audio.restart_guidance",
+                    fallback: "After turning on HushType in System Settings, restart the app so macOS applies the permission."
+                ))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -255,7 +275,10 @@ private struct SystemAudioPermissionView: View {
                 HStack(spacing: 6) {
                     Image(systemName: model.troubleshootingExpanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
-                    Text("Having trouble?")
+                    Text(L10n.string(
+                        "permission.troubleshooting.heading",
+                        fallback: "Having trouble?"
+                    ))
                         .font(.system(size: 12, weight: .medium))
                 }
                 .foregroundStyle(.secondary)
@@ -264,19 +287,31 @@ private struct SystemAudioPermissionView: View {
 
             if model.troubleshootingExpanded {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Use this if HushType is missing or appears twice in System Settings.")
+                    Text(L10n.string(
+                        "permission.system_audio.reset_help",
+                        fallback: "Use this if HushType is missing or appears twice in System Settings."
+                    ))
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Button("Reset stale permission entries") {
+                    Button(L10n.string(
+                        "permission.system_audio.reset_stale",
+                        fallback: "Reset stale permission entries"
+                    )) {
                         onResetStaleEntries()
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
 
                     if model.didResetStaleEntries {
-                        Label("Reset complete. Turn on HushType in System Settings, then restart.", systemImage: "checkmark.circle.fill")
+                        Label(
+                            L10n.string(
+                                "permission.system_audio.reset_complete",
+                                fallback: "Reset complete. Turn on HushType in System Settings, then restart."
+                            ),
+                            systemImage: "checkmark.circle.fill"
+                        )
                             .font(.system(size: 11))
                             .foregroundStyle(.green)
                     }
@@ -289,7 +324,7 @@ private struct SystemAudioPermissionView: View {
 
     private var footer: some View {
         HStack(spacing: 10) {
-            Button("Cancel") {
+            Button(L10n.string("common.button.cancel", fallback: "Cancel")) {
                 onCancel()
                 SystemAudioPermissionWindowController.dismissActive()
             }
@@ -298,13 +333,18 @@ private struct SystemAudioPermissionView: View {
             Spacer()
 
             if model.settingsOpened {
-                Button("Open System Settings") {
+                Button(L10n.string(
+                    "common.button.open_system_settings",
+                    fallback: "Open System Settings"
+                )) {
                     onOpenSettings()
                 }
                 .buttonStyle(.bordered)
             }
 
-            Button(model.settingsOpened ? "Restart HushType" : "Open System Settings") {
+            Button(model.settingsOpened
+                   ? L10n.string("onboarding.button.restart", fallback: "Restart HushType")
+                   : L10n.string("common.button.open_system_settings", fallback: "Open System Settings")) {
                 if model.settingsOpened {
                     onRestart()
                 } else {

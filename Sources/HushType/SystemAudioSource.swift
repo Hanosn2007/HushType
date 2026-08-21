@@ -14,13 +14,27 @@ enum SystemAudioError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .appNotRunning(let id):
-            return "App \(id) is not running. Pick a different source."
+            return L10n.format(
+                "error.system_audio.app_not_running",
+                "App %1$@ is not running. Pick a different source.",
+                arguments: [id]
+            )
         case .noDisplay:
-            return "No display is available to capture from."
+            return L10n.string(
+                "error.system_audio.no_display",
+                fallback: "No display is available to capture from."
+            )
         case .converterSetupFailed:
-            return "Could not set up the audio converter for system audio capture."
+            return L10n.string(
+                "error.system_audio.converter",
+                fallback: "Could not set up the audio converter for system audio capture."
+            )
         case .streamSetupFailed(let err):
-            return "Could not start the system audio stream: \(err.localizedDescription)"
+            return L10n.format(
+                "error.system_audio.stream",
+                "Could not start the system audio stream: %1$@",
+                arguments: [err.localizedDescription]
+            )
         }
     }
 }

@@ -22,21 +22,21 @@ enum CloudOnboardingAlert {
     @MainActor
     static func presentForced() -> Bool {
         let alert = NSAlert()
-        alert.messageText = "Enable Cloud Live Caption"
-        alert.informativeText = """
-        Cloud Live Caption sends your audio to OpenAI for live translation.
-
-        • Cost: about $2/hour, billed to your OpenAI account
-        • Your API key — HushType never sees it
-        • No HushType server in the middle; audio goes Mac → OpenAI directly
-        • You can stop the session any time, or switch back to local
-
-        This is opt-in. You'll only see this notice once.
-        """
+        alert.messageText = L10n.string(
+            "alert.cloud_caption_disclosure.title",
+            fallback: "Enable Live Translated Caption"
+        )
+        alert.informativeText = L10n.string(
+            "alert.cloud_caption_disclosure.message",
+            fallback: "Live Translated Caption sends your audio to OpenAI for live translation.\n\n• Cost: about $2/hour, billed to your OpenAI account\n• Your API key — HushType never sees it\n• No HushType server in the middle; audio goes Mac → OpenAI directly\n• You can stop the session any time, or switch back to local\n\nThis is opt-in. You'll only see this notice once."
+        )
         alert.alertStyle = .informational
         alert.icon = NSImage(systemSymbolName: "cloud", accessibilityDescription: nil)
-        alert.addButton(withTitle: "I understand")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L10n.string(
+            "alert.cloud_caption_disclosure.accept",
+            fallback: "I understand"
+        ))
+        alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
 
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
