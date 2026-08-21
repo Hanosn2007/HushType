@@ -5,8 +5,9 @@
 <h1 align="center">HushType</h1>
 
 <p align="center">
-  Free, local voice-to-text built for Apple Silicon macOS<br>
-  No data sent · low memory footprint · steady Traditional Chinese output
+  Voice-to-text built for Apple Silicon macOS<br>
+  <strong>Minimum input friction, with privacy always in your hands —</strong><br>
+  fully local by default, nothing sent anywhere; when you want better quality or lower memory, connect straight to the cloud with your own key — never through a middleman.
 </p>
 
 <p align="center">
@@ -17,27 +18,29 @@
   Canonical repository: <a href="https://github.com/felixfu824/HushType">github.com/felixfu824/HushType</a>
 </p>
 
-> **HushType** is a free, open-source, offline speech-to-text app for macOS and iOS. It uses Qwen3-ASR ([macOS](https://huggingface.co/aufklarer/Qwen3-ASR-0.6B-MLX-4bit) / [iOS](https://huggingface.co/mlx-community/Qwen3-ASR-0.6B-4bit) mirrors) running locally on Apple Silicon (MLX) to transcribe English, Chinese, and Japanese — including mixed-language sentences. Delivers steady Traditional Chinese (繁體中文) output via OpenCC. A privacy-first alternative to cloud dictation and Whisper-based tools (heavier on RAM, prone to Simplified output) — built to stay light, so it coexists with everything you need running at once.
+> **HushType** is a free, open-source speech-to-text app for macOS and iOS. By default it runs the **4-bit MLX quant** of Qwen3-ASR 0.6B fully locally on Apple Silicon, transcribing English, Chinese, Japanese, and mixed-language sentences, with steady Traditional Chinese (繁體中文) output via OpenCC. **Cloud dictation (OpenAI / Gemini)** is an opt-in choice: your own key over HTTPS straight to the provider, with no relay server in between. Unlike dictation tools that force your audio through a third-party relay, HushType keeps the choice — and the privacy — in your hands, and stays light enough to coexist with everything you need running at once.
 
-> 🌐 **HushType** 是一款免費、開源、離線的 macOS 與 iOS 語音轉文字 App，使用 Qwen3-ASR 在 Apple Silicon（MLX）上本地執行，透過 OpenCC 提供全 Mac 最道地的繁體中文輸出，專注在保持輕量，能與你需要同時跑的所有 App 共存。<br>→ 完整中文版 README：[README.md](README.md)
+> 🌐 **HushType** 是一款免費、開源的 macOS 與 iOS 語音轉文字 App，預設使用 Qwen3-ASR 在 Apple Silicon（MLX）上完全本地執行，透過 OpenCC 提供道地的繁體中文輸出；也可選擇用你自己的金鑰直連 OpenAI / Gemini 雲端聽寫，中間沒有任何轉送伺服器。<br>→ 完整中文版 README：[README.md](README.md)
 
 <p align="center">
-  <img src="Resources/hushtype-memory-en.svg" alt="Model weights resident in RAM: HushType 675 MB (native Traditional Chinese) vs Whisper large-v3-turbo 1,618 MB vs Parakeet 2,472 MB (no Chinese)" width="100%">
+  <img src="Resources/hushtype-memory-en.svg" alt="Model weights resident in RAM: HushType local 675 MB (native Traditional Chinese), HushType cloud engines ~0 MB, vs Whisper large-v3-turbo 1,618 MB vs Parakeet 2,472 MB (no Chinese)" width="100%">
 </p>
 
-<sub>Sizes are the weight files each tool ships at default precision. A 4-bit MLX Whisper-turbo exists (~464 MB) but still outputs mediocre / Simplified Chinese — so the claim is "the lightest ASR that nails Traditional Chinese," not "the smallest model."</sub>
+<sub>Sizes are the weight files each tool ships at default precision; HushType's 675 MB is the 4-bit MLX quant of Qwen3-ASR 0.6B. On a cloud engine (OpenAI / Gemini) **model RAM is ~0 MB** — same or better quality, at the cost of a few seconds of network latency per utterance, billed by duration or free with a Gemini free-tier API key. A 4-bit MLX Whisper-turbo exists (~464 MB) but still outputs mediocre / Simplified Chinese — so the claim is "a light ASR that nails Traditional Chinese," not "the smallest model."</sub>
 
 ---
 
 ## Why HushType
 
-**Private and local-first.** Voice never leaves your Mac — the model runs on-device, no cloud, no account, no telemetry. One ~675 MB download, then fully offline.
+**Privacy and control first.** In the default mode, voice never leaves your Mac — the model runs on-device, no cloud, no account, no telemetry; the only download is the one-time ~675 MB model fetch. When you opt into cloud dictation, audio goes over HTTPS **directly** to OpenAI or Gemini with **your own key** — no HushType server in between: nothing relayed, nothing intercepted, your audio and key never seen — and each session asks for your consent before the first cloud use. **Whether your audio goes to a provider is always your decision.**
 
-**Memory-friendly — coexists with your agents.** The model is just ~675 MB — small enough to run alongside Claude Code/Cowork, Codex and a browser on an 8 GB Mac. More importantly, it manages its memory footprint automatically: HushType caps its memory buffer at launch, so there's nothing for you to manage. To free it entirely, one menu click unloads the model; it auto-reloads on your next Right ⌥ hold.
+**Memory-friendly — coexists with your agents.** The local model's weights are just ~675 MB (~2.1 GB RAM resident when loaded) — light enough to coexist with Claude Code/Cowork, Codex and a browser, and HushType caps its memory buffer at launch so there's nothing for you to manage. Want the footprint at zero? Switch to a cloud engine: the local model is never loaded (the engine choice persists across restarts, so the next launch starts at ~0 MB); an already-loaded model can be unloaded with one menu click, and it reloads automatically when you switch back to local.
 
-**Traditional Chinese that actually works.** Whisper and most open-source models default to Simplified or Mainland phrasing (软件, not 軟體). HushType chains Qwen3-ASR with OpenCC `s2twp` for Taiwan-native output — 軟體, 滑鼠, 品質 — with EN/ZH code-switching in one pass and optional in-context number conversion (`一零一大樓` → `101 大樓`), on by default.
+**Cloud dictation (opt-in).** Three things: (1) **OpenAI** (default `gpt-4o-mini-transcribe`) and **Gemini** (default `gemini-3.5-flash-lite`, with `gemini-3.7-flash` as the quality option) — your key, direct connection, no relay; (2) Gemini offers a **free-tier API key** for a $0 start — but note: on Google's free tier, Google may use submitted audio to improve its products; the paid tier does not; (3) built-in guardrails: per-session consent, a daily spend warning with same-day lockout (default $5), and over-long recordings blocked before upload.
 
-**Fix text where it stands.** Select text in any app, double-tap Right ⌥ — an on-device Apple Intelligence model proofreads it and replaces it in place: spelling, grammar, typos, punctuation. It's a mechanical proofreader, not a rewriter — meaning, tone, and your 中英 mix stay exactly as you wrote them (macOS 26+).
+**Traditional Chinese that actually works.** Whisper and most open-source models default to Simplified or Mainland phrasing (软件, not 軟體). HushType chains Qwen3-ASR with OpenCC `s2twp` for Taiwan-native output — 軟體, 滑鼠, 品質 — with EN/ZH code-switching in one pass and optional in-context number conversion (`一零一大樓` → `101 大樓`), on by default. Local and cloud engines share the same post-processing pipeline, so output quality is consistent.
+
+**Fix text where it stands.** Select text in any app, double-tap Right ⌥ — an on-device Apple Intelligence model proofreads it and replaces it in place: spelling, grammar, typos, punctuation. It's a mechanical proofreader, not a rewriter — meaning, tone, and your 中英 mix stay exactly as you wrote them (macOS 26+).<br>Note: the Apple Foundation Model is small and capability-limited, so corrections are deliberately conservative — sometimes it changes nothing at all.
 
 **Live captions, two flavors.** Local **Live Caption** runs the same on-device pipeline onto a floating panel — free, offline, works on a plane (decent quality). Opt-in **Live Translated Caption** streams audio to OpenAI's `gpt-realtime-translate` for real-time subtitles in 14 languages (high quality) — your key (and your bill!), doesn't auto-start.
 
@@ -48,7 +51,8 @@
 | Feature | Default | Requirement |
 |---|---|---|
 | Hold Right ⌥ to dictate (macOS) | ON | macOS 15+ |
-| Tap Right ⌥ to translate selected text | OFF | macOS 14+ |
+| **Cloud dictation (OpenAI / Gemini, opt-in)** — zero model RAM, per-session consent | OFF | Your own API key |
+| Tap Right ⌥ to translate selected text | OFF | macOS 15+ |
 | Double-tap Right ⌥ to polish selected text — proofread in place | **ON** | macOS 26 + Apple Intelligence |
 | **Live Caption** (local, free) — floating panel from mic or system audio | OFF | macOS 15+ |
 | **Live Translated Caption** (cloud, ~$2/hr) — real-time foreign-language subtitles via OpenAI | OFF (opt-in) | Your own OpenAI API key |
@@ -58,6 +62,7 @@
 | 阿拉伯數字 conversion (deterministic ITN) | **ON** | — |
 | Chinese punctuation cleanup — trim the model's over-segmentation (soft / hard / off) | **soft** | — |
 | Customized dictionary (proper nouns / jargon) | File-driven | — |
+| Interface Language (Follow System / English / 繁體中文) | Follow System | — |
 | Floating "Listening / Transcribing" pill | ON | — |
 | Unload speech-to-text model | One-click | — |
 | iOS app + custom keyboard (Mac as server) | Optional | iOS 17+, Python on Mac |
@@ -68,7 +73,9 @@
 
 **Talking to AI agents.** Giving Claude or ChatGPT a detailed prompt takes 5 minutes to type, 30 seconds to say. Hold Right ⌥, speak your entire prompt (mixing languages as needed), release — text appears in the chat input. Local transcription means your prompts never leave your machine even if you're driving cloud-hosted agents.
 
-**Voice notes on the go.** On the subway, Mac at home. Tap "Start Listening" on iPhone, switch to Notes, tap the mic button on the HushType keyboard. Audio travels over Tailscale to your Mac, transcribes in ~1 second, text appears.
+**A memory-tight workday.** Three Claude Code sessions running, 20 browser tabs open, no appetite for one more resident model? Switch to the OpenAI or Gemini cloud engine in the menu — the local model stays unloaded, dictation keeps working, each utterance takes a second or two longer, and the cost lands on your own API bill (with a Gemini free-tier key: $0).
+
+**Voice notes on the go.** On the subway, Mac at home. Tap "Start Listening" on iPhone, switch to Notes, tap the mic button on the HushType keyboard. Audio travels over Tailscale to your Mac, transcribes in ~1 second, text appears.<br>Honest note: the phone-side features have not been tested in a long while.
 
 **Reading in another language.** Select any text in Safari, Mail, Notes — anywhere — and tap Right ⌥. A translucent card pops up with the translation via Apple's on-device Translation Framework. Auto-dismisses after 10s, pauses on hover. No API key, no cloud.
 
@@ -81,11 +88,13 @@
 ## How It Works
 
 ```
-macOS (standalone — zero network required):
+macOS (local by default — zero network required):
   Hold Right Option (≥0.3s) → speak → release → text at cursor
   Tap Right Option (<0.3s) with text selected → translation card
   Double-tap Right Option with text selected → proofread in place (Text Polish)
-  Pipeline: mic → Qwen3-ASR (MLX, on-device) → OpenCC s2twp → ITN → paste
+  Local pipeline: mic → Qwen3-ASR (MLX, on-device) → OpenCC s2twp → ITN → paste
+  Cloud pipeline (opt-in): mic → your Mac → HTTPS direct to OpenAI/Gemini → same OpenCC/ITN post-processing → paste
+                           (no HushType server on the way)
 
 iOS (via your Mac as server):
   Open HushType → Start Listening → switch to any app → HushType keyboard → tap mic
@@ -163,7 +172,7 @@ Updating means **replacing the `.app` bundle**. Preferences, the ASR model, and 
 | [Homebrew](https://brew.sh) | Package manager | See brew.sh | Build from source |
 | [opencc](https://formulae.brew.sh/formula/opencc) | Simplified → Traditional Chinese | `brew install opencc` | Build from source (bundled in DMG) |
 | [speech-swift](https://github.com/soniqo/speech-swift) | Qwen3-ASR on Apple Silicon (MLX) | Automatic via SPM | Build from source |
-| [Python 3.13+](https://python.org) | iOS server runtime | `brew install python` | iOS only |
+| [Python 3.11+](https://python.org) (per mlx-audio) | iOS server runtime | `brew install python` | iOS only |
 | [mlx-audio](https://github.com/Blaizzy/mlx-audio) | STT server for iOS | `pip3 install "mlx-audio[stt,server]"` | iOS only |
 | [httpx](https://www.python-httpx.org/) | Async HTTP for proxy server | `pip3 install httpx` | iOS only |
 | webrtcvad-wheels, setuptools | mlx-audio runtime deps | `pip3 install webrtcvad-wheels setuptools` | iOS only |
@@ -201,21 +210,37 @@ make install
 
 - **Hold Right Option (≥0.3s)** — record. A "Listening" pill with a live audio meter shows at the bottom of the screen.
 - **Release** — pill switches to "Transcribing"; transcribed text pastes at your cursor and stays on the clipboard.
-- **Tap Right Option (<0.3s)** — with text selected, translates via Apple Translation Framework into a floating card. See [Text Translation](#optional-text-translation-macos-14).
+- **Tap Right Option (<0.3s)** — with text selected, translates via Apple Translation Framework into a floating card. See [Text Translation](#optional-text-translation).
 - **Double-tap Right Option** — with text selected, proofreads and replaces it in place. See [Text Polish](#optional-text-polish-macos-26).
 
 **Menu bar:**
 
-- **Language** — Auto / English / Chinese / Japanese
-- **Show Floating Indicator** — toggle the listening pill (default on)
-- **Number Conversion** — Chinese numeral → Arabic digit pass (default on)
-- **Text Translation** — enable tap-to-translate (macOS 14+)
+- **Dictation Settings** (submenu — everything dictation-related lives here):
+  - **Dictation Engine** — Local (Qwen3-ASR) / OpenAI / Gemini, with an "Engine Settings…" window (see [Cloud dictation](#optional-cloud-dictation-openai--gemini) below)
+  - **Speech-to-Text Language** — Auto / English / Chinese / Japanese (recognition language, not interface language)
+  - **Number Conversion** — Chinese numeral → Arabic digit pass (default on)
+  - **Punctuation Cleanup** — soft / hard / off (default soft)
+  - **Show Floating Indicator** — toggle the listening pill (default on)
+  - **Edit Customized Dictionary** — `~/Library/Application Support/HushType/dictionary.txt`, plain text, `source -> target` per line, hot-reloads
+- **Interface Language** — Follow System / English / 繁體中文（台灣） (default Follow System; applies on next launch)
+- **Text Translation** — enable tap-to-translate
 - **Text Polish (double-tap ⌥)** — enable double-tap proofreading (macOS 26+, default on)
 - **Edit Polish Instructions** — `polish_rules.txt`, your own proofreading rules, hot-reloads
-- **Unload Speech-to-Text Model** — frees ~2 GB RAM; reload from the same menu (~3s cold start)
-- **Edit Customized Dictionary** — `~/Library/Application Support/HushType/dictionary.txt`, plain text, `source -> target` per line, hot-reloads
+- **Unload Speech-to-Text Model** — one click frees the local model's RAM; reload from the same menu (~3s cold start)
 
-That's it. No server, no network, no configuration.
+That's it. The default mode needs no server, no network, no configuration.
+
+### Optional: Cloud dictation (OpenAI / Gemini)
+
+Same Right ⌥, same Traditional Chinese post-processing — but transcription happens on OpenAI or Gemini instead: **model RAM drops to zero**, quality is the same or better, at the cost of a few seconds of network latency per utterance and duration-based billing (Gemini free tier: $0).
+
+1. **Get a key:** OpenAI at [platform.openai.com/api-keys](https://platform.openai.com/api-keys); Gemini at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (has a free tier).
+2. **Enter the key:** menu bar → **Dictation Settings → Dictation Engine → Engine Settings…** → open the matching `openai.json` / `gemini.json` and paste the key into the `api_key` field. An empty key = cloud fully disabled.
+3. **Pick engine and model:** the same settings window switches Local / OpenAI / Gemini. Defaults: OpenAI `gpt-4o-mini-transcribe` (with `gpt-transcribe` as an option); Gemini `gemini-3.5-flash-lite` (economical, free-tier friendly), with `gemini-3.7-flash` as the quality option.
+4. **Consent and guardrails:** the first cloud transcription of each session shows a consent alert explaining that audio goes directly from your Mac to the provider (no relay server). The daily spend warning (default $5, adjustable 0.5–100) blocks a request **before** it would cross the threshold and locks cloud for the day — "Reset counter" unlocks it; over-long recordings are also blocked before upload. On a network timeout (180 s) you get three explicit choices: **Retry Cloud / Use Local Once / Cancel** — your audio is preserved, and there is never a silent retry.
+5. **The engine choice persists across restarts** (deliberate): if you live on cloud, the local model is never loaded at the next launch — model RAM starts at 0. Switching back to local reloads the model automatically.
+
+> **Gemini free-tier reminder:** on Google's free tier, Google may use submitted audio to improve its products; the paid tier does not. The in-app consent alert discloses this.
 
 ### Optional: Live Caption / Live Translated Caption (macOS 15+)
 
@@ -239,7 +264,7 @@ Two products sharing the same floating caption panel. Mutually exclusive at runt
 
 **Mid-session switching:** Clicking the other product's menu item while one is running auto-stops the current session and starts the new one. Clicking the same product's other source switches in place without rebuilding the panel.
 
-### Optional: Text Translation (macOS 14+)
+### Optional: Text Translation
 
 On-device translation via Apple Translation Framework. Select any text → tap Right Option (<0.3s) → translucent card appears with the translation, also auto-copied to clipboard. Card auto-dismisses after 10s; hover to pause, click or Escape to dismiss now.
 
@@ -249,7 +274,7 @@ On-device translation via Apple Translation Framework. Select any text → tap R
 
 ### Optional: Text Polish (macOS 26+)
 
-On-device proofreading via Apple's Foundation Models framework — the Apple Intelligence model already shipped with macOS, so it adds nothing to HushType's ~675 MB budget and nothing leaves your Mac. Select text in any app → double-tap Right Option → the selection is replaced in place with corrected text, and a result card shows exactly what changed, Word track-changes style: deletions struck through in red, insertions underlined in green.
+On-device proofreading via Apple's Foundation Models framework — the Apple Intelligence model already shipped with macOS, so it adds nothing to HushType's memory budget and nothing leaves your Mac. Select text in any app → double-tap Right Option → the selection is replaced in place with corrected text, and a result card shows exactly what changed, Word track-changes style: deletions struck through in red, insertions underlined in green.
 
 <p align="center">
   <img src="Resources/polish-card-diff-en.png" alt="Text Polish result card: deletions in red strikethrough, insertions in green underline" width="560">
@@ -316,6 +341,7 @@ Verify the server is running:
 ```bash
 curl http://localhost:8000/
 # Should return: {"status":"ok","service":"HushType iOS Server","opencc":true}
+# (opencc:false means `brew install opencc` is still missing)
 ```
 
 ### Step 4: Build and install the iOS app
@@ -399,9 +425,16 @@ defaults read com.felix.hushtype
 # Language: nil=auto, "english", "chinese", "japanese"
 defaults write com.felix.hushtype hushtype.language -string "chinese"
 
-# Model: default "aufklarer/Qwen3-ASR-0.6B-MLX-4bit" on macOS;
+# Model: macOS default "aufklarer/Qwen3-ASR-0.6B-MLX-4bit" (0.6B, 4-bit MLX quant);
 # alternative "mlx-community/Qwen3-ASR-1.7B-8bit" for better quality.
 defaults write com.felix.hushtype hushtype.modelId -string "mlx-community/Qwen3-ASR-1.7B-8bit"
+
+# Dictation engine: "local" (default) / "openai" / "gemini" — persists across restarts
+defaults write com.felix.hushtype hushtype.dictationEngine -string "local"
+
+# Cloud dictation models (remembered per provider)
+defaults write com.felix.hushtype hushtype.cloudDictationModelOpenAI -string "gpt-4o-mini-transcribe"
+defaults write com.felix.hushtype hushtype.cloudDictationModelGemini -string "gemini-3.5-flash-lite"
 
 # Traditional Chinese conversion (default: true)
 defaults write com.felix.hushtype hushtype.chineseConversionEnabled -bool false
@@ -416,7 +449,7 @@ defaults write com.felix.hushtype hushtype.floatingOverlayEnabled -bool false
 # (default: true, requires macOS 26 + Apple Intelligence)
 defaults write com.felix.hushtype hushtype.textPolishEnabled -bool false
 
-# Text Translation via Apple Translation Framework (default: false, requires macOS 14+)
+# Text Translation via Apple Translation Framework (default: false)
 defaults write com.felix.hushtype hushtype.textTranslationEnabled -bool true
 
 # Translation target language (default: nil = auto — Chinese→English, other→繁體中文)
@@ -443,12 +476,24 @@ Common keycodes: Right Option (61), Right Command (54), Left Option (58), Left C
 
 ## Privacy & Security
 
+Two modes, one principle: **there is never a third party in the middle, and the decision is always yours.**
+
+### Local mode (default)
+
 - **No audio is stored.** Voice data exists only in RAM during the recording → transcription pipeline, then discarded. Nothing is written to disk — not on macOS, not on the iOS server.
 - **No network after setup.** The only internet access is the one-time model download (~675 MB) on first launch. After that, the app and the model run fully offline with zero outbound connections.
-- **No telemetry.** No analytics, no usage tracking, no phone-home. The macOS app contains zero network code beyond the initial model fetch (handled by the HuggingFace Hub SDK inside speech-swift) and an optional GitHub releases check for update notifications.
-- **Cloud Live Translated Caption uses YOUR key directly to OpenAI.** Opt-in, off by default, never auto-resumes across launches. Your API key is stored in plaintext at `~/Library/Application Support/HushType/openai.json` (same security profile as `.env`) — `chmod 600 ~/Library/Application\ Support/HushType/openai.json` if you want a tighter mode bit. Audio streams Mac → OpenAI via WSS; HushType operates no servers, intermediates no traffic, and never sees your audio, your key, or your spend. The engine resets to local on every app launch — you re-opt-in each time you want the cloud path.
-- **iOS audio stays on your network.** iPhone audio travels directly to your Mac over local WiFi or Tailscale (WireGuard-encrypted). No third-party server is involved.
+- **No telemetry.** No analytics, no usage tracking, no phone-home. The macOS app contains zero local-mode network code beyond the initial model fetch (handled by the HuggingFace Hub SDK inside speech-swift) and an optional GitHub releases check for update notifications.
 - **Fully air-gappable.** Pre-download the model folder on another machine (`~/.cache/huggingface/hub/models--aufklarer--Qwen3-ASR-0.6B-MLX-4bit/` for the macOS app, `~/.cache/huggingface/hub/models--mlx-community--Qwen3-ASR-0.6B-4bit/` for the iOS server) and copy it over — the app will never need internet.
+
+### Cloud mode (opt-in: cloud dictation / Live Translated Caption)
+
+- **No relay server in the middle.** Audio goes directly from your Mac over HTTPS (WSS for captions) to the provider (OpenAI / Google). HushType operates no servers, intermediates no traffic, and never sees your audio, your key, or your spend.
+- **Your key, your consent.** Everything is off by default and requires you to enter a key; each session asks for consent before the first cloud use — never a silent upload. An empty key disables cloud entirely.
+- **Key storage.** Keys live in `~/Library/Application Support/HushType/` (`openai.json` / `gemini.json`); the app sets `0600` file permissions on write — the same security model as a `.env` file.
+- **Spend guardrails.** The daily spend warning (default $5) blocks a request before it would cross the threshold and locks cloud for the day; over-long recordings are blocked before upload and never sent.
+- **Gemini free-tier disclosure.** On Google's free tier, Google may use submitted audio to improve its products; the paid tier does not.
+- **State semantics.** The dictation engine choice persists across restarts (so cloud users stay at zero model RAM). The caption engine flag resets to local each launch, but Right ⌘ + / remembers the **last caption mode you used (cloud included)**, and the one-time cloud disclosure does not repeat — if your last session was Live Translated Caption, the hotkey starts a paid cloud session again after a relaunch.
+- **iOS audio stays on your network.** iPhone audio travels directly to your Mac over local WiFi or Tailscale (WireGuard-encrypted), never through a third-party server; the iOS server always uses the local model.
 
 ---
 
@@ -471,7 +516,14 @@ HushType/
 │   ├── SystemAudioPermissionWindowController.swift  System-audio permission setup panel
 │   ├── HotkeyManager.swift            CGEvent tap for Right Option
 │   ├── AudioCaptureService.swift      AVAudioEngine mic capture (16kHz mono, RMS publisher)
-│   ├── TranscriptionEngine.swift      Protocol + Qwen3ASR wrapper (MLX)
+│   ├── TranscriptionEngine.swift      Throwing engine protocol + local Qwen3ASR engine (MLX)
+│   ├── OpenAITranscribeEngine.swift   Cloud dictation engine: OpenAI (HTTPS direct)
+│   ├── GeminiTranscribeEngine.swift   Cloud dictation engine: Gemini (HTTPS direct)
+│   ├── CloudUsageTracker.swift        Daily spend metering + pre-upload cap enforcement
+│   ├── CloudDictationOnboardingAlert.swift  Per-session cloud dictation consent
+│   ├── DictationEngineSettingsView.swift    Engine settings window (SwiftUI)
+│   ├── DictationEngineSettingsWindow.swift  Engine settings window controller
+│   ├── GeminiKeyStore.swift           User Gemini API key file handling (0600)
 │   ├── ChineseConverter.swift         OpenCC s2twp (Simplified → Traditional)
 │   ├── NumberNormalizer.swift         Deterministic Chinese-numeral → Arabic-digit ITN
 │   ├── DictionaryReplacer.swift       Customized dictionary (final post-processing step)
