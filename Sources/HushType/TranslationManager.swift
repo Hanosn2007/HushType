@@ -14,11 +14,23 @@ enum TranslationError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unsupportedLanguage(let lang):
-            return "Language '\(lang)' is not supported by Apple Translation Framework."
+            return L10n.format(
+                "error.translation.unsupported",
+                "Language '%1$@' is not supported by Apple Translation Framework.",
+                arguments: [lang]
+            )
         case .languagePackMissing(let source, let target):
-            return "Language pack for \(source) → \(target) is not installed."
+            return L10n.format(
+                "error.translation.pack_missing",
+                "Language pack for %1$@ → %2$@ is not installed.",
+                arguments: [source, target]
+            )
         case .translationFailed(let detail):
-            return "Translation failed: \(detail)"
+            return L10n.format(
+                "error.translation.failed",
+                "Translation failed: %1$@",
+                arguments: [detail]
+            )
         }
     }
 }
@@ -44,15 +56,27 @@ final class TranslationManager {
     // MARK: - Public API
 
     /// Human-readable names for common NLLanguage codes.
-    private static let languageNames: [String: String] = [
-        "zh-Hans": "Chinese", "zh-Hant": "Chinese",
-        "en": "English", "ja": "Japanese", "ko": "Korean",
-        "fr": "French", "de": "German", "es": "Spanish",
-        "pt": "Portuguese", "it": "Italian", "ru": "Russian",
-        "ar": "Arabic", "th": "Thai", "vi": "Vietnamese",
-        "id": "Indonesian", "tr": "Turkish", "pl": "Polish",
-        "nl": "Dutch", "uk": "Ukrainian",
-    ]
+    private static var languageNames: [String: String] {[
+        "zh-Hans": L10n.string("language.name.chinese", fallback: "Chinese"),
+        "zh-Hant": L10n.string("language.name.chinese", fallback: "Chinese"),
+        "en": L10n.string("language.name.english", fallback: "English"),
+        "ja": L10n.string("language.name.japanese", fallback: "Japanese"),
+        "ko": L10n.string("language.name.korean", fallback: "Korean"),
+        "fr": L10n.string("language.name.french", fallback: "French"),
+        "de": L10n.string("language.name.german", fallback: "German"),
+        "es": L10n.string("language.name.spanish", fallback: "Spanish"),
+        "pt": L10n.string("language.name.portuguese", fallback: "Portuguese"),
+        "it": L10n.string("language.name.italian", fallback: "Italian"),
+        "ru": L10n.string("language.name.russian", fallback: "Russian"),
+        "ar": L10n.string("language.name.arabic", fallback: "Arabic"),
+        "th": L10n.string("language.name.thai", fallback: "Thai"),
+        "vi": L10n.string("language.name.vietnamese", fallback: "Vietnamese"),
+        "id": L10n.string("language.name.indonesian", fallback: "Indonesian"),
+        "tr": L10n.string("language.name.turkish", fallback: "Turkish"),
+        "pl": L10n.string("language.name.polish", fallback: "Polish"),
+        "nl": L10n.string("language.name.dutch", fallback: "Dutch"),
+        "uk": L10n.string("language.name.ukrainian", fallback: "Ukrainian"),
+    ]}
 
     /// Translate `text`, auto-detecting source language.
     ///
@@ -70,7 +94,9 @@ final class TranslationManager {
         let detected = recognizer.dominantLanguage
 
         guard let detected else {
-            completion(.failure(TranslationError.unsupportedLanguage("unknown")))
+            completion(.failure(TranslationError.unsupportedLanguage(
+                L10n.string("translation.language.unknown", fallback: "unknown")
+            )))
             return
         }
 
@@ -82,13 +108,20 @@ final class TranslationManager {
 
         if detected == .simplifiedChinese || detected == .traditionalChinese {
             targetLanguage = Locale.Language(identifier: "en")
-            targetName = "English"
+            targetName = Self.languageNames["en"] ?? L10n.string(
+                "language.name.english",
+                fallback: "English"
+            )
         } else {
             targetLanguage = Locale.Language(identifier: "zh-Hant-TW")
             targetName = "繁體中文"
         }
 
-        let directionLabel = "\(sourceName) → \(targetName)"
+        let directionLabel = L10n.format(
+            "translation.direction",
+            "%1$@ → %2$@",
+            arguments: [sourceName, targetName]
+        )
         print("[Translation] Detected: \(sourceIdentifier) → \(directionLabel)")
         fflush(stdout)
 

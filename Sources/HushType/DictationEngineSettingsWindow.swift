@@ -28,7 +28,10 @@ final class DictationEngineSettingsWindowController: NSWindowController, NSWindo
             backing: .buffered,
             defer: false
         )
-        window.title = "Dictation Engine Settings"
+        window.title = L10n.string(
+            "window.dictation_engine_settings.title",
+            fallback: "Dictation Engine Settings"
+        )
         window.contentViewController = hosting
         window.isReleasedWhenClosed = false
         window.setFrameAutosaveName("hushtype.settings.dictationEngine")

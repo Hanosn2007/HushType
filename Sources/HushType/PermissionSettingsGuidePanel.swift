@@ -15,15 +15,27 @@ final class PermissionSettingsGuidePanel {
 
     func showSystemAudioGuide() {
         showGuide(
-            title: "Turn on HushType in Screen & System Audio Recording.",
-            detail: "If HushType is missing, drag HushType into the list."
+            title: L10n.string(
+                "permission.system_audio.guide.title",
+                fallback: "Turn on HushType in Screen & System Audio Recording."
+            ),
+            detail: L10n.string(
+                "permission.guide.detail",
+                fallback: "If HushType is missing, drag HushType into the list."
+            )
         )
     }
 
     func showAccessibilityGuide() {
         showGuide(
-            title: "Turn on HushType in Accessibility.",
-            detail: "If HushType is missing, drag HushType into the list."
+            title: L10n.string(
+                "permission.accessibility.guide.title",
+                fallback: "Turn on HushType in Accessibility."
+            ),
+            detail: L10n.string(
+                "permission.guide.detail",
+                fallback: "If HushType is missing, drag HushType into the list."
+            )
         )
     }
 
@@ -134,7 +146,7 @@ private struct PermissionSettingsGuideView: View {
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .help("Hide helper")
+                .help(L10n.string("permission.guide.hide_help", fallback: "Hide helper"))
 
                 DraggableAppTileView(appURL: appURL)
                     .frame(width: 174, height: 50)

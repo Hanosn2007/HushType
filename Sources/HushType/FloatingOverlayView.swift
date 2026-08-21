@@ -78,11 +78,21 @@ struct FloatingOverlayView: View {
 
     private var label: String {
         switch model.state {
-        case .recording:    return "Listening"
+        case .recording:
+            return L10n.string("overlay.listening", fallback: "Listening")
         case .transcribing(let provider):
-            return provider.map { "Transcribing · \($0)" } ?? "Transcribing"
-        case .polishing:    return "Polishing…"
-        case .hidden:       return ""
+            if let provider {
+                return L10n.format(
+                    "overlay.transcribing_provider",
+                    "Transcribing · %1$@",
+                    arguments: [provider]
+                )
+            }
+            return L10n.string("overlay.transcribing", fallback: "Transcribing")
+        case .polishing:
+            return L10n.string("overlay.polishing", fallback: "Polishing…")
+        case .hidden:
+            return ""
         }
     }
 

@@ -224,44 +224,83 @@ struct LiveCaptionTuning: Codable, Sendable {
         return try JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys])
     }
 
-    private static func templateContent() -> String {
+    static func templateContent() -> String {
         """
         {
-          "_comment_about": "HushType — Live Caption tunables. Edit values then toggle Live Caption off and on for changes to apply. Keys prefixed _comment_ are documentation only and are ignored by the parser.",
+          "_comment_about": \(localizedTemplateComment(
+              "template.live_caption.about",
+              fallback: "HushType — Live Caption tunables. Edit values then toggle Live Caption off and on for changes to apply. Keys prefixed _comment_ are documentation only and are ignored by the parser."
+          )),
 
-          "_comment_maxTokens": "ASR decoder max generated tokens per segment. Larger budgets cost more decoder KV cache per call and risk runaway generation past EOS. Speech-swift default is 448 — validated stable on the 15-min long session test. Bumping past 1024 has been observed to push unified memory off a cliff.",
+          "_comment_maxTokens": \(localizedTemplateComment(
+              "template.live_caption.max_tokens",
+              fallback: "ASR decoder max generated tokens per segment. Larger budgets cost more decoder KV cache per call and risk runaway generation past EOS. Speech-swift default is 448 — validated stable on the 15-min long session test. Bumping past 1024 has been observed to push unified memory off a cliff."
+          )),
           "maxTokens": 448,
 
-          "_comment_mlxCacheLimitMB": "MLX GPU buffer pool cap in MB. Lower = less RAM but cold transcribes; higher = warm cache. 128 was too tight; 1024 is the perf-tuned default on Apple Silicon. Drop to 256 or 512 if you want a tighter RAM ceiling.",
+          "_comment_mlxCacheLimitMB": \(localizedTemplateComment(
+              "template.live_caption.mlx_cache",
+              fallback: "MLX GPU buffer pool cap in MB. Lower = less RAM but cold transcribes; higher = warm cache. 128 was too tight; 1024 is the perf-tuned default on Apple Silicon. Drop to 256 or 512 if you want a tighter RAM ceiling."
+          )),
           "mlxCacheLimitMB": 1024,
 
-          "_comment_vad_thresholds": "VAD probability thresholds to enter and exit speech state (0.0–1.0). Silero defaults 0.5 / 0.35. Lower onset = more sensitive (more fragments in noisy rooms).",
+          "_comment_vad_thresholds": \(localizedTemplateComment(
+              "template.live_caption.vad_thresholds",
+              fallback: "VAD probability thresholds to enter and exit speech state (0.0–1.0). Silero defaults 0.5 / 0.35. Lower onset = more sensitive (more fragments in noisy rooms)."
+          )),
           "vadOnset": 0.5,
           "vadOffset": 0.35,
 
-          "_comment_vad_durations": "minSpeech: how long confirmed speech must run before a segment can be emitted. minSilence: how much pause closes a segment. Both in seconds. Silero defaults 0.25 / 0.10.",
+          "_comment_vad_durations": \(localizedTemplateComment(
+              "template.live_caption.vad_durations",
+              fallback: "minSpeech: how long confirmed speech must run before a segment can be emitted. minSilence: how much pause closes a segment. Both in seconds. Silero defaults 0.25 / 0.10."
+          )),
           "vadMinSpeechSeconds": 0.25,
           "vadMinSilenceSeconds": 0.10,
 
-          "_comment_forceSplit": "Force-split a continuous monologue at this duration (seconds). Spec default 10.",
+          "_comment_forceSplit": \(localizedTemplateComment(
+              "template.live_caption.force_split",
+              fallback: "Force-split a continuous monologue at this duration (seconds). Spec default 10."
+          )),
           "forceSplitSeconds": 10.0,
 
-          "_comment_backpressure": "Drop new audio buffers when more than this many feeds are pending at the worker actor. 50 ≈ 2 s of audio — enough room for a cold first-cold transcribe without unbounded queueing.",
+          "_comment_backpressure": \(localizedTemplateComment(
+              "template.live_caption.backpressure",
+              fallback: "Drop new audio buffers when more than this many feeds are pending at the worker actor. 50 ≈ 2 s of audio — enough room for a cold first-cold transcribe without unbounded queueing."
+          )),
           "backpressureMaxPending": 50,
 
-          "_comment_panel": "Default panel size (pixels). Window drag / resize values persist separately and override this on next launch.",
+          "_comment_panel": \(localizedTemplateComment(
+              "template.live_caption.panel",
+              fallback: "Default panel size (pixels). Window drag / resize values persist separately and override this on next launch."
+          )),
           "panelDefaultWidth": 1350,
           "panelDefaultHeight": 160,
 
-          "_comment_resetPanelOnNextStart": "Set to true to discard any persisted frame and re-apply panelDefaultWidth/Height the next time Live Caption is toggled on. The app flips it back to false after applying.",
+          "_comment_resetPanelOnNextStart": \(localizedTemplateComment(
+              "template.live_caption.reset_panel",
+              fallback: "Set to true to discard any persisted frame and re-apply panelDefaultWidth/Height the next time Live Caption is toggled on. The app flips it back to false after applying."
+          )),
           "resetPanelOnNextStart": false,
 
-          "_comment_audioSource": "Source for Live Caption: 'mic' or 'system'. Defaults to 'mic'. Switch via menu (Live Caption submenu) or by editing here + toggling Live Caption off/on. The menu always wins on conflict.",
+          "_comment_audioSource": \(localizedTemplateComment(
+              "template.live_caption.audio_source",
+              fallback: "Source for Live Caption: 'mic' or 'system'. Defaults to 'mic'. Switch via menu (Live Caption submenu) or by editing here + toggling Live Caption off/on. The menu always wins on conflict."
+          )),
           "audioSource": "mic",
 
-          "_comment_systemAudioBundleID": "Last-picked app's bundle identifier for system-audio Live Caption. Set automatically by the picker; can be hand-edited. Empty means show picker on next start.",
+          "_comment_systemAudioBundleID": \(localizedTemplateComment(
+              "template.live_caption.system_bundle_id",
+              fallback: "Last-picked app's bundle identifier for system-audio Live Caption. Set automatically by the picker; can be hand-edited. Empty means show picker on next start."
+          )),
           "systemAudioBundleID": ""
         }
         """
+    }
+
+    /// Returns one complete JSON string literal for a localized template
+    /// comment. Localized prose must never be interpolated into JSON raw.
+    private static func localizedTemplateComment(_ key: String, fallback: String) -> String {
+        L10n.jsonStringLiteral(L10n.string(key, table: "Templates", fallback: fallback))
     }
 }

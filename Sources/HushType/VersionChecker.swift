@@ -24,11 +24,21 @@ enum VersionChecker {
             case .networkFailure(let underlying):
                 return underlying.localizedDescription
             case .invalidResponse(let status):
-                return "GitHub returned HTTP \(status)"
+                return L10n.format(
+                    "error.version.http",
+                    "GitHub returned HTTP %1$d",
+                    arguments: [Int32(status)]
+                )
             case .malformedJSON:
-                return "Could not parse GitHub response"
+                return L10n.string(
+                    "error.version.invalid_json",
+                    fallback: "Could not parse GitHub response"
+                )
             case .missingTagName:
-                return "GitHub response missing tag_name"
+                return L10n.string(
+                    "error.version.missing_tag",
+                    fallback: "GitHub response missing tag_name"
+                )
             }
         }
     }

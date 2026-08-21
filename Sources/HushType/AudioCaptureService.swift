@@ -140,7 +140,10 @@ final class AudioCaptureService {
             throw NSError(
                 domain: "AudioCaptureService",
                 code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Push-to-talk recording is active; cannot start continuous capture."]
+                userInfo: [NSLocalizedDescriptionKey: L10n.string(
+                    "error.audio_capture.push_to_talk_active",
+                    fallback: "Push-to-talk recording is active; cannot start continuous capture."
+                )]
             )
         }
 
@@ -159,7 +162,10 @@ final class AudioCaptureService {
             throw NSError(
                 domain: "AudioCaptureService",
                 code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "Failed to create target audio format."]
+                userInfo: [NSLocalizedDescriptionKey: L10n.string(
+                    "error.audio_capture.target_format",
+                    fallback: "Failed to create target audio format."
+                )]
             )
         }
 

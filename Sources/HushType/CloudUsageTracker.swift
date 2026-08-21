@@ -404,17 +404,23 @@ extension CloudUsageTracker {
     }
 
     static func formatDollars(_ dollars: Double) -> String {
-        String(format: "$%.2f", dollars)
+        L10n.format("format.usd_total", "$%1$.2f", arguments: [dollars])
     }
 
     static func formatDailyBreakdown(_ snapshot: Snapshot) -> String {
-        String(
-            format: "Today's cloud usage: %@ total — dictation %@ (%d min), translated caption %@ (%d min)",
-            formatDollars(snapshot.dayDollars),
-            formatDollars(snapshot.dictationDollars),
-            Int(snapshot.dictationSeconds / 60.0),
-            formatDollars(snapshot.translatedCaptionDollars),
-            Int(snapshot.translatedCaptionSeconds / 60.0)
+        let dictationMinutes = Int(snapshot.dictationSeconds / 60.0)
+        let captionMinutes = Int(snapshot.translatedCaptionSeconds / 60.0)
+        return L10n.plural(
+            "usage.daily_breakdown",
+            count: dictationMinutes,
+            fallback: "Today's cloud usage: %1$@ total — dictation %2$@ (%3$d min), translated caption %4$@ (%5$d min)",
+            arguments: [
+                formatDollars(snapshot.dayDollars),
+                formatDollars(snapshot.dictationDollars),
+                Int32(dictationMinutes),
+                formatDollars(snapshot.translatedCaptionDollars),
+                Int32(captionMinutes),
+            ]
         )
     }
 }

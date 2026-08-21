@@ -4,6 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "HushType",
+    defaultLocalization: "en",
     platforms: [.macOS(.v15)],
     dependencies: [
         .package(url: "https://github.com/felixfu824/speech-swift.git", revision: "d603472b11c21f5fb6492e9448a04ee669d0bf64"),
@@ -22,6 +23,9 @@ let package = Package(
                 .product(name: "MLX", package: "mlx-swift"),
             ],
             path: "Sources/HushType",
+            resources: [
+                .process("Resources"),
+            ],
             linkerSettings: [
                 .linkedFramework("Carbon"),
             ]

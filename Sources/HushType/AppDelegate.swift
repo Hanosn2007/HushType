@@ -283,7 +283,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 log.error("Failed to load model: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
                     self?.state = .idle
-                    self?.statusBar.setState(.error("Model load failed"))
+                    self?.statusBar.setState(.error(L10n.string(
+                        "status.model_load_failed",
+                        fallback: "Model load failed"
+                    )))
                 }
             }
         }
@@ -742,7 +745,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the menu toggle for that path too.
         if case .provided = source, !AppConfig.shared.textTranslationEnabled {
             showTranslationError(TranslationError.translationFailed(
-                "Text Translation is turned off in the HushType menu."))
+                L10n.string(
+                    "error.translation.disabled",
+                    fallback: "Text Translation is turned off in the HushType menu."
+                )))
             return
         }
 
@@ -761,7 +767,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // explicit Services path earns an alert.
                     print("[HushType] No text on clipboard for translation")
                 case .provided:
-                    self.showTranslationError(TranslationError.translationFailed("No text was selected."))
+                    self.showTranslationError(TranslationError.translationFailed(
+                        L10n.string(
+                            "error.selection.none",
+                            fallback: "No text was selected."
+                        )
+                    ))
                 }
                 return
             }
@@ -845,9 +856,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.alertStyle = .warning
         alert.icon = NSImage(named: "AppIcon")
             ?? NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: nil)
-        alert.messageText = "Text Polish Failed"
-        alert.informativeText = "Unable to polish the selected text.\n\n\(error.localizedDescription)"
-        alert.addButton(withTitle: "OK")
+        alert.messageText = L10n.string(
+            "alert.polish_failed.title",
+            fallback: "Text Polish Failed"
+        )
+        alert.informativeText = L10n.format(
+            "alert.polish_failed.message",
+            "Unable to polish the selected text.\n\n%1$@",
+            arguments: [error.localizedDescription]
+        )
+        alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
         alert.runModal()
     }
 
@@ -951,16 +969,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let translationError = error as? TranslationError {
             switch translationError {
             case .unsupportedLanguage(let lang):
-                alert.messageText = "Language Not Supported"
-                alert.informativeText = "The detected language (\(lang)) is not supported by Apple Translation Framework.\n\nSupported languages include English, Chinese, Japanese, Korean, French, German, Spanish, and others."
-                alert.addButton(withTitle: "OK")
+                alert.messageText = L10n.string(
+                    "alert.translation.unsupported.title",
+                    fallback: "Language Not Supported"
+                )
+                alert.informativeText = L10n.format(
+                    "alert.translation.unsupported.message",
+                    "The detected language (%1$@) is not supported by Apple Translation Framework.\n\nSupported languages include English, Chinese, Japanese, Korean, French, German, Spanish, and others.",
+                    arguments: [lang]
+                )
+                alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
                 alert.runModal()
 
             case .languagePackMissing(let source, let target):
-                alert.messageText = "Language Pack Not Installed"
-                alert.informativeText = "Translation from \(source) to \(target) requires downloading the language pack.\n\nSystem Settings → General → Language & Region → Translation Languages → Download"
-                alert.addButton(withTitle: "OK")
-                alert.addButton(withTitle: "Open Settings")
+                alert.messageText = L10n.string(
+                    "alert.translation.pack_missing.title",
+                    fallback: "Language Pack Not Installed"
+                )
+                alert.informativeText = L10n.format(
+                    "alert.translation.pack_missing.message",
+                    "Translation from %1$@ to %2$@ requires downloading the language pack.\n\nSystem Settings → General → Language & Region → Translation Languages → Download",
+                    arguments: [source, target]
+                )
+                alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
+                alert.addButton(withTitle: L10n.string(
+                    "common.button.open_translation_settings",
+                    fallback: "Open Settings"
+                ))
                 let response = alert.runModal()
                 if response == .alertSecondButtonReturn {
                     if let url = URL(string: "x-apple.systempreferences:com.apple.Localization") {
@@ -969,15 +1004,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
 
             case .translationFailed(let detail):
-                alert.messageText = "Translation Failed"
-                alert.informativeText = "Unable to translate the selected text.\n\n\(detail)"
-                alert.addButton(withTitle: "OK")
+                alert.messageText = L10n.string(
+                    "alert.translation.failed.title",
+                    fallback: "Translation Failed"
+                )
+                alert.informativeText = L10n.format(
+                    "alert.translation.failed.message",
+                    "Unable to translate the selected text.\n\n%1$@",
+                    arguments: [detail]
+                )
+                alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
                 alert.runModal()
             }
         } else {
-            alert.messageText = "Translation Failed"
-            alert.informativeText = "Unable to translate the selected text.\n\n\(error.localizedDescription)"
-            alert.addButton(withTitle: "OK")
+            alert.messageText = L10n.string(
+                "alert.translation.failed.title",
+                fallback: "Translation Failed"
+            )
+            alert.informativeText = L10n.format(
+                "alert.translation.failed.message",
+                "Unable to translate the selected text.\n\n%1$@",
+                arguments: [error.localizedDescription]
+            )
+            alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
             alert.runModal()
         }
     }
@@ -1172,18 +1221,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // was active, the message changes to direct the user accordingly.
         let alert = NSAlert()
         if wasLocalCaptionActive {
-            alert.messageText = "Live Caption Stopped"
-            alert.informativeText = "The speech-to-text model was unloaded. Re-enable Live Caption from the menu after reloading the model."
+            alert.messageText = L10n.string(
+                "alert.model_unloaded.live_caption.title",
+                fallback: "Live Caption Stopped"
+            )
+            alert.informativeText = L10n.string(
+                "alert.model_unloaded.live_caption.message",
+                fallback: "The speech-to-text model was unloaded. Re-enable Live Caption from the menu after reloading the model."
+            )
         } else if AppConfig.shared.dictationEngine != .local {
-            alert.messageText = "Local Model Unloaded"
-            alert.informativeText = "The local speech recognition model has been removed from memory. Cloud dictation remains ready."
+            alert.messageText = L10n.string(
+                "alert.model_unloaded.cloud.title",
+                fallback: "Local Model Unloaded"
+            )
+            alert.informativeText = L10n.string(
+                "alert.model_unloaded.cloud.message",
+                fallback: "The local speech recognition model has been removed from memory. Cloud dictation remains ready."
+            )
         } else {
-            alert.messageText = "Model Unloaded"
-            alert.informativeText = "The speech recognition model has been removed from memory.\n\nVoice input will require a cold start (~3 seconds) the next time you press Right ⌥."
+            alert.messageText = L10n.string(
+                "alert.model_unloaded.local.title",
+                fallback: "Model Unloaded"
+            )
+            alert.informativeText = L10n.string(
+                "alert.model_unloaded.local.message",
+                fallback: "The speech recognition model has been removed from memory.\n\nVoice input will require a cold start (~3 seconds) the next time you press Right ⌥."
+            )
         }
         alert.alertStyle = .informational
         alert.icon = NSImage(systemSymbolName: "memorychip", accessibilityDescription: nil)
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
         alert.runModal()
     }
 
@@ -1215,7 +1282,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 log.error("Failed to reload model: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
                     self?.state = .unloaded
-                    self?.statusBar.setState(.error("Reload failed"))
+                    self?.statusBar.setState(.error(L10n.string(
+                        "status.model_reload_failed",
+                        fallback: "Reload failed"
+                    )))
                 }
             }
         }
@@ -1283,11 +1353,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) async {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Daily spend warning reached"
-        alert.informativeText = "This upload would bring today's estimated cloud usage to \(CloudUsageTracker.formatDollars(projection.projectedTotalDollars)) (warning: \(CloudUsageTracker.formatDollars(projection.warningThreshold))). No audio was uploaded. Open Settings and reset today's counter to use cloud again."
-        alert.addButton(withTitle: "Open Settings")
-        alert.addButton(withTitle: "Use Local Once")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = L10n.string(
+            "alert.daily_spend_gate.title",
+            fallback: "Daily spend warning reached"
+        )
+        alert.informativeText = L10n.format(
+            "alert.daily_spend_gate.message",
+            "This upload would bring today's estimated cloud usage to %1$@ (warning: %2$@). No audio was uploaded. Open Settings and reset today's counter to use cloud again.",
+            arguments: [
+                CloudUsageTracker.formatDollars(projection.projectedTotalDollars),
+                CloudUsageTracker.formatDollars(projection.warningThreshold)
+            ]
+        )
+        alert.addButton(withTitle: L10n.string("common.button.open_settings", fallback: "Open Settings"))
+        alert.addButton(withTitle: L10n.string("common.button.use_local_once", fallback: "Use Local Once"))
+        alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
 
         switch alert.runModal() {
         case .alertFirstButtonReturn:
@@ -1406,10 +1486,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             log.error("Use Local Once failed: \(error.localizedDescription, privacy: .public)")
             let alert = NSAlert()
-            alert.messageText = "Local transcription failed"
+            alert.messageText = L10n.string(
+                "alert.local_transcription_failed.title",
+                fallback: "Local transcription failed"
+            )
             alert.informativeText = error.localizedDescription
             alert.alertStyle = .warning
-            alert.addButton(withTitle: "OK")
+            alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
             alert.runModal()
             await finishWithoutInsertion(restoreFocus: insertionFocus)
         }
@@ -1426,11 +1509,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         switch error {
         case .noKey:
-            alert.messageText = "API key not set"
-            alert.informativeText = "Add your \(provider) API key in Dictation Engine Settings before using cloud dictation."
-            alert.addButton(withTitle: "Open Settings")
-            alert.addButton(withTitle: "Switch to Local")
-            alert.addButton(withTitle: "Cancel")
+            alert.messageText = L10n.string(
+                "alert.cloud.no_key.title",
+                fallback: "API key not set"
+            )
+            alert.informativeText = L10n.format(
+                "alert.cloud.no_key.message",
+                "Add your %1$@ API key in Dictation Engine Settings before using cloud dictation.",
+                arguments: [provider]
+            )
+            alert.addButton(withTitle: L10n.string("common.button.open_settings", fallback: "Open Settings"))
+            alert.addButton(withTitle: L10n.string("common.button.switch_to_local", fallback: "Switch to Local"))
+            alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
             switch alert.runModal() {
             case .alertFirstButtonReturn: return .openSettings
             case .alertSecondButtonReturn: return .switchToLocal
@@ -1439,40 +1529,77 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         case .auth:
             let path = selection == .gemini ? GeminiKeyStore.displayPath : OpenAIKeyStore.displayPath
-            alert.messageText = "\(provider) rejected the API key"
-            alert.informativeText = "Check \(path)."
-            alert.addButton(withTitle: "Open File")
-            alert.addButton(withTitle: "Use Local Once")
+            alert.messageText = L10n.format(
+                "alert.cloud.auth.title",
+                "%1$@ rejected the API key",
+                arguments: [provider]
+            )
+            alert.informativeText = L10n.format(
+                "alert.cloud.auth.message",
+                "Check %1$@.",
+                arguments: [path]
+            )
+            alert.addButton(withTitle: L10n.string("common.button.open_file", fallback: "Open File"))
+            alert.addButton(withTitle: L10n.string("common.button.use_local_once", fallback: "Use Local Once"))
             return alert.runModal() == .alertFirstButtonReturn ? .openKeyFile : .useLocalOnce
 
         case .permissionDenied(let deniedProvider):
             let path = selection == .gemini ? GeminiKeyStore.displayPath : OpenAIKeyStore.displayPath
-            alert.messageText = "\(deniedProvider) denied this request"
-            alert.informativeText = "The API key is present, but its project or model permissions may not allow this request. Check provider access and \(path)."
-            alert.addButton(withTitle: "Open File")
-            alert.addButton(withTitle: "Use Local Once")
+            alert.messageText = L10n.format(
+                "alert.cloud.permission.title",
+                "%1$@ denied this request",
+                arguments: [deniedProvider]
+            )
+            alert.informativeText = L10n.format(
+                "alert.cloud.permission.message",
+                "The API key is present, but its project or model permissions may not allow this request. Check provider access and %1$@.",
+                arguments: [path]
+            )
+            alert.addButton(withTitle: L10n.string("common.button.open_file", fallback: "Open File"))
+            alert.addButton(withTitle: L10n.string("common.button.use_local_once", fallback: "Use Local Once"))
             return alert.runModal() == .alertFirstButtonReturn ? .openKeyFile : .useLocalOnce
 
         case .rateLimited(let limitedProvider):
-            alert.messageText = "\(limitedProvider) quota or rate limit reached"
-            alert.informativeText = "This limit comes from \(limitedProvider), not HushType's Daily spend warning. Check provider usage or billing, or try again later."
-            alert.addButton(withTitle: "Use Local Once")
-            alert.addButton(withTitle: "Cancel")
+            alert.messageText = L10n.format(
+                "alert.cloud.rate_limit.title",
+                "%1$@ quota or rate limit reached",
+                arguments: [limitedProvider]
+            )
+            alert.informativeText = L10n.format(
+                "alert.cloud.rate_limit.message",
+                "This limit comes from %1$@, not HushType's Daily spend warning. Check provider usage or billing, or try again later.",
+                arguments: [limitedProvider]
+            )
+            alert.addButton(withTitle: L10n.string("common.button.use_local_once", fallback: "Use Local Once"))
+            alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
             return alert.runModal() == .alertFirstButtonReturn ? .useLocalOnce : .cancel
 
         case .payloadTooLarge:
-            alert.messageText = "Recording too long for cloud transcription"
-            alert.informativeText = "This recording exceeds the cloud upload limit. No audio was uploaded."
-            alert.addButton(withTitle: "Use Local Once")
-            alert.addButton(withTitle: "Cancel")
+            alert.messageText = L10n.string(
+                "alert.cloud.payload.title",
+                fallback: "Recording too long for cloud transcription"
+            )
+            alert.informativeText = L10n.string(
+                "alert.cloud.payload.message",
+                fallback: "This recording exceeds the cloud upload limit. No audio was uploaded."
+            )
+            alert.addButton(withTitle: L10n.string("common.button.use_local_once", fallback: "Use Local Once"))
+            alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
             return alert.runModal() == .alertFirstButtonReturn ? .useLocalOnce : .cancel
 
         case .timeout:
-            alert.messageText = "Cloud transcription timed out"
-            alert.informativeText = "\(provider) did not respond within 180 seconds. The recording is still available."
-            alert.addButton(withTitle: "Retry Cloud")
-            alert.addButton(withTitle: "Use Local Once")
-            alert.addButton(withTitle: "Cancel")
+            alert.messageText = L10n.string(
+                "alert.cloud.timeout.title",
+                fallback: "Cloud transcription timed out"
+            )
+            alert.informativeText = L10n.format(
+                "alert.cloud.timeout.message",
+                "%1$@ did not respond within 180 seconds. The recording is still available.",
+                arguments: [provider]
+            )
+            alert.addButton(withTitle: L10n.string("common.button.retry_cloud", fallback: "Retry Cloud"))
+            alert.addButton(withTitle: L10n.string("common.button.use_local_once", fallback: "Use Local Once"))
+            alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
             switch alert.runModal() {
             case .alertFirstButtonReturn: return .retryCloud
             case .alertSecondButtonReturn: return .useLocalOnce
@@ -1480,20 +1607,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
         case .network:
-            alert.messageText = "Cloud transcription unavailable"
-            alert.informativeText = "HushType could not reach \(provider). The recording is still available for local transcription."
+            alert.messageText = L10n.string(
+                "alert.cloud.network.title",
+                fallback: "Cloud transcription unavailable"
+            )
+            alert.informativeText = L10n.format(
+                "alert.cloud.network.message",
+                "HushType could not reach %1$@. The recording is still available for local transcription.",
+                arguments: [provider]
+            )
             addStandardCloudFailureButtons(to: alert, preferSwitchToLocal: preferSwitchToLocal)
             return standardCloudFailureChoice(from: alert.runModal())
 
         case .malformedResponse:
-            alert.messageText = "\(provider) returned an unreadable transcript"
-            alert.informativeText = "Nothing was inserted. The recording is still available for local transcription."
+            alert.messageText = L10n.format(
+                "alert.cloud.malformed.title",
+                "%1$@ returned an unreadable transcript",
+                arguments: [provider]
+            )
+            alert.informativeText = L10n.string(
+                "alert.cloud.no_insert_local_available",
+                fallback: "Nothing was inserted. The recording is still available for local transcription."
+            )
             addStandardCloudFailureButtons(to: alert, preferSwitchToLocal: false)
             return standardCloudFailureChoice(from: alert.runModal())
 
         case .safetyBlocked:
-            alert.messageText = "Gemini blocked this transcription"
-            alert.informativeText = "Nothing was inserted. The recording is still available for local transcription."
+            alert.messageText = L10n.string(
+                "alert.cloud.safety.title",
+                fallback: "Gemini blocked this transcription"
+            )
+            alert.informativeText = L10n.string(
+                "alert.cloud.no_insert_local_available",
+                fallback: "Nothing was inserted. The recording is still available for local transcription."
+            )
             addStandardCloudFailureButtons(to: alert, preferSwitchToLocal: false)
             return standardCloudFailureChoice(from: alert.runModal())
         }
@@ -1503,9 +1650,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         to alert: NSAlert,
         preferSwitchToLocal: Bool
     ) {
-        alert.addButton(withTitle: "Use Local Once")
-        alert.addButton(withTitle: "Switch to Local")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L10n.string("common.button.use_local_once", fallback: "Use Local Once"))
+        alert.addButton(withTitle: L10n.string("common.button.switch_to_local", fallback: "Switch to Local"))
+        alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
         if preferSwitchToLocal {
             alert.buttons[0].keyEquivalent = ""
             alert.buttons[1].keyEquivalent = "\r"
@@ -1553,8 +1700,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         threshold: Double
     ) {
         let content = UNMutableNotificationContent()
-        content.title = "Daily spend warning reached"
-        content.body = "Today's cloud total is \(CloudUsageTracker.formatDollars(snapshot.dayDollars)) (warning: \(CloudUsageTracker.formatDollars(threshold)))."
+        content.title = L10n.string(
+            "notification.daily_spend.title",
+            fallback: "Daily spend warning reached"
+        )
+        content.body = L10n.format(
+            "notification.daily_spend.body",
+            "Today's cloud total is %1$@ (warning: %2$@).",
+            arguments: [
+                CloudUsageTracker.formatDollars(snapshot.dayDollars),
+                CloudUsageTracker.formatDollars(threshold)
+            ]
+        )
         UNUserNotificationCenter.current().add(
             UNNotificationRequest(
                 identifier: "hushtype-cloud-cap-\(snapshot.dayKey)",

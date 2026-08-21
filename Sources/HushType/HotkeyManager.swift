@@ -151,11 +151,20 @@ final class HotkeyManager {
         // the kernel returned the cached "denied" state from a pre-grant call.
         DispatchQueue.main.async {
             let alert = NSAlert()
-            alert.messageText = "Accessibility Permission Lost"
-            alert.informativeText = "HushType lost Accessibility permission and the global hotkey is no longer working.\n\nRe-enable HushType in System Settings → Privacy & Security → Accessibility, then quit and relaunch HushType."
+            alert.messageText = L10n.string(
+                "alert.accessibility_lost.title",
+                fallback: "Accessibility Permission Lost"
+            )
+            alert.informativeText = L10n.string(
+                "alert.accessibility_lost.message",
+                fallback: "HushType lost Accessibility permission and the global hotkey is no longer working.\n\nRe-enable HushType in System Settings → Privacy & Security → Accessibility, then quit and relaunch HushType."
+            )
             alert.alertStyle = .warning
-            alert.addButton(withTitle: "Open System Settings")
-            alert.addButton(withTitle: "Quit")
+            alert.addButton(withTitle: L10n.string(
+                "common.button.open_system_settings",
+                fallback: "Open System Settings"
+            ))
+            alert.addButton(withTitle: L10n.string("onboarding.button.quit", fallback: "Quit"))
 
             let response = alert.runModal()
             if response == .alertFirstButtonReturn {

@@ -156,12 +156,18 @@ final class LiveCaptionManager {
                 if !granted {
                     showMicDeniedAlert()
                     throw NSError(domain: "LiveCaption", code: 10,
-                                  userInfo: [NSLocalizedDescriptionKey: "Microphone permission denied"])
+                                  userInfo: [NSLocalizedDescriptionKey: L10n.string(
+                                    "error.caption.microphone_denied",
+                                    fallback: "Microphone permission denied"
+                                  )])
                 }
             case .denied, .restricted:
                 showMicDeniedAlert()
                 throw NSError(domain: "LiveCaption", code: 11,
-                              userInfo: [NSLocalizedDescriptionKey: "Microphone permission denied"])
+                              userInfo: [NSLocalizedDescriptionKey: L10n.string(
+                                "error.caption.microphone_denied",
+                                fallback: "Microphone permission denied"
+                              )])
             @unknown default:
                 break
             }
@@ -179,7 +185,10 @@ final class LiveCaptionManager {
             case .empty:
                 showCloudKeyMissingAlert()
                 throw NSError(domain: "LiveCaption", code: 30,
-                              userInfo: [NSLocalizedDescriptionKey: "OpenAI API key not set"])
+                              userInfo: [NSLocalizedDescriptionKey: L10n.string(
+                                "error.caption.openai_key_missing",
+                                fallback: "OpenAI API key not set"
+                              )])
             }
         }
 
@@ -266,7 +275,10 @@ final class LiveCaptionManager {
         case .local:
             guard let asrModel, let vadModel else {
                 throw NSError(domain: "LiveCaption", code: 20,
-                              userInfo: [NSLocalizedDescriptionKey: "Local caption model unavailable after load"])
+                              userInfo: [NSLocalizedDescriptionKey: L10n.string(
+                                "error.caption.local_model_unavailable",
+                                fallback: "Local caption model unavailable after load"
+                              )])
             }
             newBackend = LocalQwen3Backend(
                 asrModel: asrModel,
@@ -277,7 +289,10 @@ final class LiveCaptionManager {
         case .cloudTranslate:
             guard let cloudKey else {
                 throw NSError(domain: "LiveCaption", code: 31,
-                              userInfo: [NSLocalizedDescriptionKey: "OpenAI key resolved but lost"])
+                              userInfo: [NSLocalizedDescriptionKey: L10n.string(
+                                "error.caption.openai_key_lost",
+                                fallback: "OpenAI key resolved but lost"
+                              )])
             }
             newBackend = OpenAITranslateBackend(
                 apiKey: cloudKey.apiKey,
@@ -345,9 +360,16 @@ final class LiveCaptionManager {
                     SystemAudioPermissionFlow.showRevocationAlert()
                 } else {
                     let alert = NSAlert()
-                    alert.messageText = "Microphone unavailable"
-                    alert.informativeText = "Live Caption was stopped: \(error.localizedDescription)"
-                    alert.addButton(withTitle: "OK")
+                    alert.messageText = L10n.string(
+                        "alert.caption.microphone_unavailable.title",
+                        fallback: "Microphone unavailable"
+                    )
+                    alert.informativeText = L10n.format(
+                        "alert.caption.microphone_unavailable.message",
+                        "Live Caption was stopped: %1$@",
+                        arguments: [error.localizedDescription]
+                    )
+                    alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
                     alert.runModal()
                 }
             }
@@ -856,8 +878,18 @@ final class LiveCaptionManager {
         if shouldWarn {
             await CloudUsageTracker.shared.markDailyCapWarned()
             postNotification(
-                title: "Daily spend warning reached",
-                body: "You've used \(CloudUsageTracker.formatDollars(snap.dayDollars)) today (warning: \(CloudUsageTracker.formatDollars(cap)))."
+                title: L10n.string(
+                    "notification.daily_spend.title",
+                    fallback: "Daily spend warning reached"
+                ),
+                body: L10n.format(
+                    "notification.caption.daily_spend.body",
+                    "You've used %1$@ today (warning: %2$@).",
+                    arguments: [
+                        CloudUsageTracker.formatDollars(snap.dayDollars),
+                        CloudUsageTracker.formatDollars(cap)
+                    ]
+                )
             )
         }
     }
@@ -867,8 +899,16 @@ final class LiveCaptionManager {
         viewModel?.headerState = .autoStopped
 
         postNotification(
-            title: "Live Caption auto-stopped",
-            body: "Stopped after \(minutes) minutes (\(CloudUsageTracker.formatDollars(usedDollars)) used today)."
+            title: L10n.string(
+                "notification.caption.auto_stop.title",
+                fallback: "Live Caption auto-stopped"
+            ),
+            body: L10n.plural(
+                "notification.caption.auto_stop.body",
+                count: minutes,
+                fallback: "Stopped after %1$d minutes (%2$@ used today).",
+                arguments: [Int32(minutes), CloudUsageTracker.formatDollars(usedDollars)]
+            )
         )
 
         // Hide panel after 5s so the autoStopped flash is visible. Use main
@@ -915,10 +955,19 @@ final class LiveCaptionManager {
 
     private func showMicDeniedAlert() {
         let alert = NSAlert()
-        alert.messageText = "Microphone Access Required"
-        alert.informativeText = "Live Caption needs microphone access. Open System Settings → Privacy & Security → Microphone and enable HushType."
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = L10n.string(
+            "alert.caption.mic_access.title",
+            fallback: "Microphone Access Required"
+        )
+        alert.informativeText = L10n.string(
+            "alert.caption.mic_access.message",
+            fallback: "Live Caption needs microphone access. Open System Settings → Privacy & Security → Microphone and enable HushType."
+        )
+        alert.addButton(withTitle: L10n.string(
+            "common.button.open_system_settings",
+            fallback: "Open System Settings"
+        ))
+        alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
             if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
@@ -929,34 +978,57 @@ final class LiveCaptionManager {
 
     private func showVADLoadFailedAlert(_ error: Error) {
         let alert = NSAlert()
-        alert.messageText = "Failed to load voice-activity model"
-        alert.informativeText = "Live Caption could not start: \(error.localizedDescription)"
-        alert.addButton(withTitle: "OK")
+        alert.messageText = L10n.string(
+            "alert.caption.vad_failed.title",
+            fallback: "Failed to load voice-activity model"
+        )
+        alert.informativeText = L10n.format(
+            "alert.caption.vad_failed.message",
+            "Live Caption could not start: %1$@",
+            arguments: [error.localizedDescription]
+        )
+        alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
         alert.runModal()
     }
 
     private func showASRLoadFailedAlert(_ error: Error) {
         let alert = NSAlert()
-        alert.messageText = "Failed to load speech model"
-        alert.informativeText = "Local Live Caption could not start: \(error.localizedDescription)"
-        alert.addButton(withTitle: "OK")
+        alert.messageText = L10n.string(
+            "alert.caption.asr_failed.title",
+            fallback: "Failed to load speech model"
+        )
+        alert.informativeText = L10n.format(
+            "alert.caption.asr_failed.message",
+            "Local Live Caption could not start: %1$@",
+            arguments: [error.localizedDescription]
+        )
+        alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
         alert.runModal()
     }
 
     private func showSystemAudioStartFailedAlert(_ error: Error) {
         let alert = NSAlert()
-        alert.messageText = "Couldn't Start System Audio Capture"
+        alert.messageText = L10n.string(
+            "alert.caption.system_audio_failed.title",
+            fallback: "Couldn't Start System Audio Capture"
+        )
         alert.informativeText = error.localizedDescription
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
         alert.runModal()
     }
 
     private func showCloudKeyMissingAlert() {
         let alert = NSAlert()
-        alert.messageText = "OpenAI API key not set"
-        alert.informativeText = "Cloud Live Caption needs an OpenAI API key. Open Live Caption → Engine Settings and paste your key into openai.json."
-        alert.addButton(withTitle: "Open Settings")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = L10n.string(
+            "error.caption.openai_key_missing",
+            fallback: "OpenAI API key not set"
+        )
+        alert.informativeText = L10n.string(
+            "alert.caption.cloud_key_missing.message",
+            fallback: "Cloud Live Caption needs an OpenAI API key. Open Live Caption → Engine Settings and paste your key into openai.json."
+        )
+        alert.addButton(withTitle: L10n.string("common.button.open_settings", fallback: "Open Settings"))
+        alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
             LiveCaptionEngineSettingsWindowController.shared.presentAndFocus()
@@ -965,10 +1037,16 @@ final class LiveCaptionManager {
 
     private func showCloudKeyRejectedAlert() {
         let alert = NSAlert()
-        alert.messageText = "OpenAI rejected the API key"
-        alert.informativeText = "Check the value in openai.json."
-        alert.addButton(withTitle: "Open File")
-        alert.addButton(withTitle: "Settings")
+        alert.messageText = L10n.string(
+            "alert.caption.cloud_key_rejected.title",
+            fallback: "OpenAI rejected the API key"
+        )
+        alert.informativeText = L10n.string(
+            "alert.caption.cloud_key_rejected.message",
+            fallback: "Check the value in openai.json."
+        )
+        alert.addButton(withTitle: L10n.string("common.button.open_file", fallback: "Open File"))
+        alert.addButton(withTitle: L10n.string("common.button.settings", fallback: "Settings"))
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
             OpenAIKeyStore.openInDefaultEditor()
@@ -979,18 +1057,31 @@ final class LiveCaptionManager {
 
     private func showCloudRateLimitedAlert() {
         let alert = NSAlert()
-        alert.messageText = "OpenAI rate limit hit"
-        alert.informativeText = "Try again in a minute, or upgrade your OpenAI plan."
-        alert.addButton(withTitle: "OK")
+        alert.messageText = L10n.string(
+            "alert.caption.rate_limit.title",
+            fallback: "OpenAI rate limit hit"
+        )
+        alert.informativeText = L10n.string(
+            "alert.caption.rate_limit.message",
+            fallback: "Try again in a minute, or upgrade your OpenAI plan."
+        )
+        alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
         alert.runModal()
     }
 
     private func showCloudErrorWithSwitchToLocalAlert(_ error: Error) {
         let alert = NSAlert()
-        alert.messageText = "Cloud Live Caption connection lost"
-        alert.informativeText = "Could not reach OpenAI: \(error.localizedDescription)"
-        alert.addButton(withTitle: "Switch to Local")
-        alert.addButton(withTitle: "Stop")
+        alert.messageText = L10n.string(
+            "alert.caption.connection_lost.title",
+            fallback: "Cloud Live Caption connection lost"
+        )
+        alert.informativeText = L10n.format(
+            "alert.caption.connection_lost.message",
+            "Could not reach OpenAI: %1$@",
+            arguments: [error.localizedDescription]
+        )
+        alert.addButton(withTitle: L10n.string("common.button.switch_to_local", fallback: "Switch to Local"))
+        alert.addButton(withTitle: L10n.string("common.button.stop", fallback: "Stop"))
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
             Task { @MainActor in await self.switchEngine(to: .local) }
@@ -1003,13 +1094,19 @@ final class LiveCaptionManager {
         let alert = NSAlert()
         switch engine {
         case .cloudTranslate:
-            alert.messageText = "Could not start Cloud Live Caption"
+            alert.messageText = L10n.string(
+                "alert.caption.cloud_start_failed.title",
+                fallback: "Could not start Cloud Live Caption"
+            )
             alert.informativeText = error.localizedDescription
         case .local:
-            alert.messageText = "Could not start Live Caption"
+            alert.messageText = L10n.string(
+                "alert.caption.local_start_failed.title",
+                fallback: "Could not start Live Caption"
+            )
             alert.informativeText = error.localizedDescription
         }
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
         alert.runModal()
     }
 }

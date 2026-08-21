@@ -1,0 +1,9 @@
+/* Generated from the frozen Gate B manifest + decisions overlay. */
+
+/* Exact English NSMenuItem.default value is the key; host-app Services localization follows LaunchServices/system behavior. */
+
+"Polish with HushType" = "Polish with HushType";
+
+/* Exact English NSMenuItem.default value is the key; host-app Services localization follows LaunchServices/system behavior. */
+
+"Translate with HushType" = "Translate with HushType";

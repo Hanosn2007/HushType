@@ -14,6 +14,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case unloaded
     }
 
+    /// Semantic action for the model-memory menu item. Localized display
+    /// text never determines behavior.
+    enum ModelMenuAction: Equatable {
+        case unload
+        case reload
+    }
+
     private let statusItem: NSStatusItem
     private let localEngine: Qwen3TranscriptionEngine
     /// Combined status + memory row, e.g. "Ready · Memory 2.1 GB".
@@ -43,6 +50,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var translateToItem: NSMenuItem!
     private var translationHintItem: NSMenuItem!
     private var unloadMenuItem: NSMenuItem!
+    private var modelMenuAction: ModelMenuAction = .unload
+    private let launchInterfaceLanguage: InterfaceLanguage
+    private let interfaceLanguageMenu = NSMenu()
+    private var interfaceLanguageItems: [InterfaceLanguage: NSMenuItem] = [:]
+    private var appliedNextLaunchItem: NSMenuItem!
     private var dictionaryMenuItem: NSMenuItem!
     private var dictionarySubtitleItem: NSMenuItem!
     /// Last state passed to `setState` — kept so the combined status+memory
@@ -130,13 +142,27 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     init(localEngine: Qwen3TranscriptionEngine) {
         self.localEngine = localEngine
+        launchInterfaceLanguage = L10n.launchPreference
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusMenuItem = NSMenuItem(title: "Loading...", action: nil, keyEquivalent: "")
+        statusMenuItem = NSMenuItem(
+            title: L10n.string("status.loading", fallback: "Loading..."),
+            action: nil,
+            keyEquivalent: ""
+        )
         statusMenuItem.isEnabled = false
 
-        languageMenu = NSMenu(title: "Speech-to-Text Language")
-        dictationEngineMenu = NSMenu(title: "Dictation Engine")
-        punctuationMenu = NSMenu(title: "Punctuation Cleanup")
+        languageMenu = NSMenu(title: L10n.string(
+            "menu.speech_to_text_language",
+            fallback: "Speech-to-Text Language"
+        ))
+        dictationEngineMenu = NSMenu(title: L10n.string(
+            "menu.dictation_engine",
+            fallback: "Dictation Engine"
+        ))
+        punctuationMenu = NSMenu(title: L10n.string(
+            "menu.punctuation_cleanup",
+            fallback: "Punctuation Cleanup"
+        ))
 
         super.init()
 
@@ -160,6 +186,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         refreshStatusLine()
         updateDictationEngineCheckmarks()
         updateUnloadMenuItem(for: currentState)
+        updateInterfaceLanguageMenu()
 
         // Refresh dictionary subtitle (entry count may change if user edited file externally)
         let dictSubAttrs: [NSAttributedString.Key: Any] = [
@@ -189,39 +216,48 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
 
         // ─────────────────── Live Caption (local Qwen3) ───────────────────
-        liveCaptionMenuItem = NSMenuItem(title: "Live Caption", action: nil, keyEquivalent: "")
-        updateToggleAppearance(liveCaptionMenuItem, title: "Live Caption", checked: false)
+        let liveCaptionTitle = L10n.string("menu.live_caption", fallback: "Live Caption")
+        liveCaptionMenuItem = NSMenuItem(title: liveCaptionTitle, action: nil, keyEquivalent: "")
+        updateToggleAppearance(liveCaptionMenuItem, title: liveCaptionTitle, checked: false)
         liveCaptionMenuItem.submenu = buildLiveCaptionSubmenu()
         menu.addItem(liveCaptionMenuItem)
 
         // ───────── Live Translated Caption (cloud OpenAI translate) ─────────
-        liveTranslatedMenuItem = NSMenuItem(title: "Live Translated Caption", action: nil, keyEquivalent: "")
-        updateToggleAppearance(liveTranslatedMenuItem, title: "Live Translated Caption", checked: false)
+        let liveTranslatedTitle = L10n.string(
+            "menu.live_translated_caption",
+            fallback: "Live Translated Caption"
+        )
+        liveTranslatedMenuItem = NSMenuItem(title: liveTranslatedTitle, action: nil, keyEquivalent: "")
+        updateToggleAppearance(liveTranslatedMenuItem, title: liveTranslatedTitle, checked: false)
         liveTranslatedMenuItem.submenu = buildLiveTranslatedSubmenu()
         menu.addItem(liveTranslatedMenuItem)
 
         // ─────────────────────── Text Translation ───────────────────────
-        textTranslationMenuItem = NSMenuItem(title: "Text Translation", action: nil, keyEquivalent: "")
-        updateToggleAppearance(textTranslationMenuItem, title: "Text Translation", checked: AppConfig.shared.textTranslationEnabled)
+        let textTranslationTitle = L10n.string("menu.text_translation", fallback: "Text Translation")
+        textTranslationMenuItem = NSMenuItem(title: textTranslationTitle, action: nil, keyEquivalent: "")
+        updateToggleAppearance(textTranslationMenuItem, title: textTranslationTitle, checked: AppConfig.shared.textTranslationEnabled)
         textTranslationMenuItem.submenu = buildTextTranslationSubmenu()
         menu.addItem(textTranslationMenuItem)
 
         textPolishMenuItem = NSMenuItem(
-            title: "Text Polish (double-tap ⌥)",
+            title: L10n.string("menu.text_polish", fallback: "Text Polish (double-tap ⌥)"),
             action: #selector(toggleTextPolish),
             keyEquivalent: ""
         )
         textPolishMenuItem.target = self
         updateToggleAppearance(
             textPolishMenuItem,
-            title: "Text Polish (double-tap ⌥)",
+            title: L10n.string("menu.text_polish", fallback: "Text Polish (double-tap ⌥)"),
             checked: AppConfig.shared.textPolishEnabled
         )
         textPolishMenuItem.isEnabled = TextPolisher.isAvailableCached
         menu.addItem(textPolishMenuItem)
 
         let polishInstructionsItem = NSMenuItem(
-            title: "Edit Polish Instructions",
+            title: L10n.string(
+                "menu.edit_polish_instructions",
+                fallback: "Edit Polish Instructions"
+            ),
             action: #selector(editPolishInstructions),
             keyEquivalent: ""
         )
@@ -231,42 +267,71 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
 
         // ────────────────────── Dictation Settings ──────────────────────
-        let dictationSettingsItem = NSMenuItem(title: "Dictation Settings", action: nil, keyEquivalent: "")
+        let dictationSettingsItem = NSMenuItem(
+            title: L10n.string("menu.dictation_settings", fallback: "Dictation Settings"),
+            action: nil,
+            keyEquivalent: ""
+        )
         dictationSettingsItem.submenu = buildDictationSettingsSubmenu()
         menu.addItem(dictationSettingsItem)
 
         menu.addItem(.separator())
 
         // iOS Server toggle
-        iosServerMenuItem = NSMenuItem(title: "Start iOS Server", action: #selector(toggleIOSServer), keyEquivalent: "")
+        iosServerMenuItem = NSMenuItem(
+            title: L10n.string("menu.ios_server.start", fallback: "Start iOS Server"),
+            action: #selector(toggleIOSServer),
+            keyEquivalent: ""
+        )
         iosServerMenuItem.target = self
         menu.addItem(iosServerMenuItem)
 
         iosServerManager.onStatusChanged = { [weak self] running in
             DispatchQueue.main.async {
-                self?.iosServerMenuItem.title = running ? "Stop iOS Server (port 8000)" : "Start iOS Server"
+                self?.iosServerMenuItem.title = running
+                    ? L10n.string("menu.ios_server.stop", fallback: "Stop iOS Server (port 8000)")
+                    : L10n.string("menu.ios_server.start", fallback: "Start iOS Server")
                 self?.setIOSServerActive(running)
             }
         }
 
         // Unload / Reload model
-        unloadMenuItem = NSMenuItem(title: "Unload Speech-to-Text Model", action: #selector(unloadOrReloadModel), keyEquivalent: "")
+        let unloadTitle = L10n.string("menu.model.unload", fallback: "Unload Speech-to-Text Model")
+        unloadMenuItem = NSMenuItem(title: unloadTitle, action: #selector(unloadOrReloadModel), keyEquivalent: "")
         unloadMenuItem.target = self
         let unloadAttrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: NSColor.systemOrange
         ]
-        unloadMenuItem.attributedTitle = NSAttributedString(string: "Unload Speech-to-Text Model", attributes: unloadAttrs)
+        unloadMenuItem.attributedTitle = NSAttributedString(string: unloadTitle, attributes: unloadAttrs)
         menu.addItem(unloadMenuItem)
 
         menu.addItem(.separator())
 
+        // This preference applies on the next launch. Selection never
+        // restarts, quits, or interrupts active work.
+        let interfaceLanguageItem = NSMenuItem(
+            title: L10n.string("menu.interface_language", fallback: "Interface Language"),
+            action: nil,
+            keyEquivalent: ""
+        )
+        interfaceLanguageItem.submenu = buildInterfaceLanguageMenu()
+        menu.addItem(interfaceLanguageItem)
+
         // About
-        let aboutItem = NSMenuItem(title: "About HushType", action: #selector(aboutClicked), keyEquivalent: "")
+        let aboutItem = NSMenuItem(
+            title: L10n.string("menu.about", fallback: "About HushType"),
+            action: #selector(aboutClicked),
+            keyEquivalent: ""
+        )
         aboutItem.target = self
         menu.addItem(aboutItem)
 
         // Quit
-        let quitItem = NSMenuItem(title: "Quit HushType", action: #selector(quitClicked), keyEquivalent: "q")
+        let quitItem = NSMenuItem(
+            title: L10n.string("menu.quit", fallback: "Quit HushType"),
+            action: #selector(quitClicked),
+            keyEquivalent: "q"
+        )
         quitItem.target = self
         menu.addItem(quitItem)
 
@@ -274,6 +339,91 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     // MARK: - Submenu builders
+
+    private func buildInterfaceLanguageMenu() -> NSMenu {
+        interfaceLanguageMenu.removeAllItems()
+
+        let choices: [(InterfaceLanguage, String, String)] = [
+            (.system, "menu.interface_language.follow_system", "Follow System"),
+            (.english, "menu.interface_language.english", "English"),
+            (.traditionalChineseTaiwan, "menu.interface_language.traditional_chinese_taiwan", "繁體中文（台灣）"),
+        ]
+        for (language, key, fallback) in choices {
+            let item = NSMenuItem(
+                title: L10n.string(key, fallback: fallback),
+                action: #selector(interfaceLanguageSelected(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = language.rawValue
+            item.onStateImage = Self.greenCheckImage
+            interfaceLanguageItems[language] = item
+            interfaceLanguageMenu.addItem(item)
+        }
+
+        interfaceLanguageMenu.addItem(.separator())
+        appliedNextLaunchItem = NSMenuItem(
+            title: L10n.string(
+                "menu.interface_language.applied_next_launch",
+                fallback: "Applied Next Launch"
+            ),
+            action: nil,
+            keyEquivalent: ""
+        )
+        appliedNextLaunchItem.isEnabled = false
+        appliedNextLaunchItem.setAccessibilityLabel(
+            L10n.string(
+                "menu.interface_language.applied_next_launch.accessibility",
+                fallback: "Language applies the next time you open HushType"
+            )
+        )
+        interfaceLanguageMenu.addItem(appliedNextLaunchItem)
+        updateInterfaceLanguageMenu()
+        return interfaceLanguageMenu
+    }
+
+    private func updateInterfaceLanguageMenu() {
+        let persisted = AppConfig.shared.interfaceLanguage
+        for (language, item) in interfaceLanguageItems {
+            item.state = language == persisted ? .on : .off
+        }
+        appliedNextLaunchItem?.isHidden = !Self.shouldShowAppliedNextLaunch(
+            persisted: persisted,
+            launch: launchInterfaceLanguage
+        )
+    }
+
+    static func shouldShowAppliedNextLaunch(
+        persisted: InterfaceLanguage,
+        launch: InterfaceLanguage
+    ) -> Bool {
+        persisted != launch
+    }
+
+    @objc private func interfaceLanguageSelected(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let selected = InterfaceLanguage(rawValue: rawValue),
+              selected != AppConfig.shared.interfaceLanguage else {
+            return
+        }
+
+        AppConfig.shared.interfaceLanguage = selected
+        updateInterfaceLanguageMenu()
+        Self.makeLanguageSavedAlert().runModal()
+    }
+
+    static func makeLanguageSavedAlert() -> NSAlert {
+        let alert = NSAlert()
+        alert.messageText = L10n.string("alert.language_saved.title", fallback: "Language Saved")
+        alert.informativeText = L10n.string(
+            "alert.language_saved.message",
+            fallback: "It will be used the next time you open HushType. Finish any active work before quitting."
+        )
+        alert.alertStyle = .informational
+        alert.icon = NSImage(named: "AppIcon") ?? NSApp.applicationIconImage
+        alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
+        return alert
+    }
 
     /// Small grey 10pt style shared by subtitle/secondary rows.
     private var subtitleAttributes: [NSAttributedString.Key: Any] {
@@ -292,14 +442,24 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     private func buildLiveCaptionSubmenu() -> NSMenu {
-        let sub = NSMenu(title: "Live Caption")
-        addSubtitle("Local transcription — free, on-device", to: sub)
+        let sub = NSMenu(title: L10n.string("menu.live_caption", fallback: "Live Caption"))
+        addSubtitle(L10n.string(
+            "menu.live_caption.subtitle",
+            fallback: "Local transcription — free, on-device"
+        ), to: sub)
+        let startTitle = L10n.string("menu.caption.start_last_source", fallback: "Start with Last Source")
+        let microphoneTitle = L10n.string("menu.caption.from_microphone", fallback: "From Microphone")
+        let systemTitle = L10n.string("menu.caption.from_system_audio", fallback: "From System Audio…")
+        let changeSourceTitle = L10n.string(
+            "menu.caption.change_system_audio_source",
+            fallback: "Change System Audio Source…"
+        )
 
         // Replaces the old clickable header: toggles the local product with
         // the user's last-used source (mirrors the Right ⌘ + / hotkey).
         // Title flips to "Stop Live Caption" in setLiveCaptionState.
         liveCaptionStartStopItem = NSMenuItem(
-            title: "Start with Last Source",
+            title: startTitle,
             action: #selector(liveCaptionHeaderClicked),
             keyEquivalent: ""
         )
@@ -309,31 +469,31 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         sub.addItem(.separator())
 
         liveCaptionMicItem = NSMenuItem(
-            title: "From Microphone",
+            title: microphoneTitle,
             action: #selector(liveCaptionFromMicClicked),
             keyEquivalent: ""
         )
         liveCaptionMicItem.target = self
-        updateRadioAppearance(liveCaptionMicItem, title: "From Microphone", selected: false)
+        updateRadioAppearance(liveCaptionMicItem, title: microphoneTitle, selected: false)
         sub.addItem(liveCaptionMicItem)
 
         liveCaptionSystemItem = NSMenuItem(
-            title: "From System Audio…",
+            title: systemTitle,
             action: #selector(liveCaptionFromSystemClicked),
             keyEquivalent: ""
         )
         liveCaptionSystemItem.target = self
-        updateRadioAppearance(liveCaptionSystemItem, title: "From System Audio…", selected: false)
+        updateRadioAppearance(liveCaptionSystemItem, title: systemTitle, selected: false)
         sub.addItem(liveCaptionSystemItem)
 
         liveCaptionChangeSourceItem = NSMenuItem(
-            title: "Change System Audio Source…",
+            title: changeSourceTitle,
             action: #selector(liveCaptionChangeSourceClicked),
             keyEquivalent: ""
         )
         liveCaptionChangeSourceItem.target = self
         liveCaptionChangeSourceItem.attributedTitle = NSAttributedString(
-            string: "Change System Audio Source…",
+            string: changeSourceTitle,
             attributes: subtitleAttributes
         )
         sub.addItem(liveCaptionChangeSourceItem)
@@ -343,13 +503,19 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         // Shared tuning file — applies to BOTH caption products, lives here
         // because the local product is the primary one.
         let tuningItem = NSMenuItem(
-            title: "Edit Live Caption Settings",
+            title: L10n.string(
+                "menu.live_caption.edit_settings",
+                fallback: "Edit Live Caption Settings"
+            ),
             action: #selector(editLiveCaptionSettings),
             keyEquivalent: ""
         )
         tuningItem.target = self
         tuningItem.attributedTitle = NSAttributedString(
-            string: "Edit Live Caption Settings",
+            string: L10n.string(
+                "menu.live_caption.edit_settings",
+                fallback: "Edit Live Caption Settings"
+            ),
             attributes: subtitleAttributes
         )
         sub.addItem(tuningItem)
@@ -358,11 +524,24 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     private func buildLiveTranslatedSubmenu() -> NSMenu {
-        let sub = NSMenu(title: "Live Translated Caption")
-        addSubtitle("Real-time foreign-language → text via OpenAI · $", to: sub)
+        let sub = NSMenu(title: L10n.string(
+            "menu.live_translated_caption",
+            fallback: "Live Translated Caption"
+        ))
+        addSubtitle(L10n.string(
+            "menu.live_translated_caption.subtitle",
+            fallback: "Real-time foreign-language → text via OpenAI · $"
+        ), to: sub)
+        let startTitle = L10n.string("menu.caption.start_last_source", fallback: "Start with Last Source")
+        let microphoneTitle = L10n.string("menu.caption.from_microphone", fallback: "From Microphone")
+        let systemTitle = L10n.string("menu.caption.from_system_audio", fallback: "From System Audio…")
+        let changeSourceTitle = L10n.string(
+            "menu.caption.change_system_audio_source",
+            fallback: "Change System Audio Source…"
+        )
 
         liveTranslatedStartStopItem = NSMenuItem(
-            title: "Start with Last Source",
+            title: startTitle,
             action: #selector(liveTranslatedHeaderClicked),
             keyEquivalent: ""
         )
@@ -372,31 +551,31 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         sub.addItem(.separator())
 
         liveTranslatedMicItem = NSMenuItem(
-            title: "From Microphone",
+            title: microphoneTitle,
             action: #selector(liveTranslatedFromMicClicked),
             keyEquivalent: ""
         )
         liveTranslatedMicItem.target = self
-        updateRadioAppearance(liveTranslatedMicItem, title: "From Microphone", selected: false)
+        updateRadioAppearance(liveTranslatedMicItem, title: microphoneTitle, selected: false)
         sub.addItem(liveTranslatedMicItem)
 
         liveTranslatedSystemItem = NSMenuItem(
-            title: "From System Audio…",
+            title: systemTitle,
             action: #selector(liveTranslatedFromSystemClicked),
             keyEquivalent: ""
         )
         liveTranslatedSystemItem.target = self
-        updateRadioAppearance(liveTranslatedSystemItem, title: "From System Audio…", selected: false)
+        updateRadioAppearance(liveTranslatedSystemItem, title: systemTitle, selected: false)
         sub.addItem(liveTranslatedSystemItem)
 
         liveTranslatedChangeSourceItem = NSMenuItem(
-            title: "Change System Audio Source…",
+            title: changeSourceTitle,
             action: #selector(liveTranslatedChangeSourceClicked),
             keyEquivalent: ""
         )
         liveTranslatedChangeSourceItem.target = self
         liveTranslatedChangeSourceItem.attributedTitle = NSAttributedString(
-            string: "Change System Audio Source…",
+            string: changeSourceTitle,
             attributes: subtitleAttributes
         )
         sub.addItem(liveTranslatedChangeSourceItem)
@@ -406,13 +585,19 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         // Translated Caption Settings — cloud-only options: target language,
         // source-line toggle, cost guardrails, OpenAI key file.
         let translatedSettingsItem = NSMenuItem(
-            title: "Translated Caption Settings…",
+            title: L10n.string(
+                "menu.live_translated_caption.settings",
+                fallback: "Translated Caption Settings…"
+            ),
             action: #selector(openLiveCaptionEngineSettings),
             keyEquivalent: ""
         )
         translatedSettingsItem.target = self
         translatedSettingsItem.attributedTitle = NSAttributedString(
-            string: "Translated Caption Settings…",
+            string: L10n.string(
+                "menu.live_translated_caption.settings",
+                fallback: "Translated Caption Settings…"
+            ),
             attributes: subtitleAttributes
         )
         sub.addItem(translatedSettingsItem)
@@ -421,30 +606,41 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     private func buildTextTranslationSubmenu() -> NSMenu {
-        let sub = NSMenu(title: "Text Translation")
-        addSubtitle("via Apple Translation Framework", to: sub)
+        let sub = NSMenu(title: L10n.string("menu.text_translation", fallback: "Text Translation"))
+        addSubtitle(L10n.string(
+            "menu.text_translation.subtitle",
+            fallback: "via Apple Translation Framework"
+        ), to: sub)
 
         textTranslationEnableItem = NSMenuItem(
-            title: "Enable Text Translation",
+            title: L10n.string(
+                "menu.text_translation.enable",
+                fallback: "Enable Text Translation"
+            ),
             action: #selector(toggleTextTranslation),
             keyEquivalent: ""
         )
         textTranslationEnableItem.target = self
-        updateToggleAppearance(textTranslationEnableItem, title: "Enable Text Translation", checked: AppConfig.shared.textTranslationEnabled)
+        updateToggleAppearance(
+            textTranslationEnableItem,
+            title: L10n.string("menu.text_translation.enable", fallback: "Enable Text Translation"),
+            checked: AppConfig.shared.textTranslationEnabled
+        )
         sub.addItem(textTranslationEnableItem)
 
         // Translate-to submenu
-        translateToItem = NSMenuItem(title: "Translate to", action: nil, keyEquivalent: "")
-        let translateToMenu = NSMenu(title: "Translate to")
+        let translateToTitle = L10n.string("menu.translate_to", fallback: "Translate to")
+        translateToItem = NSMenuItem(title: translateToTitle, action: nil, keyEquivalent: "")
+        let translateToMenu = NSMenu(title: translateToTitle)
         let translateTargets: [(title: String, value: String?)] = [
-            ("Auto", nil),
-            ("English", "en"),
+            (L10n.string("menu.choice.auto", fallback: "Auto"), nil),
+            (L10n.string("picker.autonym.en", fallback: "English"), "en"),
             ("繁體中文", "zh-Hant-TW"),
-            ("日本語", "ja"),
-            ("한국어", "ko"),
-            ("Français", "fr"),
-            ("Deutsch", "de"),
-            ("Español", "es"),
+            (L10n.string("picker.autonym.ja", fallback: "日本語"), "ja"),
+            (L10n.string("picker.autonym.ko", fallback: "한국어"), "ko"),
+            (L10n.string("picker.autonym.fr", fallback: "Français"), "fr"),
+            (L10n.string("picker.autonym.de", fallback: "Deutsch"), "de"),
+            (L10n.string("picker.autonym.es", fallback: "Español"), "es"),
         ]
         for (title, value) in translateTargets {
             let item = NSMenuItem(title: title, action: #selector(translateTargetSelected(_:)), keyEquivalent: "")
@@ -464,7 +660,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             .foregroundColor: NSColor.tertiaryLabelColor
         ]
         translationHintItem.attributedTitle = NSAttributedString(
-            string: "Tap Right ⌥ to translate selection",
+            string: L10n.string(
+                "menu.translation_hint",
+                fallback: "Tap Right ⌥ to translate selection"
+            ),
             attributes: hintAttrs
         )
         sub.addItem(translationHintItem)
@@ -476,14 +675,18 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     private func buildDictationSettingsSubmenu() -> NSMenu {
-        let sub = NSMenu(title: "Dictation Settings")
+        let sub = NSMenu(title: L10n.string("menu.dictation_settings", fallback: "Dictation Settings"))
 
-        let engineItem = NSMenuItem(title: "Dictation Engine", action: nil, keyEquivalent: "")
+        let engineItem = NSMenuItem(
+            title: L10n.string("menu.dictation_engine", fallback: "Dictation Engine"),
+            action: nil,
+            keyEquivalent: ""
+        )
         engineItem.submenu = dictationEngineMenu
         let engines: [(String, AppConfig.DictationEngine)] = [
-            ("Local (Qwen3-ASR)", .local),
-            ("OpenAI Cloud", .openai),
-            ("Gemini Cloud", .gemini),
+            (L10n.string("menu.engine.local_qwen", fallback: "Local (Qwen3-ASR)"), .local),
+            (L10n.string("menu.engine.openai_cloud", fallback: "OpenAI Cloud"), .openai),
+            (L10n.string("menu.engine.gemini_cloud", fallback: "Gemini Cloud"), .gemini),
         ]
         for (title, engine) in engines {
             let item = NSMenuItem(
@@ -498,7 +701,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
         dictationEngineMenu.addItem(.separator())
         let settingsItem = NSMenuItem(
-            title: "Engine Settings…",
+            title: L10n.string("menu.engine_settings", fallback: "Engine Settings…"),
             action: #selector(openDictationEngineSettings),
             keyEquivalent: ""
         )
@@ -510,14 +713,18 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         sub.addItem(.separator())
 
         // Language submenu
-        let languageItem = NSMenuItem(title: "Speech-to-Text Language", action: nil, keyEquivalent: "")
+        let languageItem = NSMenuItem(
+            title: L10n.string("menu.speech_to_text_language", fallback: "Speech-to-Text Language"),
+            action: nil,
+            keyEquivalent: ""
+        )
         languageItem.submenu = languageMenu
 
         let languages: [(title: String, value: String?)] = [
-            ("Auto", nil),
-            ("English", "english"),
-            ("中文", "chinese"),
-            ("日本語", "japanese"),
+            (L10n.string("menu.choice.auto", fallback: "Auto"), nil),
+            (L10n.string("picker.autonym.en", fallback: "English"), "english"),
+            (L10n.string("picker.autonym.zh", fallback: "中文"), "chinese"),
+            (L10n.string("picker.autonym.ja", fallback: "日本語"), "japanese"),
         ]
 
         for (title, value) in languages {
@@ -535,23 +742,34 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         // Number Conversion toggle (deterministic ITN)
         numberConversionMenuItem = NSMenuItem(
-            title: "Number Conversion",
+            title: L10n.string("menu.number_conversion", fallback: "Number Conversion"),
             action: #selector(toggleNumberConversion),
             keyEquivalent: ""
         )
         numberConversionMenuItem.target = self
-        updateToggleAppearance(numberConversionMenuItem, title: "Number Conversion", checked: AppConfig.shared.numberConversionEnabled)
+        updateToggleAppearance(
+            numberConversionMenuItem,
+            title: L10n.string("menu.number_conversion", fallback: "Number Conversion"),
+            checked: AppConfig.shared.numberConversionEnabled
+        )
         sub.addItem(numberConversionMenuItem)
-        addSubtitle("    Chinese numerals \u{2192} Arabic digits", to: sub)
+        addSubtitle("    " + L10n.string(
+            "menu.number_conversion.subtitle",
+            fallback: "Chinese numerals → Arabic digits"
+        ), to: sub)
 
         // Punctuation Cleanup mode (Chinese only; soft/hard/off radio)
-        let punctuationItem = NSMenuItem(title: "Punctuation Cleanup", action: nil, keyEquivalent: "")
+        let punctuationItem = NSMenuItem(
+            title: L10n.string("menu.punctuation_cleanup", fallback: "Punctuation Cleanup"),
+            action: nil,
+            keyEquivalent: ""
+        )
         punctuationItem.submenu = punctuationMenu
 
         let punctModes: [(title: String, value: String)] = [
-            ("Soft \u{2014} trim inline commas", "soft"),
-            ("Hard \u{2014} trim all marks", "hard"),
-            ("Off \u{2014} keep model output", "off"),
+            (L10n.string("menu.punctuation.soft", fallback: "Soft — trim inline commas"), "soft"),
+            (L10n.string("menu.punctuation.hard", fallback: "Hard — trim all marks"), "hard"),
+            (L10n.string("menu.punctuation.off", fallback: "Off — keep model output"), "off"),
         ]
         for (title, value) in punctModes {
             let item = NSMenuItem(title: title, action: #selector(punctuationModeSelected(_:)), keyEquivalent: "")
@@ -562,23 +780,30 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
         updatePunctuationCheckmarks()
         sub.addItem(punctuationItem)
-        addSubtitle("    Trim Chinese over-punctuation", to: sub)
+        addSubtitle("    " + L10n.string(
+            "menu.punctuation.subtitle",
+            fallback: "Trim Chinese over-punctuation"
+        ), to: sub)
 
         // Floating overlay toggle
         floatingOverlayMenuItem = NSMenuItem(
-            title: "Show Floating Indicator",
+            title: L10n.string("menu.floating_indicator", fallback: "Show Floating Indicator"),
             action: #selector(toggleFloatingOverlay),
             keyEquivalent: ""
         )
         floatingOverlayMenuItem.target = self
-        updateToggleAppearance(floatingOverlayMenuItem, title: "Show Floating Indicator", checked: AppConfig.shared.floatingOverlayEnabled)
+        updateToggleAppearance(
+            floatingOverlayMenuItem,
+            title: L10n.string("menu.floating_indicator", fallback: "Show Floating Indicator"),
+            checked: AppConfig.shared.floatingOverlayEnabled
+        )
         sub.addItem(floatingOverlayMenuItem)
 
         sub.addItem(.separator())
 
         // Edit Customized Dictionary
         dictionaryMenuItem = NSMenuItem(
-            title: "Edit Customized Dictionary",
+            title: L10n.string("menu.edit_dictionary", fallback: "Edit Customized Dictionary"),
             action: #selector(editDictionary),
             keyEquivalent: ""
         )
@@ -651,8 +876,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         // Mutex: can't start iOS server while live caption is active.
         if liveCaptionActive {
             showMutexAlert(
-                title: "Stop Live Caption first",
-                message: "Live Caption is running. Stop it before starting the iOS Server — they share GPU memory."
+                title: L10n.string(
+                    "alert.caption_conflict.stop_live_caption.title",
+                    fallback: "Stop Live Caption first"
+                ),
+                message: L10n.string(
+                    "alert.caption_conflict.stop_live_caption.message",
+                    fallback: "Live Caption is running. Stop it before starting the iOS Server — they share GPU memory."
+                )
             )
             return
         }
@@ -670,8 +901,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
         if iosServerActive {
             showMutexAlert(
-                title: "Stop iOS Server first",
-                message: "The iOS Server is running. Stop it before starting Live Caption — they share GPU memory."
+                title: L10n.string(
+                    "alert.caption_conflict.stop_ios_server.title",
+                    fallback: "Stop iOS Server first"
+                ),
+                message: L10n.string(
+                    "alert.caption_conflict.stop_ios_server.local_message",
+                    fallback: "The iOS Server is running. Stop it before starting Live Caption — they share GPU memory."
+                )
             )
             return
         }
@@ -689,8 +926,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
         if iosServerActive {
             showMutexAlert(
-                title: "Stop iOS Server first",
-                message: "The iOS Server is running. Stop it before starting Live Caption — they share GPU memory."
+                title: L10n.string("alert.caption_conflict.stop_ios_server.title", fallback: "Stop iOS Server first"),
+                message: L10n.string("alert.caption_conflict.stop_ios_server.local_message", fallback: "The iOS Server is running. Stop it before starting Live Caption — they share GPU memory.")
             )
             return
         }
@@ -704,8 +941,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
         if iosServerActive {
             showMutexAlert(
-                title: "Stop iOS Server first",
-                message: "The iOS Server is running. Stop it before starting Live Caption — they share GPU memory."
+                title: L10n.string("alert.caption_conflict.stop_ios_server.title", fallback: "Stop iOS Server first"),
+                message: L10n.string("alert.caption_conflict.stop_ios_server.local_message", fallback: "The iOS Server is running. Stop it before starting Live Caption — they share GPU memory.")
             )
             return
         }
@@ -723,8 +960,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
         if iosServerActive {
             showMutexAlert(
-                title: "Stop iOS Server first",
-                message: "The iOS Server is running. Stop it before starting Live Translated Caption — they share GPU memory."
+                title: L10n.string("alert.caption_conflict.stop_ios_server.title", fallback: "Stop iOS Server first"),
+                message: L10n.string("alert.caption_conflict.stop_ios_server.translated_message", fallback: "The iOS Server is running. Stop it before starting Live Translated Caption — they share GPU memory.")
             )
             return
         }
@@ -738,8 +975,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
         if iosServerActive {
             showMutexAlert(
-                title: "Stop iOS Server first",
-                message: "The iOS Server is running. Stop it before starting Live Translated Caption — they share GPU memory."
+                title: L10n.string("alert.caption_conflict.stop_ios_server.title", fallback: "Stop iOS Server first"),
+                message: L10n.string("alert.caption_conflict.stop_ios_server.translated_message", fallback: "The iOS Server is running. Stop it before starting Live Translated Caption — they share GPU memory.")
             )
             return
         }
@@ -758,8 +995,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
         if iosServerActive {
             showMutexAlert(
-                title: "Stop iOS Server first",
-                message: "The iOS Server is running. Stop it before starting Live Caption — they share GPU memory."
+                title: L10n.string("alert.caption_conflict.stop_ios_server.title", fallback: "Stop iOS Server first"),
+                message: L10n.string("alert.caption_conflict.stop_ios_server.local_message", fallback: "The iOS Server is running. Stop it before starting Live Caption — they share GPU memory.")
             )
             return
         }
@@ -773,8 +1010,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
         if iosServerActive {
             showMutexAlert(
-                title: "Stop iOS Server first",
-                message: "The iOS Server is running. Stop it before starting Live Translated Caption — they share GPU memory."
+                title: L10n.string("alert.caption_conflict.stop_ios_server.title", fallback: "Stop iOS Server first"),
+                message: L10n.string("alert.caption_conflict.stop_ios_server.translated_message", fallback: "The iOS Server is running. Stop it before starting Live Translated Caption — they share GPU memory.")
             )
             return
         }
@@ -799,16 +1036,28 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let translatedActive = (mode == .translated)
 
         if let parent = liveCaptionMenuItem {
-            updateToggleAppearance(parent, title: "Live Caption", checked: localActive)
+            updateToggleAppearance(
+                parent,
+                title: L10n.string("menu.live_caption", fallback: "Live Caption"),
+                checked: localActive
+            )
         }
         if let parent = liveTranslatedMenuItem {
-            updateToggleAppearance(parent, title: "Live Translated Caption", checked: translatedActive)
+            updateToggleAppearance(
+                parent,
+                title: L10n.string("menu.live_translated_caption", fallback: "Live Translated Caption"),
+                checked: translatedActive
+            )
         }
         if let item = liveCaptionStartStopItem {
-            item.title = localActive ? "Stop Live Caption" : "Start with Last Source"
+            item.title = localActive
+                ? L10n.string("menu.live_caption.stop", fallback: "Stop Live Caption")
+                : L10n.string("menu.caption.start_last_source", fallback: "Start with Last Source")
         }
         if let item = liveTranslatedStartStopItem {
-            item.title = translatedActive ? "Stop Live Translated Caption" : "Start with Last Source"
+            item.title = translatedActive
+                ? L10n.string("menu.live_translated_caption.stop", fallback: "Stop Live Translated Caption")
+                : L10n.string("menu.caption.start_last_source", fallback: "Start with Last Source")
         }
 
         let sourceIsMic: Bool
@@ -824,16 +1073,16 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let translatedSystemSelected = translatedActive && sourceIsSystem
 
         if let item = liveCaptionMicItem {
-            updateRadioAppearance(item, title: "From Microphone", selected: localMicSelected)
+            updateRadioAppearance(item, title: L10n.string("menu.caption.from_microphone", fallback: "From Microphone"), selected: localMicSelected)
         }
         if let item = liveCaptionSystemItem {
-            updateRadioAppearance(item, title: "From System Audio…", selected: localSystemSelected)
+            updateRadioAppearance(item, title: L10n.string("menu.caption.from_system_audio", fallback: "From System Audio…"), selected: localSystemSelected)
         }
         if let item = liveTranslatedMicItem {
-            updateRadioAppearance(item, title: "From Microphone", selected: translatedMicSelected)
+            updateRadioAppearance(item, title: L10n.string("menu.caption.from_microphone", fallback: "From Microphone"), selected: translatedMicSelected)
         }
         if let item = liveTranslatedSystemItem {
-            updateRadioAppearance(item, title: "From System Audio…", selected: translatedSystemSelected)
+            updateRadioAppearance(item, title: L10n.string("menu.caption.from_system_audio", fallback: "From System Audio…"), selected: translatedSystemSelected)
         }
     }
 
@@ -868,8 +1117,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let url = LiveCaptionTuning.fileURL
         guard FileManager.default.fileExists(atPath: url.path) else {
             showAlert(
-                title: "Could not open Live Caption settings",
-                message: "Failed to create the settings file at:\n\(url.path)"
+                title: L10n.string("alert.file_create.live_caption.title", fallback: "Could not open Live Caption settings"),
+                message: L10n.format(
+                    "alert.file_create.live_caption.message",
+                    "Failed to create the settings file at:\n%1$@",
+                    arguments: [url.path]
+                )
             )
             return
         }
@@ -882,7 +1135,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         alert.messageText = title
         alert.informativeText = message
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
         alert.runModal()
     }
 
@@ -891,7 +1144,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func toggleFloatingOverlay() {
         let newValue = !AppConfig.shared.floatingOverlayEnabled
         AppConfig.shared.floatingOverlayEnabled = newValue
-        updateToggleAppearance(floatingOverlayMenuItem, title: "Show Floating Indicator", checked: newValue)
+        updateToggleAppearance(
+            floatingOverlayMenuItem,
+            title: L10n.string("menu.floating_indicator", fallback: "Show Floating Indicator"),
+            checked: newValue
+        )
     }
 
     // MARK: - Number Conversion
@@ -899,7 +1156,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func toggleNumberConversion() {
         let newValue = !AppConfig.shared.numberConversionEnabled
         AppConfig.shared.numberConversionEnabled = newValue
-        updateToggleAppearance(numberConversionMenuItem, title: "Number Conversion", checked: newValue)
+        updateToggleAppearance(
+            numberConversionMenuItem,
+            title: L10n.string("menu.number_conversion", fallback: "Number Conversion"),
+            checked: newValue
+        )
     }
 
     // MARK: - Punctuation Cleanup
@@ -927,7 +1188,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             AppConfig.shared.textPolishEnabled = false
             updateToggleAppearance(
                 textPolishMenuItem,
-                title: "Text Polish (double-tap ⌥)",
+                title: L10n.string("menu.text_polish", fallback: "Text Polish (double-tap ⌥)"),
                 checked: false
             )
             if #available(macOS 26.0, *) {
@@ -938,7 +1199,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         textPolishMenuItem.isEnabled = false
         let originalTitle = textPolishMenuItem.title
-        textPolishMenuItem.title = "Text Polish (validating…)"
+        textPolishMenuItem.title = L10n.string(
+            "menu.text_polish.validating",
+            fallback: "Text Polish (validating…)"
+        )
 
         Task { @MainActor in
             let result = await TextPolisher.validate()
@@ -949,7 +1213,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 AppConfig.shared.textPolishEnabled = true
                 self.updateToggleAppearance(
                     self.textPolishMenuItem,
-                    title: "Text Polish (double-tap ⌥)",
+                    title: L10n.string("menu.text_polish", fallback: "Text Polish (double-tap ⌥)"),
                     checked: true
                 )
                 self.textPolishMenuItem.isEnabled = true
@@ -959,8 +1223,15 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             case .unavailable(let reason):
                 self.textPolishMenuItem.isEnabled = false
                 self.showAlert(
-                    title: "Text Polish unavailable",
-                    message: "Text Polish requires macOS 26 + Apple Intelligence.\n\n\(reason)"
+                    title: L10n.string(
+                        "alert.text_polish.unavailable.title",
+                        fallback: "Text Polish unavailable"
+                    ),
+                    message: L10n.format(
+                        "alert.text_polish.unavailable.message",
+                        "Text Polish requires macOS 26 + Apple Intelligence.\n\n%1$@",
+                        arguments: [reason]
+                    )
                 )
             }
         }
@@ -970,7 +1241,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         textPolishMenuItem.isEnabled = available
         updateToggleAppearance(
             textPolishMenuItem,
-            title: "Text Polish (double-tap ⌥)",
+            title: L10n.string("menu.text_polish", fallback: "Text Polish (double-tap ⌥)"),
             checked: AppConfig.shared.textPolishEnabled
         )
     }
@@ -980,8 +1251,16 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         AppConfig.shared.textTranslationEnabled = newValue
         // ✓ on both the submenu parent (visible at top level) and the
         // Enable item inside the submenu.
-        updateToggleAppearance(textTranslationMenuItem, title: "Text Translation", checked: newValue)
-        updateToggleAppearance(textTranslationEnableItem, title: "Enable Text Translation", checked: newValue)
+        updateToggleAppearance(
+            textTranslationMenuItem,
+            title: L10n.string("menu.text_translation", fallback: "Text Translation"),
+            checked: newValue
+        )
+        updateToggleAppearance(
+            textTranslationEnableItem,
+            title: L10n.string("menu.text_translation.enable", fallback: "Enable Text Translation"),
+            checked: newValue
+        )
         updateTranslationSubItems()
     }
 
@@ -1013,10 +1292,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     /// state — including external edits between menu opens.
     private func dictionarySubtitleText() -> String {
         if !DictionaryReplacer.fileExists {
-            return "No dictionary file"
+            return L10n.string("menu.dictionary.no_file", fallback: "No dictionary file")
         }
         let count = DictionaryReplacer.entryCount
-        return count == 1 ? "1 entry loaded" : "\(count) entries loaded"
+        return L10n.plural(
+            "menu.dictionary.entries_loaded",
+            count,
+            fallback: count == 1 ? "%1$ld entry loaded" : "%1$ld entries loaded"
+        )
     }
 
     @objc private func editDictionary() {
@@ -1028,8 +1311,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         guard FileManager.default.fileExists(atPath: url.path) else {
             // Template creation failed — show error
             showAlert(
-                title: "Could not open dictionary",
-                message: "Failed to create the dictionary file at:\n\(url.path)"
+                title: L10n.string("alert.file_create.dictionary.title", fallback: "Could not open dictionary"),
+                message: L10n.format(
+                    "alert.file_create.dictionary.message",
+                    "Failed to create the dictionary file at:\n%1$@",
+                    arguments: [url.path]
+                )
             )
             return
         }
@@ -1049,8 +1336,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let url = PolishPrompt.rulesFileURL
         guard FileManager.default.fileExists(atPath: url.path) else {
             showAlert(
-                title: "Could not open Polish instructions",
-                message: "Failed to create the instructions file at:\n\(url.path)"
+                title: L10n.string("alert.file_create.polish.title", fallback: "Could not open Polish instructions"),
+                message: L10n.format(
+                    "alert.file_create.polish.message",
+                    "Failed to create the instructions file at:\n%1$@",
+                    arguments: [url.path]
+                )
             )
             return
         }
@@ -1062,30 +1353,34 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     // MARK: - Unload / Reload Model
 
     @objc private func unloadOrReloadModel() {
-        // Check current title to decide action
-        if unloadMenuItem.title.contains("Unload") || (unloadMenuItem.attributedTitle?.string.contains("Unload") ?? false) {
+        switch modelMenuAction {
+        case .unload:
             onUnloadModel?()
-        } else {
+        case .reload:
             onReloadModel?()
         }
     }
 
     /// Called by AppDelegate after successful unload to update menu state.
     func setModelUnloaded() {
+        modelMenuAction = .reload
         let reloadAttrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: NSColor.systemGreen
         ]
-        unloadMenuItem.title = "Reload Speech-to-Text Model"
-        unloadMenuItem.attributedTitle = NSAttributedString(string: "Reload Speech-to-Text Model", attributes: reloadAttrs)
+        let title = L10n.string("menu.model.reload", fallback: "Reload Speech-to-Text Model")
+        unloadMenuItem.title = title
+        unloadMenuItem.attributedTitle = NSAttributedString(string: title, attributes: reloadAttrs)
     }
 
     /// Called by AppDelegate after successful reload to restore menu state.
     func setModelLoaded() {
+        modelMenuAction = .unload
         let unloadAttrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: NSColor.systemOrange
         ]
-        unloadMenuItem.title = "Unload Speech-to-Text Model"
-        unloadMenuItem.attributedTitle = NSAttributedString(string: "Unload Speech-to-Text Model", attributes: unloadAttrs)
+        let title = L10n.string("menu.model.unload", fallback: "Unload Speech-to-Text Model")
+        unloadMenuItem.title = title
+        unloadMenuItem.attributedTitle = NSAttributedString(string: title, attributes: unloadAttrs)
     }
 
     // MARK: - Helpers
@@ -1093,7 +1388,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     /// Green checkmark for the menu's leading state column. Rendered from the
     /// SF Symbol as a non-template image so the menu doesn't recolor it.
     private static let greenCheckImage: NSImage = {
-        let symbol = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "enabled")!
+        let symbol = NSImage(
+            systemSymbolName: "checkmark",
+            accessibilityDescription: L10n.string(
+                "accessibility.checkmark.enabled",
+                fallback: "enabled"
+            )
+        )!
             .withSymbolConfiguration(.init(pointSize: 12, weight: .semibold))!
         let tinted = NSImage(size: symbol.size, flipped: false) { rect in
             symbol.draw(in: rect)
@@ -1138,28 +1439,29 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         alert.alertStyle = .warning
         alert.icon = NSImage(named: "AppIcon")
             ?? NSImage(systemSymbolName: "sparkles", accessibilityDescription: nil)
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
         alert.runModal()
     }
 
     @objc private func aboutClicked() {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
         let alert = NSAlert()
-        alert.messageText = "HushType v\(version)"
-        alert.informativeText = """
-            Local voice-to-text for macOS and iOS.
-            Multilingual (EN/ZH/JP) with Traditional Chinese output.
-
-            Author: Felix Fu
-            Co-authored with: Claude (Anthropic)
-            License: MIT
-
-            github.com/felixfu824/HushType
-            """
+        alert.messageText = L10n.format(
+            "about.title",
+            "HushType v%1$@",
+            arguments: [version]
+        )
+        alert.informativeText = L10n.string(
+            "about.body",
+            fallback: "Local voice-to-text for macOS and iOS.\nMultilingual (EN/ZH/JP) with Traditional Chinese output.\n\nAuthor: Felix Fu\nCo-authored with: Claude (Anthropic)\nLicense: MIT\n\ngithub.com/felixfu824/HushType"
+        )
         alert.icon = NSImage(named: "AppIcon") ?? NSImage(systemSymbolName: "mic.fill", accessibilityDescription: nil)
         // First button is the default (Return key). Order matters for keyboard handling.
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "Check for Updates")
+        alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
+        alert.addButton(withTitle: L10n.string(
+            "about.check_updates",
+            fallback: "Check for Updates"
+        ))
 
         let response = alert.runModal()
         if response == .alertSecondButtonReturn {
@@ -1175,18 +1477,23 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     /// SPEC_version-check.md for rationale.
     private func checkForUpdates() {
         let consent = NSAlert()
-        consent.messageText = "Connect to GitHub?"
-        consent.informativeText = """
-            HushType will connect to GitHub to check for new releases.
-
-            No personal data is sent — only a public API call to compare version numbers.
-            """
+        consent.messageText = L10n.string(
+            "alert.update_consent.title",
+            fallback: "Connect to GitHub?"
+        )
+        consent.informativeText = L10n.string(
+            "alert.update_consent.message",
+            fallback: "HushType will connect to GitHub to check for new releases.\n\nNo personal data is sent — only a public API call to compare version numbers."
+        )
         consent.alertStyle = .informational
         consent.icon = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
         // Cancel is the FIRST button so it becomes the default button (Return key).
         // This is the privacy-conservative default — user must explicitly choose to connect.
-        consent.addButton(withTitle: "Cancel")
-        consent.addButton(withTitle: "Check Now")
+        consent.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
+        consent.addButton(withTitle: L10n.string(
+            "alert.update_consent.check_now",
+            fallback: "Check Now"
+        ))
 
         guard consent.runModal() == .alertSecondButtonReturn else {
             log.info("User declined version check consent")
@@ -1211,27 +1518,40 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     private func showUpToDate(version: String) {
         let alert = NSAlert()
-        alert.messageText = "Up to Date"
-        alert.informativeText = "You're running the latest version (v\(version))."
+        alert.messageText = L10n.string(
+            "alert.update.up_to_date.title",
+            fallback: "Up to Date"
+        )
+        alert.informativeText = L10n.format(
+            "alert.update.up_to_date.message",
+            "You're running the latest version (v%1$@).",
+            arguments: [version]
+        )
         alert.alertStyle = .informational
         alert.icon = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
         alert.runModal()
     }
 
     private func showUpdateAvailable(version: String, url: URL?) {
         let alert = NSAlert()
-        alert.messageText = "Update Available"
-        alert.informativeText = """
-            A new version is available: v\(version)
-
-            You can download it from the GitHub Releases page.
-            """
+        alert.messageText = L10n.string(
+            "alert.update.available.title",
+            fallback: "Update Available"
+        )
+        alert.informativeText = L10n.format(
+            "alert.update.available.message",
+            "A new version is available: v%1$@\n\nYou can download it from the GitHub Releases page.",
+            arguments: [version]
+        )
         alert.alertStyle = .informational
         alert.icon = NSImage(systemSymbolName: "arrow.up.circle.fill", accessibilityDescription: nil)
         // First button = default (View on GitHub) — most users want to see the release
-        alert.addButton(withTitle: "View on GitHub")
-        alert.addButton(withTitle: "Later")
+        alert.addButton(withTitle: L10n.string(
+            "alert.update.view_github",
+            fallback: "View on GitHub"
+        ))
+        alert.addButton(withTitle: L10n.string("common.button.later", fallback: "Later"))
 
         if alert.runModal() == .alertFirstButtonReturn {
             if let url {
@@ -1247,17 +1567,18 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     private func showCheckError(_ error: Error) {
         let alert = NSAlert()
-        alert.messageText = "Could Not Check for Updates"
+        alert.messageText = L10n.string(
+            "alert.update.error.title",
+            fallback: "Could Not Check for Updates"
+        )
         alert.alertStyle = .warning
         alert.icon = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
-        alert.informativeText = """
-            Unable to connect to GitHub.
-
-            \(error.localizedDescription)
-
-            Check your internet connection and try again.
-            """
-        alert.addButton(withTitle: "OK")
+        alert.informativeText = L10n.format(
+            "alert.update.error.message",
+            "Unable to connect to GitHub.\n\n%1$@\n\nCheck your internet connection and try again.",
+            arguments: [error.localizedDescription]
+        )
+        alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
         alert.runModal()
     }
 
@@ -1307,19 +1628,23 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private func statusText(for state: State) -> String {
         switch state {
         case .loading(let progress):
-            return "Loading model (\(Int(progress * 100))%)..."
+            return L10n.format(
+                "status.loading_model_percent",
+                "Loading model (%1$d%%)...",
+                arguments: [Int32(Int(progress * 100))]
+            )
         case .idle:
-            return "Ready"
+            return L10n.string("status.ready", fallback: "Ready")
         case .recording:
-            return "Recording..."
+            return L10n.string("status.recording", fallback: "Recording...")
         case .transcribing:
-            return "Transcribing..."
+            return L10n.string("status.transcribing", fallback: "Transcribing...")
         case .polishing:
-            return "Polishing…"
+            return L10n.string("status.polishing", fallback: "Polishing…")
         case .error(let msg):
-            return "Error: \(msg)"
+            return L10n.format("status.error", "Error: %1$@", arguments: [msg])
         case .unloaded:
-            return "Model unloaded"
+            return L10n.string("status.model_unloaded", fallback: "Model unloaded")
         }
     }
 
@@ -1327,17 +1652,37 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private func refreshStatusLine() {
         switch AppConfig.shared.dictationEngine {
         case .local:
-            statusMenuItem.title = "\(statusText(for: currentState)) · Memory \(MemoryUtils.formattedMemory())"
+            statusMenuItem.title = L10n.format(
+                "status.memory",
+                "%1$@ · Memory %2$@",
+                arguments: [statusText(for: currentState), MemoryUtils.formattedMemory()]
+            )
         case .openai:
             let modelStatus = localEngine.isLoaded
-                ? "Model loaded (\(MemoryUtils.formattedMemory()))"
-                : "No model loaded"
-            statusMenuItem.title = "\(statusText(for: currentState)) · Cloud (OpenAI) · \(modelStatus)"
+                ? L10n.format(
+                    "status.model_loaded_memory",
+                    "Model loaded (%1$@)",
+                    arguments: [MemoryUtils.formattedMemory()]
+                )
+                : L10n.string("status.no_model_loaded", fallback: "No model loaded")
+            statusMenuItem.title = L10n.format(
+                "status.cloud_engine",
+                "%1$@ · Cloud (%2$@) · %3$@",
+                arguments: [statusText(for: currentState), "OpenAI", modelStatus]
+            )
         case .gemini:
             let modelStatus = localEngine.isLoaded
-                ? "Model loaded (\(MemoryUtils.formattedMemory()))"
-                : "No model loaded"
-            statusMenuItem.title = "\(statusText(for: currentState)) · Cloud (Gemini) · \(modelStatus)"
+                ? L10n.format(
+                    "status.model_loaded_memory",
+                    "Model loaded (%1$@)",
+                    arguments: [MemoryUtils.formattedMemory()]
+                )
+                : L10n.string("status.no_model_loaded", fallback: "No model loaded")
+            statusMenuItem.title = L10n.format(
+                "status.cloud_engine",
+                "%1$@ · Cloud (%2$@) · %3$@",
+                arguments: [statusText(for: currentState), "Gemini", modelStatus]
+            )
         }
     }
 

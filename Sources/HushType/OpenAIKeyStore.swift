@@ -125,12 +125,27 @@ enum OpenAIKeyStore {
         // JSONSerialization with sorted keys won't preserve our human-friendly
         // ordering, and Apple's JSONEncoder doesn't guarantee key order at
         // all for dictionaries.
+        let overview = L10n.jsonStringLiteral(L10n.string(
+            "template.openai.overview",
+            table: "Templates",
+            fallback: "HushType cloud features — OpenAI API key. This file is plaintext on disk; treat it like a .env file. Get a key at https://platform.openai.com/api-keys. Cloud features stay disabled until 'api_key' is filled in AND you choose an OpenAI engine in Dictation Engine or Live Caption Engine settings."
+        ))
+        let apiKeyComment = L10n.jsonStringLiteral(L10n.string(
+            "template.openai.api_key",
+            table: "Templates",
+            fallback: "Your OpenAI API key (sk-proj-... or sk-...). Leave empty to disable cloud features entirely."
+        ))
+        let organizationComment = L10n.jsonStringLiteral(L10n.string(
+            "template.openai.organization",
+            table: "Templates",
+            fallback: "Optional. Only set if you specifically need to scope usage to an org. Format: org-..."
+        ))
         let body = """
         {
-          "_comment_overview": "HushType cloud features — OpenAI API key. This file is plaintext on disk; treat it like a .env file. Get a key at https://platform.openai.com/api-keys. Cloud features stay disabled until 'api_key' is filled in AND you choose an OpenAI engine in Dictation Engine or Live Caption Engine settings.",
-          "_comment_api_key": "Your OpenAI API key (sk-proj-... or sk-...). Leave empty to disable cloud features entirely.",
+          "_comment_overview": \(overview),
+          "_comment_api_key": \(apiKeyComment),
           "api_key": "",
-          "_comment_organization": "Optional. Only set if you specifically need to scope usage to an org. Format: org-...",
+          "_comment_organization": \(organizationComment),
           "organization": ""
         }
         """
@@ -150,4 +165,5 @@ enum OpenAIKeyStore {
             log.error("Failed to create openai.json: \(error.localizedDescription, privacy: .public)")
         }
     }
+
 }

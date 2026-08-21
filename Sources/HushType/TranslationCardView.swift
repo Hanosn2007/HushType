@@ -16,7 +16,10 @@ struct TranslationCardView: View {
 
                 Spacer()
 
-                Label("Copied to clipboard", systemImage: "checkmark.circle.fill")
+                Label(
+                    L10n.string("translation.card.copied", fallback: "Copied to clipboard"),
+                    systemImage: "checkmark.circle.fill"
+                )
                     .font(.caption)
                     .foregroundStyle(.green)
             }
@@ -46,13 +49,16 @@ struct TranslationCardView: View {
 
             // Footer
             HStack(alignment: .bottom) {
-                Text("Esc to dismiss")
+                Text(L10n.string("translation.card.dismiss", fallback: "Esc to dismiss"))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 
                 Spacer()
 
-                Text("Powered by Apple Translation Framework. May connect to Apple servers.")
+                Text(L10n.string(
+                    "translation.card.privacy",
+                    fallback: "Powered by Apple Translation Framework. May connect to Apple servers."
+                ))
                     .font(.system(size: 9))
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.trailing)

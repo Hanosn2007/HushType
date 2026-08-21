@@ -317,7 +317,10 @@ final class OpenAITranslateBackend: TranscriptionBackend, @unchecked Sendable {
 
         case "error":
             let error = obj["error"] as? [String: Any]
-            let message = error?["message"] as? String ?? "OpenAI error"
+            let message = error?["message"] as? String ?? L10n.string(
+                "alert.caption.connection_lost.title",
+                fallback: "Live Translated Caption connection lost"
+            )
             let code = error?["code"] as? String
             let param = error?["param"] as? String
             let isTranscriptionModelError =
@@ -373,7 +376,10 @@ final class OpenAITranslateBackend: TranscriptionBackend, @unchecked Sendable {
                 eventsContinuation.yield(.error(NSError(
                     domain: "OpenAITranslate",
                     code: httpResponse.statusCode,
-                    userInfo: [NSLocalizedDescriptionKey: "OpenAI rejected the API key."]
+                    userInfo: [NSLocalizedDescriptionKey: L10n.string(
+                        "error.openai_translate.auth",
+                        fallback: "OpenAI rejected the API key."
+                    )]
                 )))
                 eventsContinuation.finish()
                 return
@@ -381,7 +387,10 @@ final class OpenAITranslateBackend: TranscriptionBackend, @unchecked Sendable {
                 eventsContinuation.yield(.error(NSError(
                     domain: "OpenAITranslate",
                     code: 429,
-                    userInfo: [NSLocalizedDescriptionKey: "OpenAI rate limit hit."]
+                    userInfo: [NSLocalizedDescriptionKey: L10n.string(
+                        "error.openai_translate.rate_limit",
+                        fallback: "OpenAI rate limit hit."
+                    )]
                 )))
                 eventsContinuation.finish()
                 return

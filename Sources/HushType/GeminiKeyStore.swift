@@ -128,12 +128,27 @@ enum GeminiKeyStore {
         // JSONSerialization with sorted keys won't preserve our human-friendly
         // ordering, and Apple's JSONEncoder doesn't guarantee key order at
         // all for dictionaries.
+        let overview = L10n.jsonStringLiteral(L10n.string(
+            "template.gemini.overview",
+            table: "Templates",
+            fallback: "HushType cloud features — Gemini API key. This file is plaintext on disk; treat it like a .env file. Get a key at https://aistudio.google.com/apikey. Cloud features stay disabled until 'api_key' is filled in. The engine is chosen in HushType's Dictation Engine settings."
+        ))
+        let apiKeyComment = L10n.jsonStringLiteral(L10n.string(
+            "template.gemini.api_key",
+            table: "Templates",
+            fallback: "Your Gemini API key (AIza...). Leave empty to disable cloud features entirely."
+        ))
+        let freeTierComment = L10n.jsonStringLiteral(L10n.string(
+            "template.gemini.free_tier_policy",
+            table: "Templates",
+            fallback: "On Google's free tier, Google may use submitted audio to improve its products. The paid tier does not."
+        ))
         let body = """
         {
-          "_comment_overview": "HushType cloud features — Gemini API key. This file is plaintext on disk; treat it like a .env file. Get a key at https://aistudio.google.com/apikey. Cloud features stay disabled until 'api_key' is filled in. The engine is chosen in HushType's Dictation Engine settings.",
-          "_comment_api_key": "Your Gemini API key (AIza...). Leave empty to disable cloud features entirely.",
+          "_comment_overview": \(overview),
+          "_comment_api_key": \(apiKeyComment),
           "api_key": "",
-          "_comment_free_tier": "On Google's free tier, Google may use submitted audio to improve its products. The paid tier does not."
+          "_comment_free_tier": \(freeTierComment)
         }
         """
         do {
@@ -152,4 +167,5 @@ enum GeminiKeyStore {
             log.error("Failed to create gemini.json: \(error.localizedDescription, privacy: .public)")
         }
     }
+
 }

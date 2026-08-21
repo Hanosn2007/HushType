@@ -23,25 +23,47 @@ enum PolishError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .disabled:
-            return "Text Polish is turned off."
+            return L10n.string("error.polish.disabled", fallback: "Text Polish is turned off.")
         case .unavailable(let reason):
-            return "Text Polish requires macOS 26 + Apple Intelligence.\n\n\(reason)"
+            return L10n.format(
+                "error.polish.unavailable",
+                "Text Polish requires macOS 26 + Apple Intelligence.\n\n%1$@",
+                arguments: [reason]
+            )
         case .emptySelection:
-            return "No text was selected."
+            return L10n.string("error.selection.none", fallback: "No text was selected.")
         case .codeDetected:
-            return "Selection looks like code — not polished."
+            return L10n.string(
+                "error.polish.code_detected",
+                fallback: "Selection looks like code — not polished."
+            )
         case .generationFailed(let reason):
             return reason
         case .emptyOutput:
-            return "Apple Intelligence returned an empty result."
+            return L10n.string(
+                "error.polish.empty_output",
+                fallback: "Apple Intelligence returned an empty result."
+            )
         case .lengthGuard:
-            return "The result changed the selection length too much. The original text was left untouched."
+            return L10n.string(
+                "error.polish.length_guard",
+                fallback: "The result changed the selection length too much. The original text was left untouched."
+            )
         case .scriptGuard:
-            return "The result changed the selection's dominant writing system. The original text was left untouched."
+            return L10n.string(
+                "error.polish.script_guard",
+                fallback: "The result changed the selection's dominant writing system. The original text was left untouched."
+            )
         case .mixGuard:
-            return "The result dropped one of the selection's languages. The original text was left untouched."
+            return L10n.string(
+                "error.polish.mix_guard",
+                fallback: "The result dropped one of the selection's languages. The original text was left untouched."
+            )
         case .refusalGuard:
-            return "Apple Intelligence returned a refusal instead of proofreading the selection."
+            return L10n.string(
+                "error.polish.refusal_guard",
+                fallback: "Apple Intelligence returned a refusal instead of proofreading the selection."
+            )
         }
     }
 
@@ -64,13 +86,19 @@ enum TextPolisher {
     /// Tap handling reads this stored value only. It is refreshed at launch,
     /// app activation, and after toggle validation—never on a key event.
     private(set) static var isAvailableCached = false
-    private(set) static var unavailableReasonCached = "Apple Intelligence is unavailable."
+    private(set) static var unavailableReasonCached = L10n.string(
+        "error.polish.apple_unavailable",
+        fallback: "Apple Intelligence is unavailable."
+    )
 
     @MainActor
     static func refreshAvailabilityCache() {
         guard #available(macOS 26.0, *) else {
             isAvailableCached = false
-            unavailableReasonCached = "This Mac is running an earlier version of macOS."
+            unavailableReasonCached = L10n.string(
+                "error.polish.macos_too_old",
+                fallback: "This Mac is running an earlier version of macOS."
+            )
             return
         }
 
@@ -120,7 +148,10 @@ enum TextPolisher {
             return .failure(.unavailable(unavailableReasonCached))
         }
         guard #available(macOS 26.0, *) else {
-            return .failure(.unavailable("This Mac is running an earlier version of macOS."))
+            return .failure(.unavailable(L10n.string(
+                "error.polish.macos_too_old",
+                fallback: "This Mac is running an earlier version of macOS."
+            )))
         }
 
         // Race the FM call against a wall-clock deadline: a hung generation
@@ -131,10 +162,16 @@ enum TextPolisher {
             if #available(macOS 26.0, *) {
                 return await FoundationModelsPolisher.polish(text)
             }
-            return .failure(PolishError.unavailable("This Mac is running an earlier version of macOS."))
+            return .failure(PolishError.unavailable(L10n.string(
+                "error.polish.macos_too_old",
+                fallback: "This Mac is running an earlier version of macOS."
+            )))
         }
         guard let modelResult else {
-            return .failure(.generationFailed("Apple Intelligence timed out after 30 seconds."))
+            return .failure(.generationFailed(L10n.string(
+                "error.polish.timeout",
+                fallback: "Apple Intelligence timed out after 30 seconds."
+            )))
         }
         switch modelResult {
         case .failure(let error):
@@ -151,7 +188,10 @@ enum TextPolisher {
                     if #available(macOS 26.0, *) {
                         return await FoundationModelsPolisher.polish(text, mixRetry: true)
                     }
-                    return .failure(PolishError.unavailable("This Mac is running an earlier version of macOS."))
+                    return .failure(PolishError.unavailable(L10n.string(
+                        "error.polish.macos_too_old",
+                        fallback: "This Mac is running an earlier version of macOS."
+                    )))
                 }
                 if case .success(let retried) = retryResult ?? .failure(PolishError.emptyOutput),
                    case .success(let polished, let changed) = validateOutput(retried, input: text) {
