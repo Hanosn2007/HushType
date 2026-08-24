@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import MLX
 import os
 import UserNotifications
@@ -256,6 +257,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // flow BEFORE we ever call CGEvent.tapCreate. If onboarding is needed,
         // it blocks via NSAlert and either quits or relaunches the app — in
         // either case the rest of startup never runs.
+        if !AXIsProcessTrusted() {
+            // The setup flow intentionally stops startup before the global
+            // event tap and model loader are created. Make that pause explicit
+            // instead of leaving the menu's initial state at a misleading 0%.
+            statusBar.setState(.setupRequired)
+        }
         if OnboardingManager.runIfNeeded() {
             return
         }
@@ -298,6 +305,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         "status.model_load_failed",
                         fallback: "Model load failed"
                     )))
+                    self?.statusBar.setModelUnloaded()
                 }
             }
         }
@@ -1342,7 +1350,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         state = .loading
         statusBar.setState(.loading(0))
-        statusBar.setModelLoaded()
 
         Task.detached { [weak self] in
             do {
@@ -1355,6 +1362,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     guard let self else { return }
                     self.state = .idle
                     self.statusBar.setState(.idle)
+                    self.statusBar.setModelLoaded()
                     log.info("Model reloaded")
                 }
                 await self?.scheduleTextPolishPrewarmIfNeeded(reason: "model reload")
@@ -1366,6 +1374,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         "status.model_reload_failed",
                         fallback: "Reload failed"
                     )))
+                    self?.statusBar.setModelUnloaded()
                 }
             }
         }

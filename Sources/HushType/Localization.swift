@@ -11,6 +11,7 @@ import os
 enum InterfaceLanguage: String, Equatable, Sendable {
     case system
     case english = "en"
+    case simplifiedChinese = "zh-Hans"
     case traditionalChineseTaiwan = "zh-Hant-TW"
 }
 
@@ -22,15 +23,12 @@ enum InterfaceLanguage: String, Equatable, Sendable {
 /// - `zh-Hant-TW`, `zh-TW`, bare `zh-Hant` -> `zh-Hant-TW`
 /// - `zh-HK`, `zh-MO`, `zh-Hant-HK`, `zh-Hant-MO` -> `zh-Hant-TW` (documented
 ///   nearest supported Traditional-Chinese UI)
-/// - bare `zh`, `zh-Hans`, `zh-CN`, `zh-SG` -> unsupported; continue walking
+/// - bare `zh`, `zh-Hans`, `zh-CN`, `zh-SG` -> Simplified Chinese
 /// - empty/corrupt list or no supported entry -> English
 ///
-/// HushType deliberately prevents Foundation's accidental
-/// Simplified-to-Traditional nearest match: a `zh-CN`-only system stays
-/// English, and only the explicit mappings above produce Chinese.
 enum InterfaceLocale {
     /// Tags this build supports for the in-app UI.
-    static let supportedTags = ["en", "zh-Hant-TW"]
+    static let supportedTags = ["en", "zh-Hans", "zh-Hant-TW"]
 
     /// Map one BCP-47 preference to a supported tag, or nil if unsupported.
     /// Normalizes script/region spelling before comparing.
@@ -43,13 +41,14 @@ enum InterfaceLocale {
             return "en"
         }
         switch norm {
+        case "zh", "zh-hans", "zh-cn", "zh-sg", "zh-hans-cn", "zh-hans-sg":
+            return "zh-Hans"
         case "zh-hant-tw", "zh-tw", "zh-hant":
             return "zh-Hant-TW"
         case "zh-hk", "zh-mo", "zh-hant-hk", "zh-hant-mo":
             return "zh-Hant-TW"
         default:
-            // bare zh, zh-hans, zh-cn, zh-sg, and everything else:
-            // unsupported — the caller continues to the next preference.
+            // Unsupported — the caller continues to the next preference.
             return nil
         }
     }
@@ -145,8 +144,8 @@ enum L10n {
     static var launchTag: String { launchState.tag() }
 
     /// The effective UI locale used for every lookup and for every
-    /// `String(format:locale:arguments:)` call. Always exactly `en` or
-    /// `zh-Hant-TW` — never the process locale (SPEC §8 rule 2).
+    /// `String(format:locale:arguments:)` call. Always one of the app's
+    /// explicitly supported tags — never the process locale (SPEC §8 rule 2).
     static var effectiveLocale: Locale { Locale(identifier: launchTag) }
 
     final class LaunchState {
@@ -156,6 +155,7 @@ enum L10n {
             let t: String
             switch launchPreference {
             case .english: t = "en"
+            case .simplifiedChinese: t = "zh-Hans"
             case .traditionalChineseTaiwan: t = "zh-Hant-TW"
             case .system: t = InterfaceLocale.effectiveTag(preferences: InterfaceLocale.processPreferredTags)
             }

@@ -48,12 +48,12 @@ final class LocalizationTests: XCTestCase {
 
     func testFollowSystemOrderedMappings() {
         XCTAssertEqual(InterfaceLocale.effectiveTag(preferences: ["fr", "zh-TW", "en"]), "zh-Hant-TW")
-        XCTAssertEqual(InterfaceLocale.effectiveTag(preferences: ["zh-CN", "en"]), "en")
-        XCTAssertEqual(InterfaceLocale.effectiveTag(preferences: ["zh-CN", "zh-HK", "en"]), "zh-Hant-TW")
+        XCTAssertEqual(InterfaceLocale.effectiveTag(preferences: ["zh-CN", "en"]), "zh-Hans")
+        XCTAssertEqual(InterfaceLocale.effectiveTag(preferences: ["zh-CN", "zh-HK", "en"]), "zh-Hans")
         XCTAssertEqual(InterfaceLocale.effectiveTag(preferences: ["zh-HK", "en"]), "zh-Hant-TW")
-        XCTAssertEqual(InterfaceLocale.effectiveTag(preferences: ["zh", "en"]), "en")
-        XCTAssertEqual(InterfaceLocale.effectiveTag(preferences: ["zh-Hans", "en"]), "en")
-        XCTAssertEqual(InterfaceLocale.effectiveTag(preferences: ["zh-SG"]), "en")
+        XCTAssertEqual(InterfaceLocale.effectiveTag(preferences: ["zh", "en"]), "zh-Hans")
+        XCTAssertEqual(InterfaceLocale.effectiveTag(preferences: ["zh-Hans", "en"]), "zh-Hans")
+        XCTAssertEqual(InterfaceLocale.effectiveTag(preferences: ["zh-SG"]), "zh-Hans")
         XCTAssertEqual(InterfaceLocale.effectiveTag(preferences: ["zh-Hant"]), "zh-Hant-TW")
         XCTAssertEqual(InterfaceLocale.effectiveTag(preferences: ["zh-Hant-TW"]), "zh-Hant-TW")
         XCTAssertEqual(InterfaceLocale.effectiveTag(preferences: ["zh-Hant-MO"]), "zh-Hant-TW")
@@ -65,7 +65,7 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(InterfaceLocale.supportedTag(for: "zh_Hant_TW"), "zh-Hant-TW")
         XCTAssertEqual(InterfaceLocale.supportedTag(for: "ZH-hant-tw"), "zh-Hant-TW")
         XCTAssertEqual(InterfaceLocale.supportedTag(for: "zh-tw"), "zh-Hant-TW")
-        XCTAssertNil(InterfaceLocale.supportedTag(for: "zh-cn"))
+        XCTAssertEqual(InterfaceLocale.supportedTag(for: "zh-cn"), "zh-Hans")
     }
 
     func testEnglishRegionalVariantsResolveEnglish() {
@@ -83,11 +83,9 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(InterfaceLocale.supportedTag(for: "en-US-u-oxendict"), "en")
         // Private-use extension truncated: zh-Hant-TW-x-private -> zh-Hant-TW.
         XCTAssertEqual(InterfaceLocale.supportedTag(for: "zh-Hant-TW-x-private"), "zh-Hant-TW")
-        // zh-Hans with an extension must still be unsupported (no accidental
-        // Traditional match via the region/script head).
-        XCTAssertNil(InterfaceLocale.supportedTag(for: "zh-Hans-u-hans"))
-        XCTAssertNil(InterfaceLocale.supportedTag(for: "zh-CN-u-co-pinyin"))
-        XCTAssertEqual(InterfaceLocale.effectiveTag(preferences: ["zh-CN-u-co-pinyin", "en"]), "en")
+        XCTAssertEqual(InterfaceLocale.supportedTag(for: "zh-Hans-u-hans"), "zh-Hans")
+        XCTAssertEqual(InterfaceLocale.supportedTag(for: "zh-CN-u-co-pinyin"), "zh-Hans")
+        XCTAssertEqual(InterfaceLocale.effectiveTag(preferences: ["zh-CN-u-co-pinyin", "en"]), "zh-Hans")
     }
 
     func testCorruptPreferenceResolvesToSystem() {
@@ -111,6 +109,11 @@ final class LocalizationTests: XCTestCase {
         L10n.resetLaunchStateForTests()
         XCTAssertEqual(L10n.launchPreference, .english)
         XCTAssertEqual(L10n.launchTag, "en")
+
+        defaults.set("zh-Hans", forKey: "hushtype.interfaceLanguage")
+        L10n.resetLaunchStateForTests()
+        XCTAssertEqual(L10n.launchPreference, .simplifiedChinese)
+        XCTAssertEqual(L10n.launchTag, "zh-Hans")
 
         defaults.set("zh-Hant-TW", forKey: "hushtype.interfaceLanguage")
         L10n.resetLaunchStateForTests()

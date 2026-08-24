@@ -5,6 +5,7 @@ private let log = Logger(subsystem: "com.felix.hushtype", category: "statusbar")
 
 final class StatusBarController: NSObject, NSMenuDelegate {
     enum State {
+        case setupRequired
         case loading(Double) // progress 0.0–1.0
         case idle
         case recording
@@ -64,7 +65,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var dictionarySubtitleItem: NSMenuItem!
     /// Last state passed to `setState` — kept so the combined status+memory
     /// row can be re-rendered on every menu open without losing the state text.
-    private var currentState: State = .loading(0)
+    private var currentState: State = .setupRequired
     let iosServerManager = IOSServerManager()
 
     var onLanguageChanged: ((String?) -> Void)?
@@ -316,6 +317,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             keyEquivalent: ""
         )
         interfaceLanguageItem.submenu = buildInterfaceLanguageMenu()
+        menu.addItem(interfaceLanguageItem)
 
         // About
         let aboutItem = NSMenuItem(
@@ -345,6 +347,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let choices: [(InterfaceLanguage, String, String)] = [
             (.system, "menu.interface_language.follow_system", "Follow System"),
             (.english, "menu.interface_language.english", "English"),
+            (.simplifiedChinese, "menu.interface_language.simplified_chinese", "简体中文"),
             (.traditionalChineseTaiwan, "menu.interface_language.traditional_chinese_taiwan", "繁體中文（台灣）"),
         ]
         for (language, key, fallback) in choices {
@@ -1684,6 +1687,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         let symbolName: String
         switch state {
+        case .setupRequired:
+            symbolName = "lock.trianglebadge.exclamationmark"
         case .loading:
             symbolName = "arrow.down.circle"
         case .idle:
@@ -1710,6 +1715,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     private func statusText(for state: State) -> String {
         switch state {
+        case .setupRequired:
+            return L10n.string(
+                "status.setup_required",
+                fallback: "Waiting for permission setup"
+            )
         case .loading(let progress):
             return L10n.format(
                 "status.loading_model_percent",
@@ -1778,6 +1788,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 if case .loading = state {
                     setModelLoaded()
                     unloadMenuItem.isEnabled = false
+                } else if case .setupRequired = state {
+                    unloadMenuItem.isHidden = true
+                    unloadMenuItem.isEnabled = false
                 } else {
                     setModelUnloaded()
                     unloadMenuItem.isEnabled = true
@@ -1793,7 +1806,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         switch state {
         case .idle, .unloaded:
             unloadMenuItem.isEnabled = true
-        case .loading:
+        case .loading, .setupRequired:
             unloadMenuItem.isEnabled = false
         default:
             unloadMenuItem.isEnabled = false

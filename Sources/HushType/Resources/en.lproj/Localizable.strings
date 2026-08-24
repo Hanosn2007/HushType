@@ -51,6 +51,7 @@
 /* Language choice shown as an autonym. */
 
 "menu.interface_language.english" = "English";
+"menu.interface_language.simplified_chinese" = "Simplified Chinese";
 
 /* Language choice shown as an autonym; exact spelling is product-approved. */
 
@@ -107,6 +108,7 @@
 /* App-owned status fragment after initial local-model load failure. */
 
 "status.model_load_failed" = "Model load failed";
+"status.setup_required" = "Waiting for permission setup";
 
 /* App-owned status fragment after model reload failure. */
 
@@ -496,7 +498,7 @@
 
 /* Preserve approximate three-second cold-start semantics and shortcut glyph. */
 
-"alert.model_unloaded.local.message" = "The speech recognition model has been removed from memory.\n\nVoice input will require a cold start (~3 seconds) the next time you press Right ⌥.";
+"alert.model_unloaded.local.message" = "The speech recognition model has been removed from memory.\n\nVoice input will require a cold start (~3 seconds) the next time you press F5.";
 
 /* Cloud-upload gate title; this is HushType's local warning, not provider billing enforcement. */
 
@@ -738,9 +740,9 @@
 
 "window.onboarding.title" = "Set Up HushType";
 
-/* Permission-purpose summary; Right Option is a key name, not the ⌥ glyph on this surface. */
+/* Permission-purpose summary for the local-only F5 build. */
 
-"onboarding.intro" = "Allow HushType to listen for Right Option and record your voice locally.";
+"onboarding.intro" = "Allow HushType to listen for F5 and record your voice locally.";
 
 /* Apple permission category name. */
 
@@ -748,7 +750,7 @@
 
 /* Explains why Accessibility is required. */
 
-"permission.accessibility.subtitle" = "Required for the Right Option hotkey.";
+"permission.accessibility.subtitle" = "Required for the global F5 hotkey.";
 
 /* Permission row state after opening relevant settings. */
 
