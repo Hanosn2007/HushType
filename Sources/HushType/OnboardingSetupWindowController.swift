@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import AVFoundation
 import SwiftUI
 
@@ -154,6 +155,7 @@ final class OnboardingSetupWindowController: NSWindowController, NSWindowDelegat
 @MainActor
 final class OnboardingSetupViewModel: ObservableObject {
     @Published var accessibilitySettingsOpened = false
+    @Published var accessibilityGranted = AXIsProcessTrusted()
     @Published var didResetAccessibility = false
     @Published var microphoneStatus: AVAuthorizationStatus
     @Published var microphoneRequestInFlight = false
@@ -165,11 +167,17 @@ final class OnboardingSetupViewModel: ObservableObject {
 
     func markAccessibilitySettingsOpened() {
         accessibilitySettingsOpened = true
+        refreshAccessibilityStatus()
     }
 
     func markAccessibilityReset() {
         didResetAccessibility = true
         accessibilitySettingsOpened = true
+        accessibilityGranted = false
+    }
+
+    func refreshAccessibilityStatus() {
+        accessibilityGranted = AXIsProcessTrusted()
     }
 
     func markMicrophoneRequestInFlight() {
@@ -214,6 +222,9 @@ private struct OnboardingSetupView: View {
                 .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
         )
         .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 4)
+        .onReceive(Timer.publish(every: 0.75, on: .main, in: .common).autoconnect()) { _ in
+            model.refreshAccessibilityStatus()
+        }
     }
 
     private var header: some View {
@@ -250,10 +261,8 @@ private struct OnboardingSetupView: View {
                 "permission.accessibility.subtitle",
                 fallback: "Required for the Right Option hotkey."
             ),
-            status: model.accessibilitySettingsOpened
-                ? L10n.string("permission.status.restart_needed", fallback: "Restart needed")
-                : L10n.string("permission.status.needs_permission", fallback: "Needs permission"),
-            statusTint: model.accessibilitySettingsOpened ? .orange : .secondary
+            status: accessibilityStatusTitle,
+            statusTint: model.accessibilityGranted ? .green : (model.accessibilitySettingsOpened ? .orange : .secondary)
         ) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
@@ -391,10 +400,22 @@ private struct OnboardingSetupView: View {
     }
 
     private var canRestart: Bool {
-        guard model.accessibilitySettingsOpened, !model.microphoneRequestInFlight else {
+        guard model.accessibilitySettingsOpened,
+              model.accessibilityGranted,
+              !model.microphoneRequestInFlight else {
             return false
         }
         return model.microphoneStatus != .notDetermined
+    }
+
+    private var accessibilityStatusTitle: String {
+        if model.accessibilityGranted {
+            return L10n.string("permission.status.allowed", fallback: "Allowed")
+        }
+        if model.accessibilitySettingsOpened {
+            return L10n.string("permission.status.waiting_short", fallback: "Waiting")
+        }
+        return L10n.string("permission.status.needs_permission", fallback: "Needs permission")
     }
 
     private var restartGuidanceText: String {

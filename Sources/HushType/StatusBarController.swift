@@ -26,6 +26,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let localEngine: Qwen3TranscriptionEngine
     /// Combined status + memory row, e.g. "Ready · Memory 2.1 GB".
     private let statusMenuItem: NSMenuItem
+    private var permissionSettingsMenuItem: NSMenuItem!
     private let languageMenu: NSMenu
     private var languageItems: [NSMenuItem] = []
     private let dictationEngineMenu: NSMenu
@@ -224,6 +225,22 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(statusMenuItem)
 
         menu.addItem(.separator())
+
+        permissionSettingsMenuItem = NSMenuItem(
+            title: L10n.string(
+                "common.button.open_system_settings",
+                fallback: "Open System Settings"
+            ),
+            action: #selector(openAccessibilitySettings),
+            keyEquivalent: ""
+        )
+        permissionSettingsMenuItem.target = self
+        permissionSettingsMenuItem.image = NSImage(
+            systemSymbolName: "hand.raised.fill",
+            accessibilityDescription: nil
+        )
+        permissionSettingsMenuItem.isHidden = false
+        menu.addItem(permissionSettingsMenuItem)
 
         // ─────────────────── Live Caption (local Qwen3) ───────────────────
         let liveCaptionTitle = L10n.string("menu.live_caption", fallback: "Live Caption")
@@ -1674,6 +1691,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         NSApp.terminate(nil)
     }
 
+    @objc private func openAccessibilitySettings() {
+        guard let url = URL(
+            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        ) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     private func updateLanguageCheckmarks() {
         let current = AppConfig.shared.language
         for item in languageItems {
@@ -1710,6 +1734,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     private func updateStatusText(for state: State) {
         currentState = state
+        if let permissionSettingsMenuItem {
+            if case .setupRequired = state {
+                permissionSettingsMenuItem.isHidden = false
+            } else {
+                permissionSettingsMenuItem.isHidden = true
+            }
+        }
         refreshStatusLine()
     }
 
