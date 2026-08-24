@@ -210,6 +210,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBar.onReloadModel = { [weak self] in
             self?.reloadModel()
         }
+        statusBar.onStopModelDownload = { [weak self] in
+            self?.stopModelDownload()
+        }
         statusBar.onDictationEngineChanged = { [weak self] engine in
             self?.switchDictationEngine(to: engine)
         }
@@ -282,14 +285,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Load local model async.
-        statusBar.setState(.loading(0))
+        statusBar.setState(.loadingDetailed(ModelLoadProgress(
+            phase: .connecting,
+            fraction: 0,
+            totalBytes: QwenModelDownloadSizing.weightBytes(for: AppConfig.shared.modelId)
+        )))
         Task.detached { [weak self] in
             do {
-                try await self?.localEngine.load { progress, description in
+                try await self?.localEngine.load(detailProgressHandler: { progress in
                     DispatchQueue.main.async {
-                        self?.statusBar.setState(.loading(progress))
+                        self?.statusBar.setState(.loadingDetailed(progress))
                     }
-                }
+                })
                 await MainActor.run {
                     guard let self else { return }
                     self.state = .idle
@@ -297,6 +304,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     log.info("HushType ready")
                 }
                 await self?.scheduleTextPolishPrewarmIfNeeded(reason: "local-model launch")
+            } catch is CancellationError {
+                await MainActor.run {
+                    guard let self, self.state == .loading else { return }
+                    self.state = .unloaded
+                    self.statusBar.setState(.unloaded)
+                    self.statusBar.setModelDownloadStopped()
+                }
             } catch {
                 log.error("Failed to load model: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
@@ -1349,15 +1363,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         state = .loading
-        statusBar.setState(.loading(0))
+        statusBar.setState(.loadingDetailed(ModelLoadProgress(
+            phase: .connecting,
+            fraction: 0,
+            totalBytes: QwenModelDownloadSizing.weightBytes(for: AppConfig.shared.modelId)
+        )))
 
         Task.detached { [weak self] in
             do {
-                try await self?.localEngine.load { progress, description in
+                try await self?.localEngine.load(detailProgressHandler: { progress in
                     DispatchQueue.main.async {
-                        self?.statusBar.setState(.loading(progress))
+                        self?.statusBar.setState(.loadingDetailed(progress))
                     }
-                }
+                })
                 await MainActor.run {
                     guard let self else { return }
                     self.state = .idle
@@ -1366,6 +1384,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     log.info("Model reloaded")
                 }
                 await self?.scheduleTextPolishPrewarmIfNeeded(reason: "model reload")
+            } catch is CancellationError {
+                await MainActor.run {
+                    guard let self, self.state == .loading else { return }
+                    self.state = .unloaded
+                    self.statusBar.setState(.unloaded)
+                    self.statusBar.setModelDownloadStopped()
+                }
             } catch {
                 log.error("Failed to reload model: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
@@ -1378,6 +1403,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    /// Cancels only an in-flight model load. Completed Hub cache entries are
+    /// kept for the next start; the underlying public URLSession downloader
+    /// does not expose its temporary file as resumable app state.
+    private func stopModelDownload() {
+        guard state == .loading else {
+            print("[HushType] No model download to stop")
+            return
+        }
+        localEngine.unload()
+        state = .unloaded
+        statusBar.setState(.unloaded)
+        statusBar.setModelDownloadStopped()
+        print("[HushType] Model download stopped")
     }
 
     private func makeDictationEngine(
@@ -1554,12 +1594,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             if !localEngine.isLoaded {
                 state = .loading
-                statusBar.setState(.loading(0))
-                try await localEngine.load { [weak self] progress, _ in
+                statusBar.setState(.loadingDetailed(ModelLoadProgress(
+                    phase: .connecting,
+                    fraction: 0,
+                    totalBytes: QwenModelDownloadSizing.weightBytes(for: AppConfig.shared.modelId)
+                )))
+                try await localEngine.load(detailProgressHandler: { [weak self] progress in
                     DispatchQueue.main.async {
-                        self?.statusBar.setState(.loading(progress))
+                        self?.statusBar.setState(.loadingDetailed(progress))
                     }
-                }
+                })
             }
             state = .transcribing
             statusBar.setState(.transcribing)

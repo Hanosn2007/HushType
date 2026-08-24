@@ -7,6 +7,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     enum State {
         case setupRequired
         case loading(Double) // progress 0.0–1.0
+        case loadingDetailed(ModelLoadProgress)
         case idle
         case recording
         case transcribing
@@ -20,6 +21,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     enum ModelMenuAction: Equatable {
         case unload
         case reload
+        case stopDownload
+        case startDownload
     }
 
     private let statusItem: NSStatusItem
@@ -73,6 +76,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     var onQuit: (() -> Void)?
     var onUnloadModel: (() -> Void)?
     var onReloadModel: (() -> Void)?
+    var onStopModelDownload: (() -> Void)?
     /// Both the menu radios and the settings window route through this one
     /// AppDelegate switch path so Cloud → Local always reloads when needed.
     var onDictationEngineChanged: ((AppConfig.DictationEngine) -> Void)?
@@ -1461,6 +1465,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             onUnloadModel?()
         case .reload:
             onReloadModel?()
+        case .stopDownload:
+            onStopModelDownload?()
+        case .startDownload:
+            onReloadModel?()
         }
     }
 
@@ -1484,6 +1492,36 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let title = L10n.string("menu.model.unload", fallback: "Unload Speech-to-Text Model")
         unloadMenuItem.title = title
         unloadMenuItem.attributedTitle = NSAttributedString(string: title, attributes: unloadAttrs)
+    }
+
+    /// Called while the local model's Hub download is in flight. The semantic
+    /// action stays separate from this localized title.
+    func setModelDownloadInProgress() {
+        modelMenuAction = .stopDownload
+        let attrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: NSColor.systemOrange
+        ]
+        let title = L10n.string(
+            "menu.model.stop_download",
+            fallback: "Stop Model Download"
+        )
+        unloadMenuItem.title = title
+        unloadMenuItem.attributedTitle = NSAttributedString(string: title, attributes: attrs)
+    }
+
+    /// Called after a user-cancelled download. A subsequent click starts a
+    /// fresh load and lets speech-swift reuse completed Hub cache entries.
+    func setModelDownloadStopped() {
+        modelMenuAction = .startDownload
+        let attrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: NSColor.systemGreen
+        ]
+        let title = L10n.string(
+            "menu.model.start_download",
+            fallback: "Start Model Download"
+        )
+        unloadMenuItem.title = title
+        unloadMenuItem.attributedTitle = NSAttributedString(string: title, attributes: attrs)
     }
 
     // MARK: - Helpers
@@ -1715,6 +1753,17 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             symbolName = "lock.trianglebadge.exclamationmark"
         case .loading:
             symbolName = "arrow.down.circle"
+        case .loadingDetailed(let progress):
+            switch progress.phase {
+            case .connecting, .downloading:
+                symbolName = "arrow.down.circle"
+            case .verifying:
+                symbolName = "checkmark.seal"
+            case .loadingTokenizer, .loadingAudio, .loadingText:
+                symbolName = "gearshape"
+            case .ready:
+                symbolName = "checkmark.circle"
+            }
         case .idle:
             symbolName = "mic.fill"
         case .recording:
@@ -1757,6 +1806,52 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 "Loading model (%1$d%%)...",
                 arguments: [Int32(Int(progress * 100))]
             )
+        case .loadingDetailed(let progress):
+            switch progress.phase {
+            case .connecting:
+                return L10n.string(
+                    "status.model.connecting",
+                    fallback: "Connecting to model repository…"
+                )
+            case .downloading:
+                let downloaded = progress.downloadedBytes.map(formattedByteCount) ?? "—"
+                let total = progress.totalBytes.map(formattedByteCount) ?? "—"
+                let speed = progress.bytesPerSecond.map(formattedSpeed) ?? "—"
+                let eta = progress.eta.map(formattedETA) ?? "—"
+                return L10n.format(
+                    "status.model.downloading",
+                    "Downloading model (%1$d%%) · %2$@ / %3$@ · %4$@ · ETA %5$@",
+                    arguments: [
+                        Int32(Int(progress.fraction * 100)),
+                        downloaded,
+                        total,
+                        speed,
+                        eta,
+                    ]
+                )
+            case .verifying:
+                return L10n.string(
+                    "status.model.verifying",
+                    fallback: "Verifying downloaded model…"
+                )
+            case .loadingTokenizer:
+                return L10n.string(
+                    "status.model.loading_tokenizer",
+                    fallback: "Loading tokenizer…"
+                )
+            case .loadingAudio:
+                return L10n.string(
+                    "status.model.loading_audio",
+                    fallback: "Loading audio encoder…"
+                )
+            case .loadingText:
+                return L10n.string(
+                    "status.model.loading_text",
+                    fallback: "Loading text decoder…"
+                )
+            case .ready:
+                return L10n.string("status.ready", fallback: "Ready")
+            }
         case .idle:
             return L10n.string("status.ready", fallback: "Ready")
         case .recording:
@@ -1770,6 +1865,35 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case .unloaded:
             return L10n.string("status.model_unloaded", fallback: "Model unloaded")
         }
+    }
+
+    private func formattedByteCount(_ bytes: Int64) -> String {
+        let value = Double(bytes)
+        if value >= 1024 * 1024 * 1024 {
+            return String(format: "%.2f GB", value / (1024 * 1024 * 1024))
+        }
+        if value >= 1024 * 1024 {
+            return String(format: "%.1f MB", value / (1024 * 1024))
+        }
+        if value >= 1024 {
+            return String(format: "%.1f KB", value / 1024)
+        }
+        return String(bytes) + " B"
+    }
+
+    private func formattedSpeed(_ bytesPerSecond: Double) -> String {
+        return formattedByteCount(Int64(max(0, bytesPerSecond))) + "/s"
+    }
+
+    private func formattedETA(_ seconds: TimeInterval) -> String {
+        let rounded = max(0, Int(seconds.rounded()))
+        if rounded >= 3600 {
+            return String(format: "%dh %02dm", rounded / 3600, (rounded / 60) % 60)
+        }
+        if rounded >= 60 {
+            return String(format: "%dm %02ds", rounded / 60, rounded % 60)
+        }
+        return String(rounded) + "s"
     }
 
     /// Re-renders the combined "<status> · Memory <footprint>" row.
@@ -1817,11 +1941,16 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             unloadMenuItem.isHidden = !localSelected
             if localSelected {
                 if case .loading = state {
-                    setModelLoaded()
-                    unloadMenuItem.isEnabled = false
+                    setModelDownloadInProgress()
+                    unloadMenuItem.isEnabled = true
+                } else if case .loadingDetailed = state {
+                    setModelDownloadInProgress()
+                    unloadMenuItem.isEnabled = true
                 } else if case .setupRequired = state {
                     unloadMenuItem.isHidden = true
                     unloadMenuItem.isEnabled = false
+                } else if case .unloaded = state, modelMenuAction == .startDownload {
+                    unloadMenuItem.isEnabled = true
                 } else {
                     setModelUnloaded()
                     unloadMenuItem.isEnabled = true
@@ -1837,7 +1966,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         switch state {
         case .idle, .unloaded:
             unloadMenuItem.isEnabled = true
-        case .loading, .setupRequired:
+        case .loading, .loadingDetailed, .setupRequired:
             unloadMenuItem.isEnabled = false
         default:
             unloadMenuItem.isEnabled = false

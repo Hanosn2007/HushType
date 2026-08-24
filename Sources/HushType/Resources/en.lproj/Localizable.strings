@@ -81,6 +81,15 @@
 
 "status.loading_model_percent" = "Loading model (%1$d%%)...";
 
+/* Detailed local-model load phases. */
+
+"status.model.connecting" = "Connecting to model repository…";
+"status.model.downloading" = "Downloading model (%1$d%%) · %2$@ / %3$@ · %4$@ · ETA %5$@";
+"status.model.verifying" = "Verifying downloaded model…";
+"status.model.loading_tokenizer" = "Loading tokenizer…";
+"status.model.loading_audio" = "Loading audio encoder…";
+"status.model.loading_text" = "Loading text decoder…";
+
 /* Status-menu idle state. */
 
 "status.ready" = "Ready";
@@ -179,6 +188,11 @@
 /* Reloads the local speech-to-text model. */
 
 "menu.model.reload" = "Reload Speech-to-Text Model";
+
+/* Explicit model-download cancellation/restart actions. */
+
+"menu.model.stop_download" = "Stop Model Download";
+"menu.model.start_download" = "Start Model Download";
 
 /* Opens the About alert. */
 

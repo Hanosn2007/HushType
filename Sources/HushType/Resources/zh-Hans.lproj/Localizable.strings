@@ -82,6 +82,15 @@
 
 "status.loading_model_percent" = "正在加载模型（%1$d%%）…";
 
+/* Detailed local-model load phases. */
+
+"status.model.connecting" = "正在连接模型仓库…";
+"status.model.downloading" = "正在下载模型（%1$d%%）· %2$@ / %3$@ · %4$@ · 预计剩余 %5$@";
+"status.model.verifying" = "正在校验已下载的模型…";
+"status.model.loading_tokenizer" = "正在加载分词器…";
+"status.model.loading_audio" = "正在加载音频编码器…";
+"status.model.loading_text" = "正在加载文本解码器…";
+
 /* Status-menu idle state. */
 
 "status.ready" = "就绪";
@@ -181,6 +190,11 @@
 /* Reloads the local speech-to-text model. */
 
 "menu.model.reload" = "重新加载语音转文字模型";
+
+/* Explicit model-download cancellation/restart actions. */
+
+"menu.model.stop_download" = "停止模型下载";
+"menu.model.start_download" = "开始下载模型";
 
 /* Opens the About alert. */
 
