@@ -24,7 +24,9 @@ final class HotkeyManager {
     private var otherKeyPressedDuringHold = false
 
     private static let rightOptionKeyCode: Int64 = 61 // kVK_RightOption
-    private static let f5KeyCode: Int64 = 96 // kVK_F5
+    // Standard F5 is kVK_F5 (96). Some Apple top-row media-mode keyboards
+    // deliver the microphone/F5 key as keycode 176 through CGEventTap.
+    private static let f5KeyCodes: Set<Int64> = [96, 176]
     /// kVK_ANSI_Slash — physical "/" key. With Shift held, this is "?".
     private static let slashKeyCode: Int64 = 44
     /// Device-dependent bit for Right Command on macOS CGEventFlags.
@@ -96,7 +98,7 @@ final class HotkeyManager {
         // normally — only the bare "right ⌘ + /" combo triggers LC toggle.
         if type == .keyDown {
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-            if keyCode == Self.f5KeyCode {
+            if Self.f5KeyCodes.contains(keyCode) {
                 // A held function key generates repeated keyDown events. Only
                 // the physical press toggles dictation; consume repeats too.
                 let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
@@ -121,7 +123,7 @@ final class HotkeyManager {
 
         if type == .keyUp {
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-            if keyCode == Self.f5KeyCode {
+            if Self.f5KeyCodes.contains(keyCode) {
                 log.debug("F5 released")
                 return nil // consume F5 release as well
             }
