@@ -296,26 +296,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             totalBytes: QwenModelDownloadSizing.weightBytes(for: AppConfig.shared.modelId)
         )))
         Task.detached { [weak self] in
+            guard let self else { return }
             do {
-                try await self?.localEngine.load(detailProgressHandler: { progress in
+                try await self.localEngine.load(detailProgressHandler: { progress in
                     DispatchQueue.main.async {
-                        guard let self,
-                              self.modelLoadAttemptID == loadAttemptID,
+                        guard self.modelLoadAttemptID == loadAttemptID,
                               self.state == .loading else { return }
                         self.statusBar.setState(.loadingDetailed(progress))
                     }
                 })
                 await MainActor.run {
-                    guard let self, self.modelLoadAttemptID == loadAttemptID else { return }
+                    guard self.modelLoadAttemptID == loadAttemptID else { return }
                     self.state = .idle
                     self.statusBar.setState(.idle)
                     log.info("HushType ready")
                 }
-                await self?.scheduleTextPolishPrewarmIfNeeded(reason: "local-model launch")
+                await self.scheduleTextPolishPrewarmIfNeeded(reason: "local-model launch")
             } catch is CancellationError {
                 await MainActor.run {
-                    guard let self,
-                          self.modelLoadAttemptID == loadAttemptID,
+                    guard self.modelLoadAttemptID == loadAttemptID,
                           self.state == .loading else { return }
                     self.state = .unloaded
                     self.statusBar.setState(.unloaded)
@@ -324,7 +323,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 log.error("Failed to load model: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
-                    guard let self, self.modelLoadAttemptID == loadAttemptID else { return }
+                    guard self.modelLoadAttemptID == loadAttemptID else { return }
                     self.state = .idle
                     self.statusBar.setState(.error(L10n.string(
                         "status.model_load_failed",
@@ -1383,27 +1382,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )))
 
         Task.detached { [weak self] in
+            guard let self else { return }
             do {
-                try await self?.localEngine.load(detailProgressHandler: { progress in
+                try await self.localEngine.load(detailProgressHandler: { progress in
                     DispatchQueue.main.async {
-                        guard let self,
-                              self.modelLoadAttemptID == loadAttemptID,
+                        guard self.modelLoadAttemptID == loadAttemptID,
                               self.state == .loading else { return }
                         self.statusBar.setState(.loadingDetailed(progress))
                     }
                 })
                 await MainActor.run {
-                    guard let self, self.modelLoadAttemptID == loadAttemptID else { return }
+                    guard self.modelLoadAttemptID == loadAttemptID else { return }
                     self.state = .idle
                     self.statusBar.setState(.idle)
                     self.statusBar.setModelLoaded()
                     log.info("Model reloaded")
                 }
-                await self?.scheduleTextPolishPrewarmIfNeeded(reason: "model reload")
+                await self.scheduleTextPolishPrewarmIfNeeded(reason: "model reload")
             } catch is CancellationError {
                 await MainActor.run {
-                    guard let self,
-                          self.modelLoadAttemptID == loadAttemptID,
+                    guard self.modelLoadAttemptID == loadAttemptID,
                           self.state == .loading else { return }
                     self.state = .unloaded
                     self.statusBar.setState(.unloaded)
@@ -1412,7 +1410,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 log.error("Failed to reload model: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
-                    guard let self, self.modelLoadAttemptID == loadAttemptID else { return }
+                    guard self.modelLoadAttemptID == loadAttemptID else { return }
                     self.state = .unloaded
                     self.statusBar.setState(.error(L10n.string(
                         "status.model_reload_failed",
