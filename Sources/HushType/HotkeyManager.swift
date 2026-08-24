@@ -99,6 +99,11 @@ final class HotkeyManager {
         if type == .keyDown {
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
             if Self.f5KeyCodes.contains(keyCode) {
+                // F5 owns this chord. If Right Option is already held, mark
+                // that hold as cancelled so its release cannot become a tap.
+                if isRightOptionDown {
+                    otherKeyPressedDuringHold = true
+                }
                 // A held function key generates repeated keyDown events. Only
                 // the physical press toggles dictation; consume repeats too.
                 let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
@@ -113,9 +118,10 @@ final class HotkeyManager {
                 let rightCmd = (flagsRaw & Self.rightCommandFlagBit) != 0
                 let leftCmd = (flagsRaw & Self.leftCommandFlagBit) != 0
                 let shift = event.flags.contains(.maskShift)
-                if rightCmd && !leftCmd && !shift {
+                if rightCmd && !leftCmd && !shift,
+                   let onLiveCaptionToggle {
                     log.debug("Live Caption hotkey (Right ⌘ + /)")
-                    onLiveCaptionToggle?()
+                    onLiveCaptionToggle()
                     return nil // suppress — don't let editors interpret as comment-toggle
                 }
             }
@@ -141,6 +147,9 @@ final class HotkeyManager {
 
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         guard keyCode == Self.rightOptionKeyCode else {
+            return Unmanaged.passUnretained(event)
+        }
+        guard onPress != nil || onRelease != nil || onCancelledRelease != nil else {
             return Unmanaged.passUnretained(event)
         }
 

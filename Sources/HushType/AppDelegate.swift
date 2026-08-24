@@ -106,6 +106,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let tapArbiter = TapArbiter()
     private var consecutiveCloudNetworkFailures = 0
 
+    private enum RecordingTrigger {
+        case rightOption
+        case f5
+    }
+    /// Keeps one hotkey's release from stopping a recording started by the
+    /// other hotkey when F5 and Right Option overlap.
+    private var recordingTrigger: RecordingTrigger?
+
     private enum SelectionSource {
         case copySelection
         case provided(String)
@@ -167,19 +175,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBar.setTextPolishAvailability(TextPolisher.isAvailableCached)
         NSApp.servicesProvider = self
 
-        // Wire hotkey callbacks
-        hotkeyManager.onPress = { [weak self] in
-            self?.handleHotkeyPress()
-        }
-        hotkeyManager.onRelease = { [weak self] in
-            self?.handleHotkeyRelease()
-        }
-        hotkeyManager.onCancelledRelease = { [weak self] in
-            self?.handleCancelledHotkeyRelease()
-        }
-        hotkeyManager.onLiveCaptionToggle = { [weak self] in
-            Task { @MainActor in self?.toggleLiveCaptionViaHotkey() }
-        }
+        // Local-only F5 MVP: leave the inherited Right Option and Live
+        // Caption callbacks unwired so those shortcuts pass through to the
+        // focused app. Their implementation remains available for a future
+        // product mode.
         hotkeyManager.onF5Toggle = { [weak self] in
             self?.handleF5Toggle()
         }
@@ -402,7 +401,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        startRecording()
+        startRecording(trigger: .f5)
     }
 
     private func handleHotkeyPress() {
@@ -453,10 +452,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        startRecording()
+        startRecording(trigger: .rightOption)
     }
 
-    private func startRecording() {
+    private func startRecording(trigger: RecordingTrigger) {
+        recordingTrigger = trigger
         state = .recording
         statusBar.setState(.recording)
         showOverlayRecording()
@@ -490,6 +490,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        guard recordingTrigger == .rightOption else {
+            log.info("Ignoring Right Option release during F5-owned recording")
+            return
+        }
         finishRecording(allowTapAction: true)
     }
 
@@ -500,6 +504,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let samples = audioCapture.stopRecording()
+        recordingTrigger = nil
         print("[HushType] Recording stopped: \(samples.count) samples (\(String(format: "%.1f", Double(samples.count) / 16000.0))s)")
 
         // Right Option's short hold remains a TAP for translation. F5 is a

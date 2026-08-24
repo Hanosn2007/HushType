@@ -157,7 +157,7 @@ DMG 為完全獨立版本，OpenCC 及所有相依套件皆已內含。不需要
 
 **為什麼每次更新都可能要重新授權？** HushType 是 ad-hoc 簽章，macOS 可能會在更新後要求你重新啟用輔助使用權限。設定視窗會顯示目前權限狀態。點 **Open System Settings**，在輔助使用清單裡開啟 HushType，接著點 **Restart HushType** 讓 macOS 套用權限。如果你看到重複的 HushType、找不到 HushType，或開關無法正常運作，請在設定視窗中使用 **Reset Old HushType Entry**，再重新加入或啟用 HushType。
 
-**完全解除安裝：** 把 `/Applications/HushType.app` 拖到垃圾桶，必要時 `defaults delete com.felix.hushtype` 並 `rm -rf ~/.cache/huggingface/hub/models--*Qwen3-ASR*` 清掉偏好設定與模型快取。
+**完全解除安裝：** 把 `/Applications/HushType.app` 拖到垃圾桶；如需連偏好與模型一起清除，再刪除 `com.felix.hushtype` defaults domain 與 `~/Library/Caches/qwen3-speech/models/`。
 
 ---
 
@@ -218,37 +218,24 @@ make install
 
 - **單擊 F5**：開始錄音。F5 不需要按住，螢幕底部出現「Listening」指示條與音量條。
 - **再次單擊 F5**：停止錄音，指示條切換為「Transcribing」，文字貼到游標並保留在剪貼簿。
-- **輕按 Right Option（<0.3 秒）**：選取文字後輕按，浮動卡片顯示 Apple Translation Framework 翻譯結果。詳見下方[文字翻譯](#選用功能文字翻譯)。
-- **雙擊 Right Option**：選取文字後雙擊，就地校對並替換。詳見下方 [Text Polish](#選用功能text-polishmacos-26)。
 
 **選單列：**
 
 - **語音輸入設定**（子選單，集中所有聽寫相關設定）：
-  - **語音輸入引擎**：本機（預設 Qwen3-ASR 1.7B 8-bit；可選 0.6B 4-bit 省電）/ OpenAI / Gemini，含「引擎設定…」視窗（見下方[雲端語音輸入](#選用功能雲端語音輸入openai--gemini)）
+  - **本機模型**：Qwen3-ASR 1.7B 8-bit（預設）/ 0.6B 4-bit（省電）；切換後卸載並重新載入模型即可生效
   - **語音轉文字語言**：Auto / English / 中文 / 日本語（辨識語言，非介面語言）
   - **Number Conversion**：中文數字 → 阿拉伯數字（預設開啟）
   - **標點清理**：溫和 / 強力 / 關閉（預設溫和）
   - **Show Floating Indicator**：切換指示條（預設開啟）
   - **Edit Customized Dictionary**：`~/Library/Application Support/HushType/dictionary.txt`，`source -> target` 一行一條，存檔自動熱重載
-- **Interface Language（介面語言）**：跟隨系統 / English / 繁體中文（台灣）（預設跟隨系統，下次啟動生效）
-- **Text Translation**：啟用輕按翻譯
-- **Text Polish (double-tap ⌥)**：開關雙擊校對（macOS 26+，預設開啟）
-- **Edit Polish Instructions**：`polish_rules.txt`，你自己的校對規則，存檔自動熱重載
 - **Unload Speech-to-Text Model**：一鍵釋放本機模型記憶體；同一選單可重新載入（約 3 秒冷啟動）
+- **Quit HushType**
 
 到此結束。模型下載完成後，F5 本機模式不需要伺服器、不需要網路、不需要額外設定。
 
-### 選用功能：雲端語音輸入（OpenAI / Gemini）
+### 上游雲端程式碼
 
-同一顆 Right ⌥、同一套可選後處理（OpenCC 預設關閉），但轉錄改由 OpenAI 或 Gemini 完成，**模型記憶體歸零**，品質同級或更好，代價是每句多幾秒的網路延遲與依時長計費（Gemini Free tier：$0）。這是上游參考功能，不是第一版 F5 本機 MVP 的必要路徑。
-
-1. **取得金鑰：** OpenAI 在 [platform.openai.com/api-keys](https://platform.openai.com/api-keys)；Gemini 在 [aistudio.google.com/apikey](https://aistudio.google.com/apikey)（有免費方案）。
-2. **填入金鑰：** 選單列 → **語音輸入設定 → 語音輸入引擎 → 引擎設定…** → 開啟對應的 `openai.json` / `gemini.json`，把金鑰貼進 `api_key` 欄位。金鑰留空 = 雲端功能完全停用。
-3. **選擇引擎與模型：** 同一個設定視窗切換 本機 / OpenAI / Gemini。預設模型：OpenAI `gpt-4o-mini-transcribe`（可改選 `gpt-transcribe`）；Gemini `gemini-3.5-flash-lite`（經濟，Free tier 可用），可改選 `gemini-3.7-flash`（品質）。
-4. **知情同意與護欄：** 每個工作階段第一次雲端轉錄前會出現同意視窗，說明音訊將直接從你的 Mac 傳給供應商（沒有轉送伺服器）。每日花費警示（預設 $5，可調 0.5-100）會在上傳**之前**就擋下超標的請求並鎖定當日雲端，「重設今日計數」可解鎖；錄音過長也會在上傳前被擋下。網路逾時（180 秒）會給你三個明確選項：**重試雲端 / 這次用本機 / 取消**，音訊都還在，不會憑空消失，也絕不暗中重試。
-5. **引擎選擇跨重啟保留**（刻意設計）：常用雲端的人，下次啟動本機模型完全不載入，模型記憶體從 0 開始。切回本機引擎時自動重新載入模型。
-
-> **Gemini Free tier 提醒：** 使用 Google 免費方案時，Google 可能會使用提交的音訊來改進其產品；付費方案則不會。App 內同意視窗會如實揭露這一點。
+倉庫仍保留上游 OpenAI/Gemini 實作，方便未來恢復，但這個本機 MVP 已刻意隱藏相關選單並停用雲端引擎選擇；上游雲端操作說明不適用於本版。
 
 ### 選用功能：Live Caption / Live Translated Caption（macOS 15+）
 
@@ -491,7 +478,7 @@ private static let rightOptionKeyCode: Int64 = 61
 - **不儲存任何錄音。** 語音資料僅存在於記憶體中（錄音 → 轉錄流程），完成後即丟棄。無論 macOS 或 iOS 伺服器，皆不會將任何音訊寫入磁碟。
 - **設定完成後不需要網路。** 唯一需要連網的是首次啟動時下載 Qwen3-ASR 1.7B 8-bit 模型。之後，F5 本機 App 與模型完全離線運行，零對外連線。
 - **無遙測。** 無分析追蹤、無使用統計、無回傳機制。macOS App 除了初始模型下載（由 speech-swift 內的 HuggingFace Hub SDK 處理）以及選用的 GitHub releases 更新檢查外，不包含任何本機模式網路程式碼。
-- **可完全離網運作。** 事先在另一台機器下載模型資料夾（macOS App 為 `~/.cache/huggingface/hub/models--mlx-community--Qwen3-ASR-1.7B-8bit/`，省電模式則為 `~/.cache/huggingface/hub/models--aufklarer--Qwen3-ASR-0.6B-MLX-4bit/`；iOS 伺服器為 `~/.cache/huggingface/hub/models--mlx-community--Qwen3-ASR-0.6B-4bit/`）再複製過來，App 將永遠不需要網路。
+- **可完全離網運作。** 把完整模型資料夾複製到 `~/Library/Caches/qwen3-speech/models/mlx-community/Qwen3-ASR-1.7B-8bit/`；省電模式則放到 `~/Library/Caches/qwen3-speech/models/aufklarer/Qwen3-ASR-0.6B-MLX-4bit/`。之後本機聽寫不需要網路。
 
 ### 雲端模式（選擇加入：雲端語音輸入 / Live Translated Caption）
 
