@@ -52,6 +52,8 @@
 
 "menu.interface_language.english" = "English";
 
+"menu.interface_language.simplified_chinese" = "簡體中文";
+
 /* Language choice shown as an autonym; exact spelling is product-approved. */
 
 "menu.interface_language.traditional_chinese_taiwan" = "繁體中文（台灣）";
@@ -107,6 +109,8 @@
 /* App-owned status fragment after initial local-model load failure. */
 
 "status.model_load_failed" = "模型載入失敗";
+
+"status.setup_required" = "等待完成權限設定";
 
 /* App-owned status fragment after model reload failure. */
 
@@ -496,7 +500,7 @@
 
 /* Preserve approximate three-second cold-start semantics and shortcut glyph. */
 
-"alert.model_unloaded.local.message" = "語音辨識模型已從記憶體移除。\n\n下次按下右側 ⌥ 使用語音輸入時，需要冷啟動（約 3 秒）。";
+"alert.model_unloaded.local.message" = "語音辨識模型已從記憶體移除。\n\n下次按下 F5 使用語音輸入時，需要冷啟動（約 3 秒）。";
 
 /* Cloud-upload gate title; this is HushType's local warning, not provider billing enforcement. */
 
@@ -738,9 +742,9 @@
 
 "window.onboarding.title" = "設定 HushType";
 
-/* Permission-purpose summary; Right Option is a key name, not the ⌥ glyph on this surface. */
+/* Permission-purpose summary for the local-only F5 build. */
 
-"onboarding.intro" = "允許 HushType 偵測右側 Option 鍵，並在本機錄下你的語音。";
+"onboarding.intro" = "允許 HushType 監聽 F5，並在本機錄下你的語音。";
 
 /* Apple permission category name. */
 
@@ -748,7 +752,7 @@
 
 /* Explains why Accessibility is required. */
 
-"permission.accessibility.subtitle" = "右側 Option 快速鍵需要這項權限。";
+"permission.accessibility.subtitle" = "全域 F5 快速鍵需要這項權限。";
 
 /* Permission row state after opening relevant settings. */
 

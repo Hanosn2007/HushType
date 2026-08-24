@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Interface-localization gate (macOS Phase 1, zh-Hant-TW).
+# Interface-localization gate (English, Simplified Chinese, Traditional Chinese).
 #
 # Validates the Apple-standard .strings / .stringsdict resource pipeline for
 # both the source of truth and the built app bundle:
 #
 #   scripts/check_localizations.sh --source-manifest <out.json>
-#     Validate Sources/HushType/Resources: exactly en.lproj + zh-Hant-TW.lproj
-#     (stale/unknown locale dirs are rejected), all five required tables,
-#     plutil lint, en/zh-Hant-TW key parity, recursive format signatures
+#     Validate Sources/HushType/Resources: exactly en.lproj + zh-Hans.lproj +
+#     zh-Hant-TW.lproj (stale/unknown locale dirs are rejected), all five
+#     required tables, plutil lint, key parity for every locale, recursive
+#     format signatures
 #     (including .stringsdict variants), and cross-check every key against the
 #     frozen Gate B manifest (table, English value, placeholders). Emits the
 #     semantic manifest (parsed key sets, values, plural variants, recursive
@@ -63,7 +64,7 @@ mode, target, manifest_path, catalog_path = sys.argv[1], pathlib.Path(sys.argv[2
 base = pathlib.Path(target)
 errors = []
 
-LOCALES = ["en", "zh-Hant-TW"]
+LOCALES = ["en", "zh-Hans", "zh-Hant-TW"]
 TABLES = ["Localizable", "Localizable.stringsdict", "Templates", "InfoPlist", "ServicesMenu"]
 
 
@@ -173,48 +174,52 @@ for table in TABLES:
 # ---- locale parity + recursive signatures -------------------------------
 for table in TABLES:
     en = manifest["tables"][table].get("en")
-    zh = manifest["tables"][table].get("zh-Hant-TW")
-    if not isinstance(en, dict) or not isinstance(zh, dict):
+    if not isinstance(en, dict):
         continue
-    en_keys, zh_keys = set(en), set(zh)
-    if en_keys != zh_keys:
-        fail(f"{table}: key parity mismatch; en-only={sorted(en_keys - zh_keys)} zh-only={sorted(zh_keys - en_keys)}")
-    for key in sorted(en_keys & zh_keys):
-        if table.endswith("stringsdict"):
-            en_node, zh_node = en[key], zh[key]
-            en_c = en_node.get("count") if isinstance(en_node, dict) else None
-            zh_c = zh_node.get("count") if isinstance(zh_node, dict) else None
-            if not isinstance(en_c, dict) or not isinstance(zh_c, dict):
-                fail(f"{table}[{key}]: malformed plural node (count dict required)")
-                continue
-            if "other" not in en_c or "other" not in zh_c:
-                fail(f"{table}[{key}]: 'other' variant required in both locales")
-                continue
-            for variant in ("one", "other"):
-                if variant in en_c and variant in zh_c:
+    en_keys = set(en)
+    for locale in LOCALES[1:]:
+        zh = manifest["tables"][table].get(locale)
+        if not isinstance(zh, dict):
+            continue
+        zh_keys = set(zh)
+        if en_keys != zh_keys:
+            fail(f"{table}: key parity mismatch for {locale}; en-only={sorted(en_keys - zh_keys)} {locale}-only={sorted(zh_keys - en_keys)}")
+        for key in sorted(en_keys & zh_keys):
+            if table.endswith("stringsdict"):
+                en_node, zh_node = en[key], zh[key]
+                en_c = en_node.get("count") if isinstance(en_node, dict) else None
+                zh_c = zh_node.get("count") if isinstance(zh_node, dict) else None
+                if not isinstance(en_c, dict) or not isinstance(zh_c, dict):
+                    fail(f"{table}[{key}]: malformed plural node (count dict required)")
+                    continue
+                if "other" not in en_c or "other" not in zh_c:
+                    fail(f"{table}[{key}]: 'other' variant required in both locales")
+                    continue
+                for variant in ("one", "other"):
+                    if variant in en_c and variant in zh_c:
+                        try:
+                            a, b = norm(sig(en_c[variant])), norm(sig(zh_c[variant]))
+                        except ValueError as e:
+                            fail(f"{table}[{key}] {variant} ({locale}): {e}")
+                            continue
+                        if a != b:
+                            fail(f"{table}[{key}] {variant}: signature mismatch en={en_c[variant]!r} {locale}={zh_c[variant]!r}")
+                if "one" in en_c and "one" not in zh_c:
+                    # Chinese may collapse to invariant 'other'; its
+                    # signature must still match English's replaced variant.
                     try:
-                        a, b = norm(sig(en_c[variant])), norm(sig(zh_c[variant]))
+                        if norm(sig(en_c["one"])) != norm(sig(zh_c["other"])):
+                            fail(f"{table}[{key}] ({locale}): collapsed 'other' signature differs from en 'one'")
                     except ValueError as e:
-                        fail(f"{table}[{key}] {variant}: {e}")
-                        continue
-                    if a != b:
-                        fail(f"{table}[{key}] {variant}: signature mismatch en={en_c[variant]!r} zh={zh_c[variant]!r}")
-            if "one" in en_c and "one" not in zh_c:
-                # zh may collapse to invariant 'other'; its signature must
-                # still match the English variant it replaces.
+                        fail(f"{table}[{key}] ({locale}): {e}")
+            else:
                 try:
-                    if norm(sig(en_c["one"])) != norm(sig(zh_c["other"])):
-                        fail(f"{table}[{key}]: collapsed zh 'other' signature differs from en 'one'")
+                    a, b = norm(sig(en[key])), norm(sig(zh[key]))
                 except ValueError as e:
-                    fail(f"{table}[{key}]: {e}")
-        else:
-            try:
-                a, b = norm(sig(en[key])), norm(sig(zh[key]))
-            except ValueError as e:
-                fail(f"{table}[{key}]: {e}")
-                continue
-            if a != b:
-                fail(f"{table}[{key}]: signature mismatch en={en[key]!r} zh={zh[key]!r}")
+                    fail(f"{table}[{key}] ({locale}): {e}")
+                    continue
+                if a != b:
+                    fail(f"{table}[{key}] ({locale}): signature mismatch en={en[key]!r} {locale}={zh[key]!r}")
 
 # ---- cross-check against the frozen Gate B catalog -----------------------
 # Upstream keeps Product_WS out of git, so source checkouts do not include

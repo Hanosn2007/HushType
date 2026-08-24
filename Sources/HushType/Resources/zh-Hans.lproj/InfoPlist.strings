@@ -1,0 +1,13 @@
+/* Generated from the frozen Gate B manifest + decisions overlay. */
+
+/* macOS-owned TCC purpose string; selected according to OS language behavior, not the in-app override. */
+
+"NSMicrophoneUsageDescription" = "HushType 需要麦克风访问权限，才能将你的语音输入转成文本。";
+
+/* macOS-owned TCC purpose string. High-risk privacy claim; Apple permission label needs macOS 15/26 visual verification. */
+
+"NSScreenCaptureUsageDescription" = "你戴着耳机时，HushType 会使用「屏幕与系统音频录制」权限，为 Zoom、Chrome、Safari 等 App 的音频生成字幕。只会处理音频，绝不读取屏幕内容。";
+
+/* Copyright metadata; proper name and MIT License identity remain unchanged. */
+
+"NSHumanReadableCopyright" = "MIT License © 2026 Felix Fu";

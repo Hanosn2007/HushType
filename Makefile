@@ -11,7 +11,7 @@ MARISA_LIB_DIR = /opt/homebrew/opt/marisa/lib
 .PHONY: build run bundle bundle-opencc install uninstall dmg clean l10n-verify l10n-verify-dest
 
 # Supported interface-localization locale dirs copied into the app bundle.
-L10N_LOCALES = en.lproj zh-Hant-TW.lproj
+L10N_LOCALES = en.lproj zh-Hans.lproj zh-Hant-TW.lproj
 # Known pre-release legacy dir that must never survive in a built bundle.
 L10N_LEGACY_LOCALES = zh-Hant.lproj
 L10N_SOURCE_MANIFEST = .build/l10n_source_manifest.json

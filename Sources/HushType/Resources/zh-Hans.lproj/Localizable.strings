@@ -1,0 +1,1457 @@
+/* Generated from the frozen Gate B manifest + decisions overlay. */
+
+/* Default acknowledgement button used by HushType alerts. */
+
+"common.button.ok" = "好";
+
+/* Cancels the current prompt without changing the underlying feature state. */
+
+"common.button.cancel" = "取消";
+
+/* Opens the relevant HushType settings window. */
+
+"common.button.open_settings" = "打开设置";
+
+/* Opens the relevant macOS System Settings pane. */
+
+"common.button.open_system_settings" = "打开系统设置";
+
+/* Opens the provider key file. */
+
+"common.button.open_file" = "打开文件";
+
+/* Opens a plaintext configuration file in TextEdit. */
+
+"common.button.open_in_textedit" = "在 TextEdit 中打开文件";
+
+/* Resets today's local cloud-usage counter, not provider billing. */
+
+"common.button.reset_counter" = "重置今日计数";
+
+/* Runs this one transcription locally without changing the saved engine. */
+
+"common.button.use_local_once" = "这次使用本地";
+
+/* Changes the saved dictation/caption engine to local. */
+
+"common.button.switch_to_local" = "切换至本地";
+
+/* Retries the same recording with the selected cloud provider. */
+
+"common.button.retry_cloud" = "重试云端";
+
+/* New top-level status-menu submenu; distinct from speech-recognition language. */
+
+"menu.interface_language" = "界面语言";
+
+/* Interface-language preference that follows ordered macOS app/process language preferences. */
+
+"menu.interface_language.follow_system" = "跟随系统";
+
+/* Language choice shown as an autonym. */
+
+"menu.interface_language.english" = "English";
+
+"menu.interface_language.simplified_chinese" = "简体中文";
+
+/* Language choice shown as an autonym; exact spelling is product-approved. */
+
+"menu.interface_language.traditional_chinese_taiwan" = "繁体中文（台湾）";
+
+/* Disabled informational row; it must not sound actionable or imply an automatic restart. */
+
+"menu.interface_language.applied_next_launch" = "下次启动时应用";
+
+/* Accessibility description for the disabled next-launch row; not a restart button. */
+
+"menu.interface_language.applied_next_launch.accessibility" = "界面语言会在你下次打开 HushType 时应用";
+
+/* Informational alert title after changing the next-launch interface language. */
+
+"alert.language_saved.title" = "语言已保存";
+
+/* Passive next-launch explanation; does not offer or imply programmatic quit/restart. */
+
+"alert.language_saved.message" = "这项设置会在你下次打开 HushType 时应用。请先完成进行中的工作，再结束 HushType。";
+
+/* Initial status-menu state. */
+
+"status.loading" = "正在加载…";
+
+/* Combined status row; argument 1 is an integer percentage. */
+
+"status.loading_model_percent" = "正在加载模型（%1$d%%）…";
+
+/* Status-menu idle state. */
+
+"status.ready" = "就绪";
+
+/* Status-menu recording state. */
+
+"status.recording" = "正在录音…";
+
+/* Status-menu transcription state. */
+
+"status.transcribing" = "正在转录…";
+
+/* Status-menu Text Polish state. */
+
+"status.polishing" = "正在校对…";
+
+/* Status-menu wrapper around an app-owned localized state error; argument 1 is error text. */
+
+"status.error" = "错误：%1$@";
+
+/* Status-menu state after unloading the local speech model. */
+
+"status.model_unloaded" = "模型未加载";
+
+/* App-owned status fragment after initial local-model load failure. */
+
+"status.model_load_failed" = "模型加载失败";
+
+"status.setup_required" = "等待完成权限设置";
+
+/* App-owned status fragment after model reload failure. */
+
+"status.model_reload_failed" = "重新加载失败";
+
+/* Combined status row; argument 1 is localized state, argument 2 is locale-neutral memory text. */
+
+"status.memory" = "%1$@ · 内存 %2$@";
+
+/* Combined cloud-engine status row; arguments are localized state, provider name, model status. */
+
+"status.cloud_engine" = "%1$@ · 云端（%2$@）· %3$@";
+
+/* Cloud-engine row notes local model remains loaded; argument is memory text. */
+
+"status.model_loaded_memory" = "模型已加载（%1$@）";
+
+/* Cloud-engine row when the local model is absent. */
+
+"status.no_model_loaded" = "未加载模型";
+
+/* Local on-device caption product name. */
+
+"menu.live_caption" = "实时字幕";
+
+/* Opt-in cloud translated-caption product name. */
+
+"menu.live_translated_caption" = "实时翻译字幕";
+
+/* Selected-text translation feature name. */
+
+"menu.text_translation" = "文本翻译";
+
+/* Text Polish feature and activation hint. */
+
+"menu.text_polish" = "文本校对（连按两次 ⌥）";
+
+/* Temporary validation state after enabling Text Polish. */
+
+"menu.text_polish.validating" = "文本校对（正在验证…）";
+
+/* Opens polish_rules.txt. */
+
+"menu.edit_polish_instructions" = "编辑校对指示";
+
+/* Status-menu submenu for dictation engine and processing options. */
+
+"menu.dictation_settings" = "语音输入设置";
+
+/* Local model controls exposed by the local-only MVP status menu. */
+
+"menu.local_model" = "本地模型";
+
+"menu.local_model.apply_note" = "模型选择会在下次加载本地模型时应用";
+
+/* Starts the local iOS companion server. */
+
+"menu.ios_server.start" = "启动 iOS 服务器";
+
+/* Stops the local iOS companion server; numeric port is exact. */
+
+"menu.ios_server.stop" = "停止 iOS 服务器（端口 8000）";
+
+/* Frees the local speech-to-text model from memory. */
+
+"menu.model.unload" = "卸载语音转文字模型";
+
+/* Reloads the local speech-to-text model. */
+
+"menu.model.reload" = "重新加载语音转文字模型";
+
+/* Opens the About alert. */
+
+"menu.about" = "关于 HushType";
+
+/* Normal explicit Quit command; unrelated to interface-language selection. */
+
+"menu.quit" = "结束 HushType";
+
+/* Privacy/cost subtitle for local Live Caption. */
+
+"menu.live_caption.subtitle" = "本地转录 — 免费、在设备上运行";
+
+/* Cloud/provider/cost marker subtitle; dollar glyph is retained. */
+
+"menu.live_translated_caption.subtitle" = "通过 OpenAI 实时将外语转成文本 · $";
+
+/* Starts the selected caption product with its last source. */
+
+"menu.caption.start_last_source" = "使用上次的来源开始";
+
+/* Caption audio-source choice. */
+
+"menu.caption.from_microphone" = "从麦克风";
+
+/* Caption system-audio source choice; opens a picker/permission flow. */
+
+"menu.caption.from_system_audio" = "从系统音频…";
+
+/* Opens the running-app system-audio picker. */
+
+"menu.caption.change_system_audio_source" = "更改系统音频来源…";
+
+/* Stops local Live Caption. */
+
+"menu.live_caption.stop" = "停止实时字幕";
+
+/* Stops the paid cloud translated-caption session. */
+
+"menu.live_translated_caption.stop" = "停止实时翻译字幕";
+
+/* Opens live_caption.json. */
+
+"menu.live_caption.edit_settings" = "编辑实时字幕设置";
+
+/* Opens translated-caption cloud settings. */
+
+"menu.live_translated_caption.settings" = "实时翻译字幕设置…";
+
+/* Provider/framework subtitle for selected-text translation. */
+
+"menu.text_translation.subtitle" = "通过 Apple Translation Framework";
+
+/* Toggle for selected-text translation. */
+
+"menu.text_translation.enable" = "启用文本翻译";
+
+/* Target-language submenu label. */
+
+"menu.translate_to" = "翻译成";
+
+/* Disabled activation hint; preserve shortcut glyph. */
+
+"menu.translation_hint" = "按一下右侧 ⌥ 以翻译选中的文本";
+
+/* Automatic target/detection choice in translation and speech-to-text language menus. */
+
+"menu.choice.auto" = "自动";
+
+/* Dictation engine submenu and settings heading. */
+
+"menu.dictation_engine" = "语音输入引擎";
+
+/* Local dictation engine choice; model name is immutable. */
+
+"menu.engine.local_qwen" = "本地（Qwen3-ASR）";
+
+/* OpenAI cloud dictation engine choice. */
+
+"menu.engine.openai_cloud" = "OpenAI 云端";
+
+/* Gemini cloud dictation engine choice. */
+
+"menu.engine.gemini_cloud" = "Gemini 云端";
+
+/* Opens Dictation Engine Settings. */
+
+"menu.engine_settings" = "引擎设置…";
+
+/* Recognition-language submenu; explicitly not interface language. */
+
+"menu.speech_to_text_language" = "语音转文字语言";
+
+/* Toggle for deterministic Chinese numeral conversion. */
+
+"menu.number_conversion" = "数字转换";
+
+/* Disabled explanation beneath Number Conversion. */
+
+"menu.number_conversion.subtitle" = "中文数字 → 阿拉伯数字";
+
+/* Punctuation cleanup submenu. */
+
+"menu.punctuation_cleanup" = "标点清理";
+
+/* Punctuation mode that trims inline Chinese commas. */
+
+"menu.punctuation.soft" = "温和 — 移除行内逗号";
+
+/* Punctuation mode that trims all configured marks. */
+
+"menu.punctuation.hard" = "强力 — 移除所有标点";
+
+/* Punctuation mode that preserves model output. */
+
+"menu.punctuation.off" = "关闭 — 保留模型输出";
+
+/* Disabled explanation beneath Punctuation Cleanup. */
+
+"menu.punctuation.subtitle" = "移除中文中过多的标点";
+
+/* Toggle for the dictation state overlay. */
+
+"menu.floating_indicator" = "显示浮动指示器";
+
+/* Creates/opens dictionary.txt. */
+
+"menu.edit_dictionary" = "编辑自定义字典";
+
+/* Dictionary subtitle before dictionary.txt is created. */
+
+"menu.dictionary.no_file" = "没有字典文件";
+
+/* Accessibility description for the custom green checkmark image. */
+
+"accessibility.checkmark.enabled" = "已启用";
+
+/* Resource-conflict alert title. */
+
+"alert.caption_conflict.stop_live_caption.title" = "请先停止实时字幕";
+
+/* Explains GPU-memory conflict between local caption and iOS server. */
+
+"alert.caption_conflict.stop_live_caption.message" = "实时字幕正在运行。启动 iOS 服务器前请先停止实时字幕，两者会共用 GPU 内存。";
+
+/* Resource-conflict alert title. */
+
+"alert.caption_conflict.stop_ios_server.title" = "请先停止 iOS 服务器";
+
+/* Explains GPU-memory conflict before local caption. */
+
+"alert.caption_conflict.stop_ios_server.local_message" = "iOS 服务器正在运行。启动实时字幕前请先停止服务器，两者会共用 GPU 内存。";
+
+/* Explains GPU-memory conflict before cloud translated caption. */
+
+"alert.caption_conflict.stop_ios_server.translated_message" = "iOS 服务器正在运行。启动实时翻译字幕前请先停止服务器，两者会共用 GPU 内存。";
+
+/* Shown when live_caption.json could not be created/opened. */
+
+"alert.file_create.live_caption.title" = "无法打开实时字幕设置";
+
+/* Argument 1 is a filesystem path and remains untouched. */
+
+"alert.file_create.live_caption.message" = "无法在以下位置创建设置档：\n%1$@";
+
+/* Shown when dictionary.txt could not be created/opened. */
+
+"alert.file_create.dictionary.title" = "无法打开字典";
+
+/* Argument 1 is a filesystem path and remains untouched. */
+
+"alert.file_create.dictionary.message" = "无法在以下位置创建字典文件：\n%1$@";
+
+/* Shown when polish_rules.txt could not be created/opened. */
+
+"alert.file_create.polish.title" = "无法打开校对指示";
+
+/* Argument 1 is a filesystem path and remains untouched. */
+
+"alert.file_create.polish.message" = "无法在以下位置创建指示档：\n%1$@";
+
+/* Validation alert title when Text Polish cannot run. */
+
+"alert.text_polish.unavailable.title" = "无法使用文本校对";
+
+/* Argument 1 is an app-owned localized or system-provided availability reason. */
+
+"alert.text_polish.unavailable.message" = "文本校对需要 macOS 26 + Apple Intelligence。\n\n%1$@";
+
+/* About alert title; argument is the app version. */
+
+"about.title" = "HushType v%1$@";
+
+/* About body; product names, author, language codes, license identity, and URL remain literal. */
+
+"about.body" = "适用于 macOS 和 iOS 的本地语音转文字工具。\n支持多语言（EN/ZH/JP），并输出简体中文。\n\n作者：Felix Fu\n共同创作：Claude（Anthropic）\n授权：MIT\n\ngithub.com/felixfu824/HushType";
+
+/* Starts the explicit-consent GitHub update check. */
+
+"about.check_updates" = "检查更新";
+
+/* Consent title shown every time before the app makes a GitHub API request. */
+
+"alert.update_consent.title" = "要连接至 GitHub 吗？";
+
+/* Privacy-sensitive consent copy; do not broaden or weaken the data claim. */
+
+"alert.update_consent.message" = "HushType 将连接至 GitHub 以检查新版本。\n\n不会传送个人信息，只会调用公开 API 来比较版本号。";
+
+/* Explicitly authorizes the one-time GitHub network request. */
+
+"alert.update_consent.check_now" = "立即检查";
+
+/* Update-check result title. */
+
+"alert.update.up_to_date.title" = "已是最新版本";
+
+/* Argument 1 is the current app version. */
+
+"alert.update.up_to_date.message" = "你正在使用最新版本（v%1$@）。";
+
+/* Update-check result title. */
+
+"alert.update.available.title" = "有可用的更新";
+
+/* Argument 1 is the latest version. */
+
+"alert.update.available.message" = "有新版本可用：v%1$@\n\n你可以从 GitHub Releases 页面下载。";
+
+/* Opens the release page in the browser. */
+
+"alert.update.view_github" = "在 GitHub 上查看";
+
+/* Update network/parse error title. */
+
+"alert.update.error.title" = "无法检查更新";
+
+/* Argument 1 is a system/app error description and is inserted without machine translation. */
+
+"alert.update.error.message" = "无法连接至 GitHub。\n\n%1$@\n\n请检查网络连接后再试一次。";
+
+/* HushType-owned version-check diagnostic; argument is HTTP status. */
+
+"error.version.http" = "GitHub 传回 HTTP %1$d";
+
+/* HushType-owned version-check diagnostic. */
+
+"error.version.invalid_json" = "无法解析 GitHub 回应";
+
+/* HushType-owned version-check diagnostic; JSON key stays exact. */
+
+"error.version.missing_tag" = "GitHub 回应缺少 tag_name";
+
+/* Explicit Services-path error when Text Translation is disabled. */
+
+"error.translation.disabled" = "HushType 菜单中的文本翻译已关闭。";
+
+/* Explicit Services-path and Text Polish empty-selection error. */
+
+"error.selection.none" = "未选择任何文本。";
+
+/* Text Polish failure alert title. */
+
+"alert.polish_failed.title" = "文本校对失败";
+
+/* Argument 1 is a localized PolishError or system model error. */
+
+"alert.polish_failed.message" = "无法校对选中的文本。\n\n%1$@";
+
+/* Selected-text translation unsupported-language alert title. */
+
+"alert.translation.unsupported.title" = "不支持此语言";
+
+/* Argument 1 is a language display name/code. This is a product-level summary, not an exhaustive provider promise. */
+
+"alert.translation.unsupported.message" = "Apple Translation Framework 不支持检测到的语言（%1$@）。\n\n支持的语言包括英语、中文、日语、韩语、法语、德语、西班牙语等。";
+
+/* Selected-text translation missing language-pack alert title. */
+
+"alert.translation.pack_missing.title" = "尚未安装语言包";
+
+/* Arguments are source and target display names. Apple breadcrumb wording requires manual macOS 15/26 verification. */
+
+"alert.translation.pack_missing.message" = "从%1$@翻译成%2$@需要下载语言包。\n\n系统设置 → 通用 → 语言与地区 → 翻译语言 → 下载";
+
+/* Selected-text translation failure title. */
+
+"alert.translation.failed.title" = "翻译失败";
+
+/* Argument 1 is an app-owned or system error description. */
+
+"alert.translation.failed.message" = "无法翻译选中的文本。\n\n%1$@";
+
+/* Opens macOS Translation Languages settings from the missing-pack alert. */
+
+"common.button.open_translation_settings" = "打开设置";
+
+/* Model-unload confirmation when local Live Caption was active. */
+
+"alert.model_unloaded.live_caption.title" = "实时字幕已停止";
+
+/* Explains model unload effect on local Live Caption. */
+
+"alert.model_unloaded.live_caption.message" = "语音转文字模型已卸载。重新加载模型后，请从菜单再次启用实时字幕。";
+
+/* Model-unload confirmation while a cloud dictation engine is selected. */
+
+"alert.model_unloaded.cloud.title" = "本地模型已卸载";
+
+/* Clarifies only the local model was unloaded and cloud dictation remains available. */
+
+"alert.model_unloaded.cloud.message" = "本地语音识别模型已从内存移除。云端语音输入仍可使用。";
+
+/* Model-unload confirmation for local dictation. */
+
+"alert.model_unloaded.local.title" = "模型已卸载";
+
+/* Preserve approximate three-second cold-start semantics and shortcut glyph. */
+
+"alert.model_unloaded.local.message" = "语音识别模型已从内存移除。\n\n下次按下 F5 使用语音输入时，需要冷启动（约 3 秒）。";
+
+/* Cloud-upload gate title; this is HushType's local warning, not provider billing enforcement. */
+
+"alert.daily_spend_gate.title" = "已达每日费用警示";
+
+/* Arguments are formatted USD totals with exact two-decimal precision; explicitly says no audio was uploaded. */
+
+"alert.daily_spend_gate.message" = "这次上传会使今天的云端预计费用达到 %1$@（警示值：%2$@）。目前尚未上传任何音频。请打开设置并重置今天的计数，才能再次使用云端。";
+
+/* Local notification title for HushType's daily cloud warning. */
+
+"notification.daily_spend.title" = "已达每日费用警示";
+
+/* Arguments are formatted USD totals with exact two-decimal precision. */
+
+"notification.daily_spend.body" = "今天的云端费用合计为 %1$@（警示值：%2$@）。";
+
+/* Failure title after Use Local Once fails. */
+
+"alert.local_transcription_failed.title" = "本地转录失败";
+
+/* Cloud dictation missing-key title. */
+
+"alert.cloud.no_key.title" = "尚未设置 API 密钥";
+
+/* Argument 1 is provider name. */
+
+"alert.cloud.no_key.message" = "使用云端语音输入前，请先在「语音输入引擎设置」中加入你的 %1$@ API 密钥。";
+
+/* Argument 1 is provider name; do not imply HushType rejected it. */
+
+"alert.cloud.auth.title" = "%1$@ 拒绝了这组 API 密钥";
+
+/* Argument 1 is an exact filesystem path. */
+
+"alert.cloud.auth.message" = "请检查 %1$@。";
+
+/* Argument 1 is provider name; provider-policy wording. */
+
+"alert.cloud.permission.title" = "%1$@ 拒绝了这项要求";
+
+/* Argument 1 is exact key-file path; retain uncertainty ('may'). */
+
+"alert.cloud.permission.message" = "API 密钥已存在，但其条目或模型权限可能不允许这项要求。请检查服务提供商的访问权限与 %1$@。";
+
+/* Argument 1 is provider name. */
+
+"alert.cloud.rate_limit.title" = "已达 %1$@ 配额或速率限制";
+
+/* Distinguishes provider quota/billing from HushType's local warning; argument is provider. */
+
+"alert.cloud.rate_limit.message" = "这项限制来自 %1$@，不是 HushType 的每日费用警示。请检查服务提供商的用量或账务信息，或稍后再试。";
+
+/* Cloud upload size-limit title. */
+
+"alert.cloud.payload.title" = "录音时间过长，无法进行云端转录";
+
+/* Privacy-sensitive: explicitly says no audio was uploaded. */
+
+"alert.cloud.payload.message" = "这段录音超过云端上传限制。目前尚未上传任何音频。";
+
+/* Cloud transcription timeout title. */
+
+"alert.cloud.timeout.title" = "云端转录超时";
+
+/* Argument 1 is provider; preserve exact 180-second timeout and retention statement. */
+
+"alert.cloud.timeout.message" = "%1$@ 未在 180 秒内回应。这段录音仍可使用。";
+
+/* Cloud reachability failure title. */
+
+"alert.cloud.network.title" = "无法使用云端转录";
+
+/* Argument 1 is provider; says local recovery remains possible. */
+
+"alert.cloud.network.message" = "HushType 无法连接至 %1$@。这段录音仍可用于本地转录。";
+
+/* Argument 1 is provider; does not expose raw response. */
+
+"alert.cloud.malformed.title" = "%1$@ 传回无法读取的转录内容";
+
+/* Shared recovery statement for malformed/safety-blocked provider results. */
+
+"alert.cloud.no_insert_local_available" = "未插入任何文本。这段录音仍可用于本地转录。";
+
+/* Provider safety-policy result title; do not infer the reason. */
+
+"alert.cloud.safety.title" = "Gemini 已阻止这次转录";
+
+/* Dictation settings window title. */
+
+"window.dictation_engine_settings.title" = "语音输入引擎设置";
+
+/* High-risk privacy architecture summary; preserve direct-to-provider/no-relay/no-HushType-server claims. */
+
+"settings.dictation.description" = "选择要在哪里将语音转成文本。本地处理私密且免费。云端引擎会使用你自己的 API 密钥，将音频直接传送给服务提供商；中间没有转送服务，也不会经过 HushType 服务器。";
+
+/* Dictation engine section heading. */
+
+"settings.dictation.engine_section" = "引擎";
+
+/* Local-engine privacy/cost/memory qualifier; preserve approximation and 2.1 GB. */
+
+"settings.engine.local.detail" = "隐私 · 免费 · 加载时约占 2.1 GB RAM";
+
+/* Argument 1 is a rate string with exact three-decimal USD precision. */
+
+"settings.engine.cloud.detail" = "%1$@ · 不占用模型 RAM";
+
+/* Argument 1 is configured rate. 'Free tier' and metered rate coexist in source; do not strengthen the free claim. */
+
+"settings.engine.gemini.detail" = "%1$@ · 不占用模型 RAM";
+
+/* Model picker label. */
+
+"settings.engine.openai_model" = "OpenAI 模型：";
+
+/* Model picker label. */
+
+"settings.engine.gemini_model" = "Gemini 模型：";
+
+/* Model ID is immutable; only qualifier is localized. */
+
+"settings.model.recommended" = "gpt-4o-mini-transcribe（建议）";
+
+/* Model ID is immutable; only qualifier is localized. */
+
+"settings.model.quality" = "gemini-3.7-flash（质量）";
+
+/* Model ID is immutable; 'budget' means lower-cost choice. */
+
+"settings.model.budget" = "gemini-3.5-flash-lite（经济）";
+
+/* Memory/engine behavior explanation. */
+
+"settings.engine.cloud_unloads_local" = "选择云端引擎时，语音模型会保持卸载状态。iOS 服务器始终使用本地模型。";
+
+/* HushType local cloud-spend guardrail heading; not a provider billing cap. */
+
+"settings.daily_spend.title" = "每日费用警示";
+
+/* Local upload-block threshold label. */
+
+"settings.daily_spend.block_at" = "达到此金额时阻挡新的云端上传：";
+
+/* API-key settings section heading. */
+
+"settings.api_keys.title" = "API 密钥";
+
+/* Initial key-status placeholder. */
+
+"settings.key.status.placeholder" = "状态：—";
+
+/* Provider API-key load status. */
+
+"settings.key.status.loaded" = "状态：✓ 已加载密钥";
+
+/* Empty OpenAI key state. */
+
+"settings.key.status.openai_empty" = "状态：密钥空白 — OpenAI 云端功能已停用";
+
+/* Empty Gemini key state. */
+
+"settings.key.status.gemini_empty" = "状态：密钥空白 — Gemini 云端语音输入已停用";
+
+/* Warns that an unusual key is not rejected locally. */
+
+"settings.key.status.unusual" = "状态：密钥格式不常见 — 仍会按原样使用";
+
+/* Cloud rate with exactly three decimals; do not use generic currency rounding. */
+
+"format.usd_rate_per_minute" = "US$%1$.3f/分钟";
+
+/* Cloud total/warning with exactly two decimals. */
+
+"format.usd_total" = "US$%1$.2f";
+
+/* Translated-caption settings window title. */
+
+"window.translated_caption_settings.title" = "实时翻译字幕设置";
+
+/* High-risk privacy/billing copy; preserve direct path, no-middle claim, approximation, hourly amount, and user-owned billing account. */
+
+"settings.translated_caption.description" = "通过 OpenAI 的实时翻译端点进行实时云端翻译。音频会直接从 Mac 流式传输至 OpenAI，HushType 绝不介入其中。费用约为每小时 US$2，由你自己的 OpenAI API 密钥计费。";
+
+/* Translated-caption options section heading. */
+
+"settings.translated_caption.options" = "翻译选项";
+
+/* Cloud translated-caption target-language label. */
+
+"settings.translated_caption.target" = "目标语言：";
+
+/* Toggle for displaying source transcript above translated caption. */
+
+"settings.translated_caption.show_source" = "在翻译上方显示原文";
+
+/* Translated-caption cost-protection section heading. */
+
+"settings.cost_guardrails.title" = "费用防护";
+
+/* Auto-stop duration control label. */
+
+"settings.cost_guardrails.auto_stop" = "经过以下时间后自动停止会话：";
+
+/* Daily translated-caption warning threshold label. */
+
+"settings.cost_guardrails.daily_warning" = "每日费用达到此金额时警示：";
+
+/* Initial translated-caption usage placeholder. */
+
+"settings.usage.placeholder" = "今天的费用：—";
+
+/* Resets translated-caption auto-stop and daily warning defaults. */
+
+"settings.reset_defaults" = "重置为默认值";
+
+/* Singular API key section heading. */
+
+"settings.api_key.title" = "API 密钥";
+
+/* OpenAI key status without Status prefix. */
+
+"settings.key.loaded" = "✓ 已加载密钥";
+
+/* Empty OpenAI key status. */
+
+"settings.key.empty_cloud_disabled" = "密钥空白 — 云端功能已停用";
+
+/* OpenAI key-format warning; prefix stays exact. */
+
+"settings.key.unusual_sk" = "密钥格式不常见（不是以 sk- 开头）— 仍会按原样使用";
+
+/* Wraps a localized key-status line. */
+
+"settings.key.status_format" = "状态：%1$@";
+
+/* Onboarding/permission-repair panel title and heading. */
+
+"window.onboarding.title" = "设置 HushType";
+
+/* Permission-purpose summary for the local-only F5 build. */
+
+"onboarding.intro" = "允许 HushType 监听 F5，并在本地录制你的语音。";
+
+/* Apple permission category name. */
+
+"permission.accessibility.title" = "辅助功能";
+
+/* Explains why Accessibility is required. */
+
+"permission.accessibility.subtitle" = "全局 F5 快捷键需要此权限。";
+
+/* Permission row state after opening relevant settings. */
+
+"permission.status.restart_needed" = "需要重新启动";
+
+/* Permission row state before access is granted. */
+
+"permission.status.needs_permission" = "需要权限";
+
+/* Explicit stale Accessibility-entry repair action. */
+
+"permission.accessibility.reset_old" = "重置旧的 HushType 条目";
+
+/* Stale-entry troubleshooting guidance. */
+
+"permission.accessibility.reset_help" = "如果你安装过旧版 HushType、看到重复的 HushType 条目、找不到 HushType，或开关无法使用，请使用重置功能。";
+
+/* Success state after tccutil reset. */
+
+"permission.accessibility.reset_complete" = "旧的辅助功能条目已清除。请重新加入或启用 HushType。";
+
+/* Apple permission category name. */
+
+"permission.microphone.title" = "麦克风";
+
+/* Explains why Microphone permission is required. */
+
+"permission.microphone.subtitle" = "语音转文字需要这项权限。";
+
+/* Permission row state after grant. */
+
+"permission.status.allowed" = "已允许";
+
+/* Microphone permission request is in flight. */
+
+"permission.status.waiting" = "等待中…";
+
+/* Requests Microphone access. */
+
+"permission.microphone.allow" = "允许使用麦克风";
+
+/* Opens macOS Microphone privacy settings. */
+
+"permission.microphone.open_settings" = "打开麦克风设置";
+
+/* Quits onboarding without launching the app. */
+
+"onboarding.button.quit" = "结束";
+
+/* Existing permission-flow action; unrelated to interface-language selection. */
+
+"onboarding.button.restart" = "重新启动 HushType";
+
+/* Disabled restart-button help. */
+
+"onboarding.restart.help" = "重新启动前，请允许或检查麦克风访问权限。";
+
+/* Permission sequencing guidance. */
+
+"onboarding.next_step.allow_microphone" = "在辅助功能中启用 HushType 后，请先允许麦克风访问权限，再重新启动。";
+
+/* Permission restart guidance. */
+
+"onboarding.next_step.restart" = "在辅助功能中启用 HushType 后，请重新启动 App，让 macOS 应用设置生效。";
+
+/* Compact permission status value. */
+
+"permission.status.waiting_short" = "等待中";
+
+/* Microphone permission denied/restricted state. */
+
+"permission.status.blocked" = "已阻止";
+
+/* Unknown/future microphone permission state. */
+
+"permission.status.needs_review" = "需要检查";
+
+/* Confirmation title before resetting Accessibility entries. */
+
+"alert.accessibility_reset.title" = "要重置旧的 HushType 条目吗？";
+
+/* Destructive permission-reset confirmation; accurately states scope and required follow-up. */
+
+"alert.accessibility_reset.message" = "这会从辅助功能权限列表中清除 HushType。\n\n如果你安装过旧版 HushType、看到重复的 HushType 条目、找不到 HushType，或开关无法使用，请使用这项功能。之后你需要重新加入或启用 HushType。";
+
+/* Confirms reset and reopens System Settings. */
+
+"alert.accessibility_reset.confirm" = "重置并重新打开设置";
+
+/* Runtime hotkey permission-loss alert title. */
+
+"alert.accessibility_lost.title" = "辅助功能权限已失效";
+
+/* Runtime permission-repair path; Apple breadcrumb should be visually checked on supported macOS versions. */
+
+"alert.accessibility_lost.message" = "HushType 已失去辅助功能权限，全局快捷键目前无法使用。\n\n请在「系统设置 → 隐私与安全性 → 辅助功能」中重新启用 HushType，然后结束并重新打开 HushType。";
+
+/* System-audio permission panel title. */
+
+"window.system_audio_permission.title" = "启用系统音频";
+
+/* System-audio permission panel heading. */
+
+"permission.system_audio.heading" = "为实时字幕启用系统音频";
+
+/* Purpose summary; running app/provider names remain literal. */
+
+"permission.system_audio.intro" = "允许 HushType 为 Zoom、Chrome、Safari 等 App 的音频生成字幕。";
+
+/* Draft Apple Taiwan permission-pane label. Must be visually verified on macOS 15 and 26 before implementation freeze. */
+
+"permission.screen_system_audio.name" = "屏幕与系统音频录制";
+
+/* Explains why a screen-named permission is requested for audio. */
+
+"permission.system_audio.required_by_macos" = "macOS 规定捕获系统音频时必须获取这项权限。";
+
+/* Existing permission-flow restart instruction. */
+
+"permission.system_audio.restart_guidance" = "在系统设置中打开 HushType 后，请重新启动 App，让 macOS 应用设置生效。";
+
+/* Expandable permission troubleshooting heading. */
+
+"permission.troubleshooting.heading" = "遇到问题吗？";
+
+/* Stale ScreenCapture permission troubleshooting guidance. */
+
+"permission.system_audio.reset_help" = "如果系统设置中找不到 HushType，或 HushType 出现两次，请使用这项功能。";
+
+/* Explicit ScreenCapture TCC reset action. */
+
+"permission.system_audio.reset_stale" = "重置残留的权限条目";
+
+/* Success state after stale ScreenCapture entries are reset. */
+
+"permission.system_audio.reset_complete" = "重置完成。请在系统设置中打开 HushType，然后重新启动。";
+
+/* Non-modal draggable-tile helper title; permission label needs OS verification. */
+
+"permission.system_audio.guide.title" = "请在「屏幕与系统音频录制」中打开 HushType。";
+
+/* Non-modal draggable-tile helper title. */
+
+"permission.accessibility.guide.title" = "请在「辅助功能」中打开 HushType。";
+
+/* Draggable app-tile helper instruction. */
+
+"permission.guide.detail" = "如果找不到 HushType，请将 HushType 拖入列表。";
+
+/* Help text for helper-panel close button. */
+
+"permission.guide.hide_help" = "隐藏辅助说明";
+
+/* Mid-session permission-revocation alert title. */
+
+"alert.system_audio_revoked.title" = "系统音频捕获已停止";
+
+/* Permission-revocation guidance; permission label needs OS verification. */
+
+"alert.system_audio_revoked.message" = "「屏幕与系统音频录制」权限已撤销。\n\n请在系统设置中重新启用这项权限，以使用系统音频实时字幕。";
+
+/* Closes a warning without opening settings. */
+
+"common.button.dismiss" = "关闭";
+
+/* System-audio app picker window title. */
+
+"window.system_audio_picker.title" = "选择要生成字幕的 App";
+
+/* System-audio app picker heading. */
+
+"picker.system_audio.heading" = "选择要生成字幕的 App";
+
+/* High-risk privacy claim: only audio is captured; screen contents never are. */
+
+"picker.system_audio.description" = "选择实时字幕要监听哪个 App 的音频。只会捕获音频，绝不捕获屏幕内容。";
+
+/* Picker loading state. */
+
+"picker.system_audio.loading" = "正在加载运行中的 App…";
+
+/* Picker empty state. */
+
+"picker.system_audio.empty" = "找不到运行中的 App。";
+
+/* Confirms selected running app. */
+
+"picker.system_audio.pick" = "选择";
+
+/* Argument 1 is a system framework error description. */
+
+"picker.system_audio.load_failed" = "无法加载运行中的 App：\n%1$@";
+
+/* Argument 1 is a running-app identifier/name and remains untouched. */
+
+"error.system_audio.app_not_running" = "App %1$@ 未在运行。请选择其他来源。";
+
+/* HushType-owned ScreenCaptureKit setup error. */
+
+"error.system_audio.no_display" = "没有可用于捕获的显示器。";
+
+/* HushType-owned audio-converter error. */
+
+"error.system_audio.converter" = "无法设置用于捕获系统音频的音频转换器。";
+
+/* Argument 1 is a system framework error description. */
+
+"error.system_audio.stream" = "无法启动系统音频流：%1$@";
+
+/* Accessibility label for the cloud cost chip. Source terminology says Cloud Live Caption, while product menu says Live Translated Caption; translate literally pending product naming decision. */
+
+"caption.accessibility.session_cost" = "实时翻译字幕会话费用";
+
+/* Argument 1 is integer progress percentage. */
+
+"caption.loading_speech_model" = "正在加载语音模型… %1$d%%";
+
+/* Caption voice-activity model loading state. */
+
+"caption.loading_vad" = "正在加载 VAD 模型…";
+
+/* Compact local-caption live state. */
+
+"caption.live" = "进行中";
+
+/* Compact cloud translated-caption live state. */
+
+"caption.live_translated" = "进行中 · 翻译";
+
+/* Temporary gate message when Right Option dictation conflicts with caption capture. */
+
+"caption.stop_to_dictate" = "请停止实时字幕后再使用语音输入";
+
+/* Arguments are current reconnect attempt and maximum attempts. */
+
+"caption.reconnecting" = "正在重新连接（%1$d/%2$d）…";
+
+/* Header flash after cost/duration auto-stop. */
+
+"caption.auto_stopped" = "已自动停止";
+
+/* Accessibility label for caption panel close button. */
+
+"caption.stop.accessibility" = "停止实时字幕";
+
+/* Help text for caption panel close button. */
+
+"caption.stop.help" = "停止实时字幕（Esc）";
+
+/* Empty caption panel state while awaiting speech. */
+
+"caption.listening" = "监听中…";
+
+/* Visible chip for source-language text; implementation must use semantic role, not compare this label. */
+
+"caption.role.source" = "原文";
+
+/* Visible chip for translated text; implementation must use semantic role. */
+
+"caption.role.translated" = "翻译";
+
+/* Accessibility label for source role chip. */
+
+"caption.role.source.accessibility" = "原文语言";
+
+/* Accessibility label for translated role chip. */
+
+"caption.role.translated.accessibility" = "翻译内容";
+
+/* HushType-owned NSError shown through caption startup wrappers. */
+
+"error.caption.microphone_denied" = "麦克风权限遭拒";
+
+/* HushType-owned NSError/alert title for translated captions. */
+
+"error.caption.openai_key_missing" = "尚未设置 OpenAI API 密钥";
+
+/* HushType-owned NSError after a nominally successful model load. */
+
+"error.caption.local_model_unavailable" = "加载后仍无法使用本地字幕模型";
+
+/* HushType-owned internal startup error that can surface through an alert. */
+
+"error.caption.openai_key_lost" = "已获取 OpenAI 密钥，但之后遗失";
+
+/* Mid-session microphone source failure title. */
+
+"alert.caption.microphone_unavailable.title" = "无法使用麦克风";
+
+/* Argument 1 is a system/audio-source error description. */
+
+"alert.caption.microphone_unavailable.message" = "实时字幕已停止：%1$@";
+
+/* Arguments are exact two-decimal USD amounts. */
+
+"notification.caption.daily_spend.body" = "你今天已使用 %1$@（警示值：%2$@）。";
+
+/* Duration auto-stop notification title. Source uses generic Live Caption even for cloud translated mode; translated literally pending naming review. */
+
+"notification.caption.auto_stop.title" = "实时翻译字幕已自动停止";
+
+/* Caption microphone permission alert title. */
+
+"alert.caption.mic_access.title" = "需要麦克风访问权限";
+
+/* Apple breadcrumb should be visually checked on supported macOS versions. */
+
+"alert.caption.mic_access.message" = "实时字幕需要麦克风访问权限。请打开「系统设置 → 隐私与安全性 → 麦克风」，并启用 HushType。";
+
+/* VAD load failure title. */
+
+"alert.caption.vad_failed.title" = "无法加载语音活动检测模型";
+
+/* Argument 1 is a model/system error description. */
+
+"alert.caption.vad_failed.message" = "无法启动实时字幕：%1$@";
+
+/* Local ASR model load failure title. */
+
+"alert.caption.asr_failed.title" = "无法加载语音模型";
+
+/* Argument 1 is a model/system error description. */
+
+"alert.caption.asr_failed.message" = "无法启动本地实时字幕：%1$@";
+
+/* System-audio source startup failure title. */
+
+"alert.caption.system_audio_failed.title" = "无法启动系统音频捕获";
+
+/* Source breadcrumb no longer exactly matches current menu labels and source says Cloud Live Caption rather than Live Translated Caption. Safest literal draft; product behavior/naming must be resolved before implementation. */
+
+"alert.caption.cloud_key_missing.message" = "实时翻译字幕需要 OpenAI API 密钥。请打开「翻译字幕设置」，并将密钥粘贴到 openai.json。";
+
+/* Provider authentication failure title. */
+
+"alert.caption.cloud_key_rejected.title" = "OpenAI 拒绝了这组 API 密钥";
+
+/* Key-file guidance; filename stays exact. */
+
+"alert.caption.cloud_key_rejected.message" = "请检查 openai.json 中的值。";
+
+/* Provider rate-limit title. */
+
+"alert.caption.rate_limit.title" = "已达 OpenAI 速率限制";
+
+/* Provider-policy suggestion; do not promise upgrade will definitely resolve access. */
+
+"alert.caption.rate_limit.message" = "请稍候一分钟再试，或升级你的 OpenAI 方案。";
+
+/* Source product naming differs from Live Translated Caption; literal draft marked for review. */
+
+"alert.caption.connection_lost.title" = "实时翻译字幕连接已中断";
+
+/* Argument 1 is transport/provider error text. */
+
+"alert.caption.connection_lost.message" = "无法连接至 OpenAI：%1$@";
+
+/* Source product naming differs from Live Translated Caption; literal draft marked for review. */
+
+"alert.caption.cloud_start_failed.title" = "无法启动实时翻译字幕";
+
+/* Local caption backend startup failure title. */
+
+"alert.caption.local_start_failed.title" = "无法启动实时字幕";
+
+/* HushType-owned NSError that can surface in caption startup wrappers. */
+
+"error.audio_capture.push_to_talk_active" = "按住说话录音正在进行，无法启动连续捕获。";
+
+/* HushType-owned continuous-capture NSError. */
+
+"error.audio_capture.target_format" = "无法创建目标音频格式。";
+
+/* HushType-owned backend NSError after authentication failure. */
+
+"error.openai_translate.auth" = "OpenAI 拒绝了这组 API 密钥。";
+
+/* HushType-owned backend NSError after rate limit. */
+
+"error.openai_translate.rate_limit" = "已达 OpenAI 速率限制。";
+
+/* Floating dictation overlay recording label. */
+
+"overlay.listening" = "监听中";
+
+/* Floating dictation overlay label for local transcription. */
+
+"overlay.transcribing" = "转录中";
+
+/* Argument 1 is provider name. */
+
+"overlay.transcribing_provider" = "转录中 · %1$@";
+
+/* Floating overlay Text Polish state. */
+
+"overlay.polishing" = "校对中…";
+
+/* Argument 1 is language name/code. */
+
+"error.translation.unsupported" = "Apple Translation Framework 不支持「%1$@」语言。";
+
+/* Arguments are source and target display names; arrow stays literal. */
+
+"error.translation.pack_missing" = "尚未安装 %1$@ → %2$@ 的语言包。";
+
+/* Argument 1 is a system/provider detail and remains unaltered. */
+
+"error.translation.failed" = "翻译失败：%1$@";
+
+/* Fallback language name when detection fails. */
+
+"translation.language.unknown" = "未知";
+
+/* Arguments are localized source and target language display names. */
+
+"translation.direction" = "%1$@ → %2$@";
+
+/* Translation/polish card clipboard confirmation. */
+
+"translation.card.copied" = "已复制到剪贴板";
+
+/* Translation card dismissal hint. */
+
+"translation.card.dismiss" = "按 Esc 关闭";
+
+/* Privacy disclosure; preserve 'may connect' uncertainty. */
+
+"translation.card.privacy" = "由 Apple Translation Framework 提供支持，可能会连接至 Apple 服务器。";
+
+/* PolishError disabled state. */
+
+"error.polish.disabled" = "文本校对已关闭。";
+
+/* Argument 1 is localized app reason or system-provided availability reason. */
+
+"error.polish.unavailable" = "文本校对需要 macOS 26 + Apple Intelligence。\n\n%1$@";
+
+/* Guardrail result; selected user content remains untouched. */
+
+"error.polish.code_detected" = "选中的内容看起来像代码，因此未进行校对。";
+
+/* Model result validation error. */
+
+"error.polish.empty_output" = "Apple Intelligence 传回空白结果。";
+
+/* Safety validation; explicitly says original text remains untouched. */
+
+"error.polish.length_guard" = "结果对选择文本的长度更改过大。原文保持不变。";
+
+/* Language/script validation; explicitly says original text remains untouched. */
+
+"error.polish.script_guard" = "结果更改了选择文本的主要书写系统。原文保持不变。";
+
+/* Language-mix validation; explicitly says original text remains untouched. */
+
+"error.polish.mix_guard" = "结果遗漏了选择文本中的一种语言。原文保持不变。";
+
+/* Model refusal validation error. */
+
+"error.polish.refusal_guard" = "Apple Intelligence 返回拒绝响应，未校对选中的文本。";
+
+/* Initial cached availability reason. */
+
+"error.polish.apple_unavailable" = "无法使用 Apple Intelligence。";
+
+/* Availability reason on pre-macOS-26 systems. */
+
+"error.polish.macos_too_old" = "这台 Mac 运行的是较旧版本的 macOS。";
+
+/* Preserve exact 30-second timeout. */
+
+"error.polish.timeout" = "Apple Intelligence 在 30 秒后超时。";
+
+/* Unknown future FoundationModels availability case. */
+
+"error.polish.unknown_availability" = "未知的可用状态";
+
+/* Polish card title when changes were made. */
+
+"polish.card.changed_title" = "文本已校对";
+
+/* Polish card title when proofreader returns unchanged text. */
+
+"polish.card.no_changes_title" = "无需修改";
+
+/* Track-changes section label. */
+
+"polish.card.changes" = "更改";
+
+/* Polish card dismissal hint. */
+
+"polish.card.dismiss" = "单击其他地方即可关闭";
+
+/* High-risk privacy claim for on-device Text Polish. */
+
+"polish.card.privacy" = "在设备上使用 Apple Intelligence — 任何内容都不会离开你的 Mac。";
+
+/* Track-changes deletion legend. */
+
+"polish.card.legend.removed" = "已移除";
+
+/* Track-changes insertion legend. */
+
+"polish.card.legend.added" = "已新增";
+
+/* Local companion-server startup failure title. */
+
+"alert.ios_server_failed.title" = "iOS 服务器启动失败";
+
+/* Arguments are process exit code and raw server output. Command/package names and raw output must remain exact. */
+
+"alert.ios_server_failed.message" = "服务器以代码 %1$d 结束。这通常表示缺少 Python 依赖包。\n\n所需软件包请参阅 README：\npip3 install \"mlx-audio[stt,server]\" httpx webrtcvad-wheels setuptools\n\n错误输出：\n%2$@";
+
+/* One-time cloud translated-caption disclosure title. Source terminology predates Live Translated Caption; literal draft marked for naming review. */
+
+"alert.cloud_caption_disclosure.title" = "启用实时翻译字幕";
+
+/* High-risk opt-in/privacy/billing disclosure. Preserve exact data path, key visibility, approximate hourly cost, billing account, local fallback, and one-time behavior. Product naming needs review. */
+
+"alert.cloud_caption_disclosure.message" = "实时翻译字幕会将你的音频传送至 OpenAI 进行实时翻译。\n\n• 费用：约每小时 US$2，由你的 OpenAI 账户计费\n• 使用你的 API 密钥 — HushType 绝不会看到密钥\n• 中间没有 HushType 服务器；音频会直接从 Mac 传至 OpenAI\n• 你可以随时停止会话，或切换回本地\n\n这是选择加入的功能。你只会看到这则通知一次。";
+
+/* Accepts the one-time cloud disclosure. */
+
+"alert.cloud_caption_disclosure.accept" = "我了解了";
+
+/* Per-session cloud dictation consent; argument is provider name. */
+
+"alert.cloud_dictation_consent.title" = "要将音频传送至 %1$@ 吗？";
+
+/* Explicitly consents to this recording being sent to the provider; argument is provider name. */
+
+"alert.cloud_dictation_consent.use_provider" = "使用 %1$@";
+
+/* Declines provider upload and returns to local dictation. */
+
+"alert.cloud_dictation_consent.use_local" = "改用本地";
+
+/* Per-session privacy/billing disclosure; argument is provider. Preserve direct path, own-key, no-relay, and local warning semantics. */
+
+"alert.cloud_dictation_consent.base" = "HushType 会使用你自己的 API 密钥，将这段录音直接传送至 %1$@ 进行转录。中间没有转送服务器；音频会直接从你的 Mac 传送给服务提供商。每日云端费用警示仍会生效。";
+
+/* Provider-policy claim copied from current product source; preserve may/does-not distinction without embellishment. */
+
+"alert.cloud_dictation_consent.gemini_policy" = "使用 Google 免费方案时，Google 可能会使用提交的音频来改进其产品；付费方案则不会。";
+
+/* Localized display name used in translation direction/error prose; language-picker autonyms remain separate. */
+
+"language.name.english" = "英语";
+
+/* Localized display name for Chinese in translation direction/error prose. */
+
+"language.name.chinese" = "中文";
+
+/* Localized language display name. */
+
+"language.name.japanese" = "日语";
+
+/* Localized language display name. */
+
+"language.name.korean" = "韩语";
+
+/* Localized language display name. */
+
+"language.name.french" = "法语";
+
+/* Localized language display name. */
+
+"language.name.german" = "德语";
+
+/* Localized language display name. */
+
+"language.name.spanish" = "西班牙语";
+
+/* Localized language display name. */
+
+"language.name.portuguese" = "葡萄牙语";
+
+/* Localized language display name. */
+
+"language.name.italian" = "意大利语";
+
+/* Localized language display name. */
+
+"language.name.russian" = "俄语";
+
+/* Localized language display name. */
+
+"language.name.arabic" = "阿拉伯语";
+
+/* Localized language display name. */
+
+"language.name.thai" = "泰语";
+
+/* Localized language display name. */
+
+"language.name.vietnamese" = "越南语";
+
+/* Localized language display name. */
+
+"language.name.indonesian" = "印度尼西亚语";
+
+/* Localized language display name. */
+
+"language.name.turkish" = "土耳其语";
+
+/* Localized language display name; unrelated to Text Polish. */
+
+"language.name.polish" = "波兰语";
+
+/* Localized language display name. */
+
+"language.name.dutch" = "荷兰语";
+
+/* Localized language display name. */
+
+"language.name.ukrainian" = "乌克兰语";
+
+/* Target-language autonym intentionally remains Simplified Chinese; reviewed false positive in Simplified-character scan. */
+
+"picker.target.simplified_chinese_autonym" = "简体中文";
+
+/* Target-language autonym remains Traditional Chinese. */
+
+"picker.target.traditional_chinese_autonym" = "繁体中文";
+
+/* Defers viewing an available update; not used by interface-language selection. */
+
+"common.button.later" = "稍后";
+
+/* Opens translated-caption settings from an API-key rejection alert. */
+
+"common.button.settings" = "设置";
+
+/* Stops a cloud caption session after connection loss. */
+
+"common.button.stop" = "停止";
+
+/* Visible model ID; must not be localized. */
+
+"settings.model.gpt_transcribe" = "gpt-transcribe";
+
+/* Local model names shown in the status menu. */
+
+"settings.model.qwen_1_7b" = "Qwen3-ASR 1.7B 8-bit（质量）";
+
+"settings.model.qwen_0_6b" = "Qwen3-ASR 0.6B 4-bit（省电）";
+
+/* Language picker autonym; stays in the language's own form. */
+
+"picker.autonym.en" = "English";
+
+/* Speech-to-text language picker autonym; recognition protocol value remains unchanged. */
+
+"picker.autonym.zh" = "中文";
+
+/* Language picker autonym. */
+
+"picker.autonym.ja" = "日本语";
+
+/* Language picker autonym. */
+
+"picker.autonym.ko" = "한국어";
+
+/* Language picker autonym. */
+
+"picker.autonym.fr" = "Français";
+
+/* Language picker autonym. */
+
+"picker.autonym.de" = "Deutsch";
+
+/* Language picker autonym. */
+
+"picker.autonym.es" = "Español";
+
+/* Translated-caption target-language autonym. */
+
+"picker.autonym.pt" = "Português";
+
+/* Translated-caption target-language autonym. */
+
+"picker.autonym.ru" = "Русский";
+
+/* Translated-caption target-language autonym. */
+
+"picker.autonym.hi" = "हिन्दी";
+
+/* Translated-caption target-language autonym. */
+
+"picker.autonym.id" = "Bahasa Indonesia";
+
+/* Translated-caption target-language autonym. */
+
+"picker.autonym.vi" = "Tiếng Việt";
+
+/* Translated-caption target-language autonym. */
+
+"picker.autonym.it" = "Italiano";
+
+/* Initial dictation settings usage line before the async snapshot returns. */
+
+"settings.daily_usage.placeholder" = "今天的云端费用：—";

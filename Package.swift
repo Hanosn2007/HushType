@@ -4,6 +4,9 @@ import PackageDescription
 
 let package = Package(
     name: "HushType",
+    // Resources/HushType contains en, zh-Hans, and zh-Hant-TW interface
+    // catalogs; Makefile and scripts/check_localizations.sh copy and validate
+    // this same locale set for packaged builds.
     defaultLocalization: "en",
     platforms: [.macOS(.v15)],
     dependencies: [
