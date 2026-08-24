@@ -156,6 +156,12 @@
 
 "menu.dictation_settings" = "Dictation Settings";
 
+/* Local model controls exposed by the local-only MVP status menu. */
+
+"menu.local_model" = "Local Model";
+
+"menu.local_model.apply_note" = "Model choice applies the next time the local model loads";
+
 /* Starts the local iOS companion server. */
 
 "menu.ios_server.start" = "Start iOS Server";
@@ -1383,6 +1389,12 @@
 /* Visible model ID; must not be localized. */
 
 "settings.model.gpt_transcribe" = "gpt-transcribe";
+
+/* Local model names shown in the status menu. */
+
+"settings.model.qwen_1_7b" = "Qwen3-ASR 1.7B 8-bit (quality)";
+
+"settings.model.qwen_0_6b" = "Qwen3-ASR 0.6B 4-bit (power saving)";
 
 /* Language picker autonym; stays in the language's own form. */
 

@@ -29,6 +29,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var languageItems: [NSMenuItem] = []
     private let dictationEngineMenu: NSMenu
     private var dictationEngineItems: [NSMenuItem] = []
+    /// Local-only MVP surface. The legacy dictation-engine menu remains
+    /// constructed below so the cloud implementation can be restored later,
+    /// but it is not attached to the status bar menu in this build.
+    private let localModelMenu: NSMenu
+    private var localModelItems: [NSMenuItem] = []
     private let punctuationMenu: NSMenu
     private var punctuationItems: [NSMenuItem] = []
     private var iosServerMenuItem: NSMenuItem!
@@ -159,6 +164,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             "menu.dictation_engine",
             fallback: "Dictation Engine"
         ))
+        localModelMenu = NSMenu(title: L10n.string(
+            "menu.local_model",
+            fallback: "Local Model"
+        ))
         punctuationMenu = NSMenu(title: L10n.string(
             "menu.punctuation_cleanup",
             fallback: "Punctuation Cleanup"
@@ -185,6 +194,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         // Refresh the combined status · memory row each time the menu opens
         refreshStatusLine()
         updateDictationEngineCheckmarks()
+        updateLocalModelCheckmarks()
         updateUnloadMenuItem(for: currentState)
         updateInterfaceLanguageMenu()
 
@@ -201,10 +211,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     // MARK: - Private
 
-    /// Builds the top-level menu: 10 items + 4 separators (was ~35 flat rows).
-    /// Frequent actions stay top-level; per-feature controls live in
-    /// submenus per the HIG for menu bar extras. Active features show the
-    /// green ✓ on the submenu PARENT so state is visible without opening it.
+    /// Builds the local-only MVP menu. Cloud/caption actions are still
+    /// constructed below so their implementation remains available for a
+    /// later product mode, but they are deliberately not attached here.
     private func setupMenu() {
         let menu = NSMenu()
         menu.delegate = self
@@ -220,7 +229,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         liveCaptionMenuItem = NSMenuItem(title: liveCaptionTitle, action: nil, keyEquivalent: "")
         updateToggleAppearance(liveCaptionMenuItem, title: liveCaptionTitle, checked: false)
         liveCaptionMenuItem.submenu = buildLiveCaptionSubmenu()
-        menu.addItem(liveCaptionMenuItem)
 
         // ───────── Live Translated Caption (cloud OpenAI translate) ─────────
         let liveTranslatedTitle = L10n.string(
@@ -230,14 +238,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         liveTranslatedMenuItem = NSMenuItem(title: liveTranslatedTitle, action: nil, keyEquivalent: "")
         updateToggleAppearance(liveTranslatedMenuItem, title: liveTranslatedTitle, checked: false)
         liveTranslatedMenuItem.submenu = buildLiveTranslatedSubmenu()
-        menu.addItem(liveTranslatedMenuItem)
 
         // ─────────────────────── Text Translation ───────────────────────
         let textTranslationTitle = L10n.string("menu.text_translation", fallback: "Text Translation")
         textTranslationMenuItem = NSMenuItem(title: textTranslationTitle, action: nil, keyEquivalent: "")
         updateToggleAppearance(textTranslationMenuItem, title: textTranslationTitle, checked: AppConfig.shared.textTranslationEnabled)
         textTranslationMenuItem.submenu = buildTextTranslationSubmenu()
-        menu.addItem(textTranslationMenuItem)
 
         textPolishMenuItem = NSMenuItem(
             title: L10n.string("menu.text_polish", fallback: "Text Polish (double-tap ⌥)"),
@@ -251,7 +257,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             checked: AppConfig.shared.textPolishEnabled
         )
         textPolishMenuItem.isEnabled = TextPolisher.isAvailableCached
-        menu.addItem(textPolishMenuItem)
 
         let polishInstructionsItem = NSMenuItem(
             title: L10n.string(
@@ -262,9 +267,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             keyEquivalent: ""
         )
         polishInstructionsItem.target = self
-        menu.addItem(polishInstructionsItem)
-
-        menu.addItem(.separator())
 
         // ────────────────────── Dictation Settings ──────────────────────
         let dictationSettingsItem = NSMenuItem(
@@ -284,7 +286,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             keyEquivalent: ""
         )
         iosServerMenuItem.target = self
-        menu.addItem(iosServerMenuItem)
 
         iosServerManager.onStatusChanged = { [weak self] running in
             DispatchQueue.main.async {
@@ -315,7 +316,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             keyEquivalent: ""
         )
         interfaceLanguageItem.submenu = buildInterfaceLanguageMenu()
-        menu.addItem(interfaceLanguageItem)
 
         // About
         let aboutItem = NSMenuItem(
@@ -324,7 +324,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             keyEquivalent: ""
         )
         aboutItem.target = self
-        menu.addItem(aboutItem)
 
         // Quit
         let quitItem = NSMenuItem(
@@ -708,7 +707,21 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         settingsItem.target = self
         dictationEngineMenu.addItem(settingsItem)
         updateDictationEngineCheckmarks()
-        sub.addItem(engineItem)
+
+        // Local-only MVP surface. Keep the legacy engine picker above for a
+        // future cloud-enabled build, but do not attach it to this submenu:
+        // that would expose cloud providers and their API-key settings.
+        let localModelItem = NSMenuItem(
+            title: L10n.string("menu.local_model", fallback: "Local Model"),
+            action: nil,
+            keyEquivalent: ""
+        )
+        localModelItem.submenu = buildLocalModelMenu()
+        sub.addItem(localModelItem)
+        addSubtitle("    " + L10n.string(
+            "menu.local_model.apply_note",
+            fallback: "Model choice applies the next time the local model loads"
+        ), to: sub)
 
         sub.addItem(.separator())
 
@@ -822,6 +835,58 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         return sub
     }
 
+    private func buildLocalModelMenu() -> NSMenu {
+        localModelMenu.removeAllItems()
+        localModelItems.removeAll()
+
+        let choices: [(String, String)] = [
+            (
+                L10n.string(
+                    "settings.model.qwen_1_7b",
+                    fallback: "Qwen3-ASR 1.7B 8-bit (quality)"
+                ),
+                AppConfig.defaultModelId
+            ),
+            (
+                L10n.string(
+                    "settings.model.qwen_0_6b",
+                    fallback: "Qwen3-ASR 0.6B 4-bit (power saving)"
+                ),
+                AppConfig.powerSavingModelId
+            ),
+        ]
+
+        for (title, modelID) in choices {
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(localModelSelected(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = modelID
+            localModelItems.append(item)
+            localModelMenu.addItem(item)
+        }
+
+        // Preserve an explicit model ID from an older/custom build instead
+        // of silently rewriting it while the cloud menu is hidden.
+        let currentModelID = AppConfig.shared.modelId
+        if !choices.contains(where: { $0.1 == currentModelID }) {
+            let item = NSMenuItem(
+                title: currentModelID,
+                action: #selector(localModelSelected(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = currentModelID
+            localModelItems.append(item)
+            localModelMenu.addItem(item)
+        }
+
+        updateLocalModelCheckmarks()
+        return localModelMenu
+    }
+
     // MARK: - Dictation Engine
 
     @objc private func dictationEngineSelected(_ sender: NSMenuItem) {
@@ -853,6 +918,24 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         for item in dictationEngineItems {
             let raw = item.representedObject as? String
             updateRadioAppearance(item, title: item.title, selected: raw == selected)
+        }
+    }
+
+    @objc private func localModelSelected(_ sender: NSMenuItem) {
+        guard let modelID = sender.representedObject as? String,
+              modelID != AppConfig.shared.modelId else {
+            return
+        }
+        AppConfig.shared.modelId = modelID
+        updateLocalModelCheckmarks()
+        log.info("Local model preference changed to: \(modelID, privacy: .public)")
+    }
+
+    private func updateLocalModelCheckmarks() {
+        let selected = AppConfig.shared.modelId
+        for item in localModelItems {
+            let modelID = item.representedObject as? String
+            updateRadioAppearance(item, title: item.title, selected: modelID == selected)
         }
     }
 

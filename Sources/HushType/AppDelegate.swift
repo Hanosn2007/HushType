@@ -139,11 +139,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // little more OS alloc/free churn.
         MLX.Memory.cacheLimit = 1024 * 1024 * 1024  // 1 GB
 
+        // Local-only MVP: a previous cloud selection must never decide the
+        // startup path. Normalize the persisted preference before creating
+        // the status menu or active engine; the cloud engine code remains in
+        // place for a later product mode.
+        if AppConfig.shared.dictationEngine != .local {
+            log.info("Ignoring persisted cloud dictation engine in local-only MVP")
+            AppConfig.shared.dictationEngine = .local
+        }
+
         localEngine = Qwen3TranscriptionEngine()
         statusBar = StatusBarController(localEngine: localEngine)
         hotkeyManager = HotkeyManager()
         audioCapture = AudioCaptureService()
-        activeEngine = makeDictationEngine(for: AppConfig.shared.dictationEngine)
+        activeEngine = makeDictationEngine(for: .local)
         translationManager = TranslationManager()
         let manager = LiveCaptionManager(
             localEngine: localEngine,
@@ -255,9 +264,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Start hotkey listener
         hotkeyManager.start()
 
-        // A persisted cloud selection deliberately skips Qwen at launch. The
-        // app must still become ready immediately rather than remaining in
-        // its initial `.loading` state forever.
+        // Keep the cloud branch for the future cloud-enabled product mode.
+        // The local-only startup normalization above makes this branch
+        // unreachable in the current MVP.
         guard AppConfig.shared.dictationEngine == .local else {
             state = .idle
             statusBar.setState(.idle)
