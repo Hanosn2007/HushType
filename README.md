@@ -7,7 +7,8 @@
 <p align="center">
   專為 Apple Silicon macOS 打造的語音轉文字 App<br>
   <strong>把「輸入」的 friction 降到最低，而且隱私的決定權永遠在你手上：</strong><br>
-  預設完全本機、不回傳任何數據；要提升轉錄品質或省記憶體時，用你自己的金鑰直連雲端，中間永遠沒有第三者。
+  第一版 F5 本機聽寫：單擊 F5 開始錄音，再次單擊停止並插入文字；模型快取後可完全離線。<br>
+  要提升轉錄品質或省記憶體時，仍可依需要使用你自己的金鑰直連雲端，中間永遠沒有第三者。
 </p>
 
 <p align="center">
@@ -18,27 +19,29 @@
   官方 repository：<a href="https://github.com/felixfu824/HushType">github.com/felixfu824/HushType</a>
 </p>
 
-> **HushType** 是一款免費、開源的 macOS 與 iOS 語音轉文字 App。預設使用 Qwen3-ASR 0.6B 的 **4-bit MLX 量化版**在 Apple Silicon 上完全本地執行，支援英文、中文、日文的語音輸入，支援混用多語的句子，並透過 OpenCC 提供穩定的繁體中文輸出；也可**選擇雲端聽寫（OpenAI / Gemini）**：用你提供的金鑰經 HTTPS 直連供應商，中間沒有任何轉送伺服器。相對強迫你把音訊交給第三方的聽寫工具，HushType 把選擇權和隱私主導權留在你手上，並專注保持輕量，與你需要同時跑的所有 App 共存。
+> 本倉庫是基於上游 HushType 的 fork；上游來源保留在上方連結，MIT 授權保留於根目錄 [LICENSE](LICENSE)。
 
-> 🌐 **HushType** is a free, local-first dictation app for Apple Silicon Macs (and iOS). It runs Qwen3-ASR (4-bit) locally via MLX for English, Chinese, Japanese, and others, supports mixed-language sentences with genuinely native Traditional Chinese output (via OpenCC). Cloud dictation (OpenAI / Gemini) is an opt-in choice: your own key, a direct connection, and no middleman, either way, privacy choices stay in your hands.<br>→ Read the full English README: [README.en.md](README.en.md)
+> **HushType** 是一款免費、開源的 macOS 與 iOS 語音轉文字 App。本 fork 的第一版 macOS 本機聽寫預設使用 `mlx-community/Qwen3-ASR-1.7B-8bit`（8-bit MLX），單擊 F5 開始、再次單擊 F5 停止並把結果插入游標；中文輸出預設為簡體中文。`aufklarer/Qwen3-ASR-0.6B-MLX-4bit` 保留為省電選項。模型下載並快取後，F5 路徑不需要 LM Studio、伺服器或雲端，完全離線執行。下方雲端與 iOS 段落保留作為上游參考，並非第一版 F5 本機 MVP 的必要路徑。
+
+> 🌐 **HushType** is a free, local-first dictation app for Apple Silicon Macs (and iOS). In this fork's first macOS path, `mlx-community/Qwen3-ASR-1.7B-8bit` is the default local model: press F5 once to start, press F5 again to stop and insert the transcription. Simplified Chinese is the default output; the 0.6B 4-bit model remains the power-saving option. Once the model is cached, the F5 path runs fully offline with no LM Studio, server, or cloud dependency.<br>→ Read the full English README: [README.en.md](README.en.md)
 
 <p align="center">
-  <img src="Resources/hushtype-memory-zh.svg" alt="常駐記憶體的模型權重：HushType 本機 675 MB（道地繁中）、HushType 雲端引擎 ~0 MB vs Whisper large-v3-turbo 1,618 MB vs Parakeet 2,472 MB（不支援中文）" width="100%">
+  <img src="Resources/hushtype-memory-zh.svg" alt="上游 HushType 0.6B 4-bit 記憶體比較圖；本 fork 預設模型為 1.7B 8-bit" width="100%">
 </p>
 
-<sub>數字為各工具預設精度的模型權重大小；HushType 的 675 MB 是 Qwen3-ASR 0.6B 的 4-bit MLX 量化版。選用雲端引擎（OpenAI / Gemini）時**模型記憶體 ~0 MB**，品質同級或更好，代價是每句多幾秒的網路延遲，依時長計費或使用 Gemini 免費（Free tier）API Key。另有 4-bit Whisper-turbo（約 464 MB），但中文輸出仍偏簡體、品質平庸，所以我們的定位是「能做出道地繁中的輕量 ASR」，而非「最小的模型」。</sub>
+<sub>上方圖表保留上游對 Qwen3-ASR 0.6B 4-bit 的記憶體比較，不能當成本 fork 預設模型的大小；本 fork 預設為 1.7B 8-bit，另提供 0.6B 4-bit 省電模式。雲端引擎仍是選用功能，F5 本機路徑不依賴它。</sub>
 
 ---
 
 ## 為什麼選擇 HushType
 
-**隱私與主導權優先。** 預設模式下語音永遠不離開你的 Mac，模型完全在本機執行，無雲端、無帳號、無使用追蹤，只有首次一次性模型下載（約 675 MB）。選擇加入雲端聽寫時，音訊用**你自己的金鑰**經 HTTPS **直連** OpenAI 或 Gemini：中間沒有 HushType 伺服器，不經手、不攔截、看不到你的音訊與金鑰，且每個工作階段第一次使用前都會先徵求你的同意。**要不要把音訊交給供應商，永遠是你的決定。**
+**隱私與主導權優先。** F5 本機模式下語音永遠不離開你的 Mac，1.7B 8-bit 模型完全在本機執行；首次只需下載並快取模型，之後錄音、轉錄、插入文字都可在離線狀態完成。選擇加入雲端聽寫時，音訊用**你自己的金鑰**經 HTTPS **直連** OpenAI 或 Gemini：中間沒有 HushType 伺服器，不經手、不攔截、看不到你的音訊與金鑰，且每個工作階段第一次使用前都會先徵求你的同意。**要不要把音訊交給供應商，永遠是你的決定。**
 
-**記憶體友善：與你的 AI 助手共存。** 本機模型權重只有約 675 MB（載入後常駐約 2.1 GB RAM），輕到能與 Claude Code/Cowork、Codex、瀏覽器同機共存，且 HushType 啟動時就替記憶體暫存設上限，你完全不用管。想把記憶體占用歸零？切到雲端引擎：本機模型不會載入（引擎選擇跨重啟保留，下次啟動就是 ~0 MB 起步）；已載入的模型也可以在選單一鍵卸載，切回本機引擎時自動重新載入。
+**品質優先，另有省電選項。** 本機預設是 Qwen3-ASR 1.7B 8-bit；如果更在意記憶體與功耗，可在設定中切換到 Qwen3-ASR 0.6B 4-bit。已載入的模型也可以在選單一鍵卸載，切回本機引擎時再重新載入。
 
 **雲端聽寫（Opt-in）。** 三件事：(1) 支援 **OpenAI**（預設 `gpt-4o-mini-transcribe`）與 **Gemini**（預設 `gemini-3.5-flash-lite`，可選 `gemini-3.7-flash`），你的金鑰、直連、無轉送；(2) Gemini 有**免費（Free tier）API Key** 可零成本入門；但請注意：Google 免費方案可能用你提交的音訊改進其產品，付費方案則不會；(3) 內建護欄：逐次同意、每日花費警示與當日鎖定（預設 $5）、錄音過長在上傳前就擋下。
 
-**真正能用的繁體中文。** Whisper 與多數開源模型預設輸出簡體或大陸用語（软件 而非 軟體）。HushType 串接 Qwen3-ASR 與 OpenCC `s2twp` 做台灣在地輸出，軟體、滑鼠、品質，支援英中同句混用辨識，並可選擇將中文數字依語境轉成阿拉伯數字（`一零一大樓` → `101 大樓`），預設開啟。本機與雲端引擎共用同一套後處理管線，輸出品質一致。
+**簡體中文預設，轉換由你決定。** Qwen3-ASR 的原生中文輸出預設保留為簡體中文，方便和模型原始結果一致；需要繁體中文時，再從設定開啟 OpenCC `s2twp`。支援英中同句混用辨識，並可選擇將中文數字依語境轉成阿拉伯數字（`一零一大樓` → `101 大樓`）。
 
 **文字就地修正。** 在任何 App 選取文字、雙擊 Right ⌥，裝置端 Apple Intelligence 模型直接就地校對並替換：錯字、文法、標點。它是機械式校對員，不是改寫器：語意、語氣、中英混用全都原樣保留（macOS 26+）。<br>註：Apple Foundation Model 參數較少能力受限，故目前校正選擇較保守，有時可能會完全不改動。
 
@@ -50,7 +53,10 @@
 
 | 功能 | 預設 | 系統需求 |
 |---|---|---|
-| 按住 Right ⌥ 進行語音輸入（macOS）| ON | macOS 15+ |
+| 單擊 F5 開始、再次單擊 F5 停止本機語音輸入（macOS）| **ON（預設）** | macOS 15+、Accessibility |
+| 本機模型：Qwen3-ASR 1.7B 8-bit | **預設** | Apple Silicon |
+| 省電模型：Qwen3-ASR 0.6B 4-bit | 選用 | Apple Silicon |
+| 按住 Right ⌥ 進行既有語音輸入（macOS）| ON | macOS 15+ |
 | **雲端語音輸入（OpenAI / Gemini，Opt-in）**：零模型記憶體，逐次同意 | OFF | 你自己的 API 金鑰 |
 | 輕按 Right ⌥ 翻譯選取的文字 | OFF | macOS 15+ |
 | 雙擊 Right ⌥ 校對選取的文字，就地修正 | **ON** | macOS 26 + Apple Intelligence |
@@ -58,7 +64,8 @@
 | **Live Translated Caption（雲端，約 $2/小時）**：即時外文翻譯字幕，使用 OpenAI | OFF（自行開啟） | 你自己的 OpenAI API key |
 | Right ⌘ + /：切換上次用過的字幕模式 | - | macOS 15+ |
 | 英文 / 中文 / 日文 + 原生混用 | ON | - |
-| 簡體 → 繁體 後處理（OpenCC `s2twp`）| **ON** | - |
+| 簡體中文輸出 | **ON（預設）** | - |
+| 簡體 → 繁體後處理（OpenCC `s2twp`）| OFF | 選用 |
 | 阿拉伯數字轉換（確定性 ITN）| **ON** | - |
 | 中文標點清理，修剪模型過度斷句（soft / hard / off）| **soft** | - |
 | 自訂字典（專有名詞 / 行話）| 檔案驅動 | - |
@@ -71,7 +78,7 @@
 
 ## 使用情境
 
-**與 AI 助手對話。** 給 Claude 或 ChatGPT 一段詳細的 prompt，打字要 5 分鐘，用說的只要 30 秒。按住 Right ⌥，自然地說完整段 prompt（可任意混用語言）、放開，文字立刻出現在聊天輸入框中。本地轉錄意味著：即使你正在使用雲端託管的 AI 助手，你的 prompt 也不會離開你的機器。
+**與 AI 助手對話。** 給 Claude 或 ChatGPT 一段詳細的 prompt，打字要 5 分鐘，用說的只要 30 秒。單擊 F5 開始，自然地說完整段 prompt（可任意混用語言），再次單擊 F5 停止，文字立刻出現在聊天輸入框中。本地轉錄意味著：即使你正在使用雲端託管的 AI 助手，你的 prompt 也不會離開你的機器。
 
 **記憶體吃緊的工作日。** Claude Code 跑三個 session、瀏覽器開 20 個分頁，不想再多一個常駐模型？選單切到 OpenAI 或 Gemini 雲端引擎，本機模型保持卸載、聽寫照用，每句多等一兩秒、費用記在你自己的 API 帳單上（若使用 Gemini Free-tier API Key：$0）。
 
@@ -89,10 +96,10 @@
 
 ```
 macOS（預設本機，不需要網路）：
-  按住 Right Option（≥0.3 秒）→ 說話 → 放開 → 文字出現在游標位置
+  單擊 F5 → 開始錄音 → 再次單擊 F5 → 停止、轉錄、文字出現在游標位置
   輕按 Right Option（<0.3 秒）+ 選取文字 → 翻譯卡片
   選取文字後雙擊 Right Option → 就地校對（Text Polish）
-  本機流程：麥克風 → Qwen3-ASR（MLX、裝置端推論）→ OpenCC s2twp → ITN → 貼上
+  本機流程：F5 → 麥克風 → Qwen3-ASR 1.7B 8-bit（MLX、裝置端推論）→ 簡體中文輸出 → 貼上
   雲端流程（選擇加入）：麥克風 → 你的 Mac → HTTPS 直連 OpenAI/Gemini → 同一套 OpenCC/ITN 後處理 → 貼上
                         （沒有 HushType 伺服器這一站）
 
@@ -113,7 +120,7 @@ iOS（透過你的 Mac 作為伺服器）：
                                      │    → OpenCC s2twp                │
                                      │                                  │
                                      │  HushType.app (選單列)            │
-                                     │    → Right Option 快捷鍵          │
+                                     │    → F5 本機聽寫快捷鍵            │
                                      │    → 本地轉錄                     │
                                      └──────────────────────────────────┘
 ```
@@ -128,7 +135,7 @@ iOS（透過你的 Mac 作為伺服器）：
 2. 打開 DMG，將 HushType 拖到「應用程式」
 3. 右鍵點擊 HushType.app → 打開（首次啟動時需要，App 使用臨時簽章，未經 Apple 公證）
 4. 授予**輔助使用**與**麥克風**權限
-5. 等待模型下載（約 675 MB，僅首次，進度顯示在選單列）
+5. 等待 Qwen3-ASR 1.7B 8-bit 模型下載（僅首次，進度顯示在選單列）
 
 DMG 為完全獨立版本，OpenCC 及所有相依套件皆已內含。不需要 Homebrew、不需要終端機指令。
 
@@ -205,19 +212,19 @@ make install
 3. 在輔助使用卡片點 **Open System Settings**。在輔助使用清單中找到 HushType 並**開啟開關**。如果清單裡沒有 HushType，可以使用小型提示視窗把 HushType 拖進清單。
 4. 點 **Allow Microphone**，並在 macOS 麥克風權限提示中允許。
 5. 回到 HushType，點擊 **Restart HushType**：App 會自動重新啟動，讓新授予的輔助使用權限生效。（macOS 會在 process 層級快取權限檢查結果，所以授予權限後必須重啟，HushType 會幫你處理這個步驟。）
-6. 等待模型下載（約 675 MB，僅首次，進度顯示在選單列）
+6. 等待 Qwen3-ASR 1.7B 8-bit 模型下載（僅首次，進度顯示在選單列）
 
 ### 步驟 3：使用
 
-- **按住 Right Option（≥0.3 秒）**：錄音。螢幕底部出現「Listening」指示條與音量條。
-- **放開**：指示條切換為「Transcribing」，文字貼到游標並保留在剪貼簿。
+- **單擊 F5**：開始錄音。F5 不需要按住，螢幕底部出現「Listening」指示條與音量條。
+- **再次單擊 F5**：停止錄音，指示條切換為「Transcribing」，文字貼到游標並保留在剪貼簿。
 - **輕按 Right Option（<0.3 秒）**：選取文字後輕按，浮動卡片顯示 Apple Translation Framework 翻譯結果。詳見下方[文字翻譯](#選用功能文字翻譯)。
 - **雙擊 Right Option**：選取文字後雙擊，就地校對並替換。詳見下方 [Text Polish](#選用功能text-polishmacos-26)。
 
 **選單列：**
 
 - **語音輸入設定**（子選單，集中所有聽寫相關設定）：
-  - **語音輸入引擎**：本機（Qwen3-ASR）/ OpenAI / Gemini，含「引擎設定…」視窗（見下方[雲端語音輸入](#選用功能雲端語音輸入openai--gemini)）
+  - **語音輸入引擎**：本機（預設 Qwen3-ASR 1.7B 8-bit；可選 0.6B 4-bit 省電）/ OpenAI / Gemini，含「引擎設定…」視窗（見下方[雲端語音輸入](#選用功能雲端語音輸入openai--gemini)）
   - **語音轉文字語言**：Auto / English / 中文 / 日本語（辨識語言，非介面語言）
   - **Number Conversion**：中文數字 → 阿拉伯數字（預設開啟）
   - **標點清理**：溫和 / 強力 / 關閉（預設溫和）
@@ -229,11 +236,11 @@ make install
 - **Edit Polish Instructions**：`polish_rules.txt`，你自己的校對規則，存檔自動熱重載
 - **Unload Speech-to-Text Model**：一鍵釋放本機模型記憶體；同一選單可重新載入（約 3 秒冷啟動）
 
-到此結束。預設模式不需要伺服器、不需要網路、不需要設定。
+到此結束。模型下載完成後，F5 本機模式不需要伺服器、不需要網路、不需要額外設定。
 
 ### 選用功能：雲端語音輸入（OpenAI / Gemini）
 
-同一顆 Right ⌥、同一套繁中後處理，但轉錄改由 OpenAI 或 Gemini 完成，**模型記憶體歸零**，品質同級或更好，代價是每句多幾秒的網路延遲與依時長計費（Gemini Free tier：$0）。
+同一顆 Right ⌥、同一套可選後處理（OpenCC 預設關閉），但轉錄改由 OpenAI 或 Gemini 完成，**模型記憶體歸零**，品質同級或更好，代價是每句多幾秒的網路延遲與依時長計費（Gemini Free tier：$0）。這是上游參考功能，不是第一版 F5 本機 MVP 的必要路徑。
 
 1. **取得金鑰：** OpenAI 在 [platform.openai.com/api-keys](https://platform.openai.com/api-keys)；Gemini 在 [aistudio.google.com/apikey](https://aistudio.google.com/apikey)（有免費方案）。
 2. **填入金鑰：** 選單列 → **語音輸入設定 → 語音輸入引擎 → 引擎設定…** → 開啟對應的 `openai.json` / `gemini.json`，把金鑰貼進 `api_key` 欄位。金鑰留空 = 雲端功能完全停用。
@@ -426,8 +433,8 @@ defaults read com.felix.hushtype
 # 語言:nil=自動, "english", "chinese", "japanese"
 defaults write com.felix.hushtype hushtype.language -string "chinese"
 
-# 模型:macOS 預設 "aufklarer/Qwen3-ASR-0.6B-MLX-4bit"（0.6B、4-bit MLX 量化）;
-# 可選 "mlx-community/Qwen3-ASR-1.7B-8bit" 以獲得更好品質。
+# 模型：macOS 預設 "mlx-community/Qwen3-ASR-1.7B-8bit"（1.7B、8-bit MLX 量化）；
+# 可選 "aufklarer/Qwen3-ASR-0.6B-MLX-4bit" 以省電和降低記憶體占用。
 defaults write com.felix.hushtype hushtype.modelId -string "mlx-community/Qwen3-ASR-1.7B-8bit"
 
 # 語音輸入引擎:"local"（預設）/ "openai" / "gemini"，跨重啟保留
@@ -437,7 +444,7 @@ defaults write com.felix.hushtype hushtype.dictationEngine -string "local"
 defaults write com.felix.hushtype hushtype.cloudDictationModelOpenAI -string "gpt-4o-mini-transcribe"
 defaults write com.felix.hushtype hushtype.cloudDictationModelGemini -string "gemini-3.5-flash-lite"
 
-# 繁體中文轉換（預設:true）
+# 繁體中文轉換（預設:false；本機輸出預設為簡體中文）
 defaults write com.felix.hushtype hushtype.chineseConversionEnabled -bool false
 
 # 中文數字轉阿拉伯數字（ITN,預設:true）
@@ -466,7 +473,7 @@ defaults write com.felix.hushtype hushtype.translateTargetLanguage -string "en"
 
 ### 更改快捷鍵（macOS）
 
-編輯 `Sources/HushType/HotkeyManager.swift`:
+F5 是第一版內建的單鍵切換（標準鍵碼 96；部分媒體鍵盤使用 176），按一下開始、再按一下停止。若要調整既有 Right Option 路徑，編輯 `Sources/HushType/HotkeyManager.swift`:
 ```swift
 private static let rightOptionKeyCode: Int64 = 61
 ```
@@ -482,9 +489,9 @@ private static let rightOptionKeyCode: Int64 = 61
 ### 本機模式（預設）
 
 - **不儲存任何錄音。** 語音資料僅存在於記憶體中（錄音 → 轉錄流程），完成後即丟棄。無論 macOS 或 iOS 伺服器，皆不會將任何音訊寫入磁碟。
-- **設定完成後不需要網路。** 唯一需要連網的是首次啟動時下載模型（約 675 MB）。之後，App 與模型完全離線運行，零對外連線。
+- **設定完成後不需要網路。** 唯一需要連網的是首次啟動時下載 Qwen3-ASR 1.7B 8-bit 模型。之後，F5 本機 App 與模型完全離線運行，零對外連線。
 - **無遙測。** 無分析追蹤、無使用統計、無回傳機制。macOS App 除了初始模型下載（由 speech-swift 內的 HuggingFace Hub SDK 處理）以及選用的 GitHub releases 更新檢查外，不包含任何本機模式網路程式碼。
-- **可完全離網運作。** 事先在另一台機器下載模型資料夾（macOS App 為 `~/.cache/huggingface/hub/models--aufklarer--Qwen3-ASR-0.6B-MLX-4bit/`,iOS 伺服器為 `~/.cache/huggingface/hub/models--mlx-community--Qwen3-ASR-0.6B-4bit/`）再複製過來，App 將永遠不需要網路。
+- **可完全離網運作。** 事先在另一台機器下載模型資料夾（macOS App 為 `~/.cache/huggingface/hub/models--mlx-community--Qwen3-ASR-1.7B-8bit/`，省電模式則為 `~/.cache/huggingface/hub/models--aufklarer--Qwen3-ASR-0.6B-MLX-4bit/`；iOS 伺服器為 `~/.cache/huggingface/hub/models--mlx-community--Qwen3-ASR-0.6B-4bit/`）再複製過來，App 將永遠不需要網路。
 
 ### 雲端模式（選擇加入：雲端語音輸入 / Live Translated Caption）
 
