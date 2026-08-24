@@ -71,7 +71,10 @@ count = data.count(prefix); \
 replacement = b'/redacted' + b'\x00' * (len(prefix) - 9); \
 binary.write_bytes(data.replace(prefix, replacement)) if count else None; \
 print(f'  Scrubbed {count} dev-path occurrence(s) from binary')"
-	@$(MAKE) bundle-opencc
+	@# Local-only MVP keeps Qwen's Simplified Chinese output and does not
+	@# expose Traditional conversion, so OpenCC is intentionally not bundled.
+	@# The bundle-opencc target remains available for a future Hant build.
+	@echo "OpenCC skipped (local Simplified-Chinese MVP)"
 	@# Sign the entire bundle with an explicit stable identifier so macOS TCC
 	@# tracks accessibility permission by identifier (constant across builds)
 	@# instead of cdhash (which changes every build). Without this, every

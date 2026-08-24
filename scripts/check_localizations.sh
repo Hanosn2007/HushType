@@ -217,8 +217,16 @@ for table in TABLES:
                 fail(f"{table}[{key}]: signature mismatch en={en[key]!r} zh={zh[key]!r}")
 
 # ---- cross-check against the frozen Gate B catalog -----------------------
-catalog = json.load(open(catalog_path, encoding="utf-8"))
-catalog_entries = {(e["table"], e["key"]): e for e in catalog["entries"]}
+# Upstream keeps Product_WS out of git, so source checkouts do not include
+# this optional review artifact. Preserve all structural, lint, parity, format
+# signature, and source-vs-bundle checks; run the frozen-catalog checks only
+# when the artifact is actually present.
+if catalog_path.is_file():
+    catalog = json.load(open(catalog_path, encoding="utf-8"))
+    catalog_entries = {(e["table"], e["key"]): e for e in catalog["entries"]}
+else:
+    print(f"localization validation warning: optional frozen catalog missing: {catalog_path}", file=sys.stderr)
+    catalog_entries = None
 
 def catalog_value(e, locale):
     v = e["english"] if locale == "en" else e["zh-Hant-TW"]
@@ -251,7 +259,7 @@ def catalog_value(e, locale):
     return v
     return v
 
-for (table, key), e in catalog_entries.items():
+for (table, key), e in (catalog_entries or {}).items():
     got_en = manifest["tables"][table]["en"].get(key) if isinstance(manifest["tables"][table].get("en"), dict) else None
     got_zh = manifest["tables"][table]["zh-Hant-TW"].get(key) if isinstance(manifest["tables"][table].get("zh-Hant-TW"), dict) else None
     for locale, got in (("en", got_en), ("zh-Hant-TW", got_zh)):
@@ -274,13 +282,14 @@ for (table, key), e in catalog_entries.items():
                 fail(f"catalog {table}[{key}] {locale}: value differs from resources\n  catalog={want!r}\n  resource={got!r}")
 
 # ---- stale-key detection: resource keys not in catalog --------------------
-for table in TABLES:
-    got = manifest["tables"][table].get("en")
-    if not isinstance(got, dict):
-        continue
-    for key in got:
-        if (table, key) not in catalog_entries:
-            fail(f"stale resource key not in frozen catalog: {table}[{key}]")
+if catalog_entries is not None:
+    for table in TABLES:
+        got = manifest["tables"][table].get("en")
+        if not isinstance(got, dict):
+            continue
+        for key in got:
+            if (table, key) not in catalog_entries:
+                fail(f"stale resource key not in frozen catalog: {table}[{key}]")
 
 # ---- emit / compare semantic manifest ------------------------------------
 serialized = json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=1)

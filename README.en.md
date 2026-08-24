@@ -41,7 +41,7 @@
 
 **Local-only MVP.** Cloud dictation source inherited from upstream remains in the repository for possible later work, but this build does not expose or select cloud engines.
 
-**Simplified Chinese by default.** Qwen3-ASR's native Chinese output is kept as Simplified Chinese by default. If you need Traditional Chinese, enable OpenCC `s2twp` in settings. EN/ZH code-switching remains supported, as does optional in-context number conversion (`一零一大樓` → `101 大樓`).
+**Simplified Chinese by default.** Qwen3-ASR's native Chinese output is kept as Simplified Chinese. OpenCC source inherited from upstream remains in the repository but is not bundled or exposed by this MVP. EN/ZH code-switching remains supported, as does optional in-context number conversion (`一零一大樓` → `101 大樓`).
 
 **Fix text where it stands.** Select text in any app, double-tap Right ⌥, and an on-device Apple Intelligence model proofreads it and replaces it in place: spelling, grammar, typos, punctuation. It's a mechanical proofreader, not a rewriter: meaning, tone, and your 中英 mix stay exactly as you wrote them (macOS 26+).<br>Note: the Apple Foundation Model is small and capability-limited, so corrections are deliberately conservative; sometimes it changes nothing at all.
 
@@ -128,7 +128,7 @@ iOS (via your Mac as server):
 4. Grant **Accessibility** and **Microphone** permissions when prompted
 5. Wait for the Qwen3-ASR 1.7B 8-bit model to download (one-time, progress shown in menu bar)
 
-The DMG is self-contained: OpenCC and all dependencies are bundled. No Homebrew, no terminal commands.
+The DMG/app bundle is self-contained for the local Simplified-Chinese path. No Homebrew or LM Studio is required at runtime.
 
 > **iOS server support:** The DMG also includes the iOS server toggle in the menu bar. It requires Python 3 and additional packages to be installed separately; see the [iOS setup guide](#setup-guide-ios-iphone--mac-server) below. If dependencies are missing, the app will show an error with the exact `pip3 install` command needed.
 

@@ -137,7 +137,7 @@ iOS（透過你的 Mac 作為伺服器）：
 4. 授予**輔助使用**與**麥克風**權限
 5. 等待 Qwen3-ASR 1.7B 8-bit 模型下載（僅首次，進度顯示在選單列）
 
-DMG 為完全獨立版本，OpenCC 及所有相依套件皆已內含。不需要 Homebrew、不需要終端機指令。
+DMG/App 對本機簡體中文路徑是獨立版本，執行時不需要 Homebrew 或 LM Studio。
 
 > **iOS 伺服器支援：** DMG 也包含選單列中的 iOS 伺服器切換功能。需要額外安裝 Python 3 及相關套件，參見下方 [iOS 安裝指南](#安裝指南iosiphone--mac-伺服器)。若缺少相依套件，App 會顯示錯誤訊息及所需的 `pip3 install` 指令。
 
