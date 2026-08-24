@@ -15,6 +15,12 @@ final class DictationEngineSettingsModel: ObservableObject {
             onSwitchEngine(engine)
         }
     }
+    @Published var localModelId: String {
+        didSet {
+            guard localModelId != oldValue else { return }
+            AppConfig.shared.modelId = localModelId
+        }
+    }
     @Published var openAIModel: String {
         didSet { AppConfig.shared.cloudDictationModelOpenAI = openAIModel }
     }
@@ -42,6 +48,7 @@ final class DictationEngineSettingsModel: ObservableObject {
     init(onSwitchEngine: @escaping (AppConfig.DictationEngine) -> Void) {
         self.onSwitchEngine = onSwitchEngine
         engine = AppConfig.shared.dictationEngine
+        localModelId = AppConfig.shared.modelId
         openAIModel = AppConfig.shared.cloudDictationModelOpenAI
         geminiModel = AppConfig.shared.cloudDictationModelGemini
         dailyCap = AppConfig.shared.cloudDailyCapDollars
@@ -58,6 +65,7 @@ final class DictationEngineSettingsModel: ObservableObject {
 
     func refreshDerived() {
         engine = AppConfig.shared.dictationEngine
+        localModelId = AppConfig.shared.modelId
         openAIModel = AppConfig.shared.cloudDictationModelOpenAI
         geminiModel = AppConfig.shared.cloudDictationModelGemini
         dailyCap = AppConfig.shared.cloudDailyCapDollars
@@ -211,6 +219,36 @@ struct DictationEngineSettingsView: View {
             }
             .labelsHidden()
             .pickerStyle(.radioGroup)
+
+            HStack(spacing: 8) {
+                Text(L10n.string(
+                    "settings.engine.local_model",
+                    fallback: "Local model:"
+                ))
+                Picker("", selection: $model.localModelId) {
+                    Text(L10n.string(
+                        "settings.model.qwen_1_7b",
+                        fallback: "Qwen3-ASR 1.7B 8-bit (quality)"
+                    )).tag(AppConfig.defaultModelId)
+                    Text(L10n.string(
+                        "settings.model.qwen_0_6b",
+                        fallback: "Qwen3-ASR 0.6B 4-bit (power saving)"
+                    )).tag(AppConfig.powerSavingModelId)
+                    if model.localModelId != AppConfig.defaultModelId,
+                       model.localModelId != AppConfig.powerSavingModelId {
+                        Text(model.localModelId).tag(model.localModelId)
+                    }
+                }
+                .labelsHidden()
+            }
+
+            Text(L10n.string(
+                "settings.engine.local_model.apply_note",
+                fallback: "The model choice applies the next time the local model loads."
+            ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 8) {
                 Text(L10n.string("settings.engine.openai_model", fallback: "OpenAI model:"))

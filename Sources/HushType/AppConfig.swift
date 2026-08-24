@@ -105,17 +105,33 @@ final class AppConfig {
         }
     }
 
+    /// HuggingFace model IDs for the two supported local Qwen3-ASR paths.
+    ///
+    /// The 1.7B 8-bit model is the quality-first default. The 0.6B 4-bit
+    /// model remains an explicit power-saving choice for machines where the
+    /// larger model's memory footprint is undesirable.
+    static let defaultModelId = "mlx-community/Qwen3-ASR-1.7B-8bit"
+    static let powerSavingModelId = "aufklarer/Qwen3-ASR-0.6B-MLX-4bit"
+
     /// HuggingFace model ID for Qwen3-ASR.
+    ///
+    /// A missing preference uses `defaultModelId`. Existing values are never
+    /// rewritten: this preserves a user's explicit 0.6B selection across the
+    /// default change, while installations that never persisted a model
+    /// preference pick up the new default on upgrade.
     var modelId: String {
-        get { defaults.string(forKey: Keys.modelId) ?? "aufklarer/Qwen3-ASR-0.6B-MLX-4bit" }
+        get { defaults.string(forKey: Keys.modelId) ?? Self.defaultModelId }
         set { defaults.set(newValue, forKey: Keys.modelId) }
     }
 
     /// Whether to convert Simplified Chinese output to Traditional Chinese.
+    /// Disabled by default so Chinese dictation stays in Simplified Chinese.
+    /// An existing persisted value is respected, preserving an explicit
+    /// Traditional-Chinese preference across the default change.
     var chineseConversionEnabled: Bool {
         get {
             if defaults.object(forKey: Keys.chineseConversionEnabled) == nil {
-                return true // Default: enabled
+                return false // Default: keep model output in Simplified Chinese
             }
             return defaults.bool(forKey: Keys.chineseConversionEnabled)
         }
