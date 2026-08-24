@@ -171,6 +171,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyManager.onLiveCaptionToggle = { [weak self] in
             Task { @MainActor in self?.toggleLiveCaptionViaHotkey() }
         }
+        hotkeyManager.onF5Toggle = { [weak self] in
+            self?.handleF5Toggle()
+        }
 
         // RMS callback fires on the CoreAudio IO thread — must hop to main
         // before touching @Published state on the overlay model.
@@ -348,6 +351,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Hotkey Handlers
 
+    /// F5 is a discrete toggle, unlike Right Option's press-and-hold flow.
+    /// It deliberately bypasses tap translation/polish so the second press
+    /// always owns the recording stop and transcription path.
+    private func handleF5Toggle() {
+        // App-modal alerts must exclusively own input while they are visible.
+        guard NSApp.modalWindow == nil else { return }
+
+        tapArbiter.reset()
+
+        if state == .recording {
+            finishRecording(allowTapAction: false)
+            return
+        }
+
+        // F5 must not compete with mic-source Live Caption. Unlike Right
+        // Option, it has no release event on which to show the gated feedback.
+        guard !AppConfig.shared.liveCaptionUsesMicSource else {
+            log.info("Ignoring F5 press while mic-source Live Caption is active")
+            return
+        }
+
+        // Keep the existing unloaded-model behavior used by Right Option.
+        if state == .unloaded {
+            if AppConfig.shared.dictationEngine == .local {
+                print("[HushType] Model unloaded — auto-reloading...")
+                reloadModel()
+                return
+            }
+            state = .idle
+            statusBar.setState(.idle)
+        }
+
+        guard state == .idle else {
+            log.info("Ignoring F5 press — state is \(String(describing: self.state), privacy: .public)")
+            return
+        }
+
+        guard activeEngine.isLoaded else {
+            print("[HushType] Model not loaded yet")
+            return
+        }
+
+        startRecording()
+    }
+
     private func handleHotkeyPress() {
         // App-modal alerts must exclusively own input while they are visible.
         guard NSApp.modalWindow == nil else { return }
@@ -396,6 +444,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        startRecording()
+    }
+
+    private func startRecording() {
         state = .recording
         statusBar.setState(.recording)
         showOverlayRecording()
@@ -429,20 +481,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        finishRecording(allowTapAction: true)
+    }
+
+    private func finishRecording(allowTapAction: Bool) {
         guard state == .recording else {
-            print("[HushType] Ignoring release — state is \(state)")
+            print("[HushType] Ignoring recording stop — state is \(state)")
             return
         }
 
         let samples = audioCapture.stopRecording()
         print("[HushType] Recording stopped: \(samples.count) samples (\(String(format: "%.1f", Double(samples.count) / 16000.0))s)")
 
-        // Skip if too short (< 0.3s) — treat as a TAP for translation
-        guard samples.count > 4800 else {
+        // Right Option's short hold remains a TAP for translation. F5 is a
+        // strict start/stop toggle, so even a short non-empty clip transcribes.
+        if allowTapAction && samples.count <= 4800 {
             hideOverlay()
             state = .idle
             statusBar.setState(.idle)
             handleTapDetected()
+            return
+        }
+
+        // Avoid sending an empty F5 clip to an engine that expects audio.
+        guard !samples.isEmpty else {
+            hideOverlay()
+            state = .idle
+            statusBar.setState(.idle)
+            print("[HushType] Empty recording, skipping transcription")
             return
         }
 

@@ -13,6 +13,10 @@ final class HotkeyManager {
     /// comment" — note we only fire on the *right* command bit, so left
     /// ⌘ + / continues to work for editor comment-toggle as expected.
     var onLiveCaptionToggle: (() -> Void)?
+    /// Fires once for each physical F5 press (auto-repeat is ignored). The
+    /// caller owns the start/stop toggle; both the key-down and key-up events
+    /// are consumed so macOS cannot also treat F5 as a system shortcut.
+    var onF5Toggle: (() -> Void)?
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -20,6 +24,7 @@ final class HotkeyManager {
     private var otherKeyPressedDuringHold = false
 
     private static let rightOptionKeyCode: Int64 = 61 // kVK_RightOption
+    private static let f5KeyCode: Int64 = 96 // kVK_F5
     /// kVK_ANSI_Slash — physical "/" key. With Shift held, this is "?".
     private static let slashKeyCode: Int64 = 44
     /// Device-dependent bit for Right Command on macOS CGEventFlags.
@@ -32,6 +37,7 @@ final class HotkeyManager {
     func start() {
         let eventMask: CGEventMask = (1 << CGEventType.flagsChanged.rawValue)
             | (1 << CGEventType.keyDown.rawValue)
+            | (1 << CGEventType.keyUp.rawValue)
 
         let callback: CGEventTapCallBack = { proxy, type, event, refcon in
             let manager = Unmanaged<HotkeyManager>.fromOpaque(refcon!).takeUnretainedValue()
@@ -58,7 +64,7 @@ final class HotkeyManager {
         CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
 
-        log.info("Hotkey manager started — listening for Right Option key")
+        log.info("Hotkey manager started — listening for Right Option and F5")
     }
 
     func stop() {
@@ -90,6 +96,16 @@ final class HotkeyManager {
         // normally — only the bare "right ⌘ + /" combo triggers LC toggle.
         if type == .keyDown {
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+            if keyCode == Self.f5KeyCode {
+                // A held function key generates repeated keyDown events. Only
+                // the physical press toggles dictation; consume repeats too.
+                let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+                if !isRepeat {
+                    log.debug("F5 pressed")
+                    onF5Toggle?()
+                }
+                return nil // consume F5 — do not trigger system dictation
+            }
             if keyCode == Self.slashKeyCode {
                 let flagsRaw = event.flags.rawValue
                 let rightCmd = (flagsRaw & Self.rightCommandFlagBit) != 0
@@ -100,6 +116,14 @@ final class HotkeyManager {
                     onLiveCaptionToggle?()
                     return nil // suppress — don't let editors interpret as comment-toggle
                 }
+            }
+        }
+
+        if type == .keyUp {
+            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+            if keyCode == Self.f5KeyCode {
+                log.debug("F5 released")
+                return nil // consume F5 release as well
             }
         }
 
