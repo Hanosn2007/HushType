@@ -1943,9 +1943,18 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 if case .loading = state {
                     setModelDownloadInProgress()
                     unloadMenuItem.isEnabled = true
-                } else if case .loadingDetailed = state {
-                    setModelDownloadInProgress()
-                    unloadMenuItem.isEnabled = true
+                } else if case .loadingDetailed(let progress) = state {
+                    switch progress.phase {
+                    case .connecting, .downloading:
+                        setModelDownloadInProgress()
+                        unloadMenuItem.isEnabled = true
+                    case .verifying, .loadingTokenizer, .loadingAudio, .loadingText, .ready:
+                        // Once the network transfer has finished there is no
+                        // download to stop. Hide the model-memory action until
+                        // the model is ready rather than present a false verb.
+                        unloadMenuItem.isHidden = true
+                        unloadMenuItem.isEnabled = false
+                    }
                 } else if case .setupRequired = state {
                     unloadMenuItem.isHidden = true
                     unloadMenuItem.isEnabled = false

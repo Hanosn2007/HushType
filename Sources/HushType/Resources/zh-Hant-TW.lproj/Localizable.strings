@@ -193,8 +193,8 @@
 
 /* Explicit model-download cancellation/restart actions. */
 
-"menu.model.stop_download" = "停止模型下載";
-"menu.model.start_download" = "開始下載模型";
+"menu.model.stop_download" = "停止下載";
+"menu.model.start_download" = "開始下載";
 
 /* Opens the About alert. */
 

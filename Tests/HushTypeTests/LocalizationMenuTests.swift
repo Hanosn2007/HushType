@@ -62,7 +62,11 @@ final class LocalizationMenuTests: XCTestCase {
     func testModelMenuActionIsTyped() {
         let unload: StatusBarController.ModelMenuAction = .unload
         let reload: StatusBarController.ModelMenuAction = .reload
+        let stopDownload: StatusBarController.ModelMenuAction = .stopDownload
+        let startDownload: StatusBarController.ModelMenuAction = .startDownload
         XCTAssertNotEqual(unload, reload)
+        XCTAssertNotEqual(stopDownload, startDownload)
+        XCTAssertNotEqual(unload, stopDownload)
     }
 
     func testLanguageSelectionHandlerHasNoLifecycleAuthorityAndStrictNoOpGuard() throws {

@@ -106,6 +106,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var liveCaptionManager: LiveCaptionManager?
     private let tapArbiter = TapArbiter()
     private var consecutiveCloudNetworkFailures = 0
+    /// Rejects progress callbacks that were already queued when a download
+    /// was stopped and then started again.
+    private var modelLoadAttemptID = UUID()
 
     private enum RecordingTrigger {
         case rightOption
@@ -285,6 +288,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Load local model async.
+        let loadAttemptID = UUID()
+        modelLoadAttemptID = loadAttemptID
         statusBar.setState(.loadingDetailed(ModelLoadProgress(
             phase: .connecting,
             fraction: 0,
@@ -294,11 +299,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 try await self?.localEngine.load(detailProgressHandler: { progress in
                     DispatchQueue.main.async {
-                        self?.statusBar.setState(.loadingDetailed(progress))
+                        guard let self,
+                              self.modelLoadAttemptID == loadAttemptID,
+                              self.state == .loading else { return }
+                        self.statusBar.setState(.loadingDetailed(progress))
                     }
                 })
                 await MainActor.run {
-                    guard let self else { return }
+                    guard let self, self.modelLoadAttemptID == loadAttemptID else { return }
                     self.state = .idle
                     self.statusBar.setState(.idle)
                     log.info("HushType ready")
@@ -306,7 +314,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await self?.scheduleTextPolishPrewarmIfNeeded(reason: "local-model launch")
             } catch is CancellationError {
                 await MainActor.run {
-                    guard let self, self.state == .loading else { return }
+                    guard let self,
+                          self.modelLoadAttemptID == loadAttemptID,
+                          self.state == .loading else { return }
                     self.state = .unloaded
                     self.statusBar.setState(.unloaded)
                     self.statusBar.setModelDownloadStopped()
@@ -314,12 +324,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 log.error("Failed to load model: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
-                    self?.state = .idle
-                    self?.statusBar.setState(.error(L10n.string(
+                    guard let self, self.modelLoadAttemptID == loadAttemptID else { return }
+                    self.state = .idle
+                    self.statusBar.setState(.error(L10n.string(
                         "status.model_load_failed",
                         fallback: "Model load failed"
                     )))
-                    self?.statusBar.setModelUnloaded()
+                    self.statusBar.setModelUnloaded()
                 }
             }
         }
@@ -1363,6 +1374,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         state = .loading
+        let loadAttemptID = UUID()
+        modelLoadAttemptID = loadAttemptID
         statusBar.setState(.loadingDetailed(ModelLoadProgress(
             phase: .connecting,
             fraction: 0,
@@ -1373,11 +1386,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 try await self?.localEngine.load(detailProgressHandler: { progress in
                     DispatchQueue.main.async {
-                        self?.statusBar.setState(.loadingDetailed(progress))
+                        guard let self,
+                              self.modelLoadAttemptID == loadAttemptID,
+                              self.state == .loading else { return }
+                        self.statusBar.setState(.loadingDetailed(progress))
                     }
                 })
                 await MainActor.run {
-                    guard let self else { return }
+                    guard let self, self.modelLoadAttemptID == loadAttemptID else { return }
                     self.state = .idle
                     self.statusBar.setState(.idle)
                     self.statusBar.setModelLoaded()
@@ -1386,7 +1402,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await self?.scheduleTextPolishPrewarmIfNeeded(reason: "model reload")
             } catch is CancellationError {
                 await MainActor.run {
-                    guard let self, self.state == .loading else { return }
+                    guard let self,
+                          self.modelLoadAttemptID == loadAttemptID,
+                          self.state == .loading else { return }
                     self.state = .unloaded
                     self.statusBar.setState(.unloaded)
                     self.statusBar.setModelDownloadStopped()
@@ -1394,12 +1412,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 log.error("Failed to reload model: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
-                    self?.state = .unloaded
-                    self?.statusBar.setState(.error(L10n.string(
+                    guard let self, self.modelLoadAttemptID == loadAttemptID else { return }
+                    self.state = .unloaded
+                    self.statusBar.setState(.error(L10n.string(
                         "status.model_reload_failed",
                         fallback: "Reload failed"
                     )))
-                    self?.statusBar.setModelUnloaded()
+                    self.statusBar.setModelUnloaded()
                 }
             }
         }
@@ -1413,6 +1432,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             print("[HushType] No model download to stop")
             return
         }
+        modelLoadAttemptID = UUID()
         localEngine.unload()
         state = .unloaded
         statusBar.setState(.unloaded)

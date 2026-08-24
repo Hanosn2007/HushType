@@ -88,7 +88,9 @@ private final class ModelDownloadMonitor: @unchecked Sendable {
     private let totalBytes: Int64?
     private let startedAt: Date
     private let handler: (ModelLoadProgress) -> Void
+    private let lifecycleLock = NSLock()
     private var task: Task<Void, Never>?
+    private var stopped = false
     private var currentPath: String?
     private var previousBytes: Int64 = 0
     private var previousSampleAt = Date()
@@ -108,8 +110,12 @@ private final class ModelDownloadMonitor: @unchecked Sendable {
     }
 
     func start() {
-        guard task == nil else { return }
-        task = Task { [weak self] in
+        lifecycleLock.lock()
+        guard task == nil, !stopped else {
+            lifecycleLock.unlock()
+            return
+        }
+        let newTask = Task { [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
                 self.sample()
@@ -120,11 +126,17 @@ private final class ModelDownloadMonitor: @unchecked Sendable {
                 }
             }
         }
+        task = newTask
+        lifecycleLock.unlock()
     }
 
     func stop() {
-        task?.cancel()
+        lifecycleLock.lock()
+        stopped = true
+        let runningTask = task
         task = nil
+        lifecycleLock.unlock()
+        runningTask?.cancel()
     }
 
     private func sample() {
@@ -472,6 +484,9 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         }
         latestProgress = (progress, description)
         let mapped = mapDetailProgress(progress: progress, description: description)
+        if mapped.phase != .connecting && mapped.phase != .downloading {
+            downloadMonitor?.stop()
+        }
         var detailEvents: [ModelLoadProgress] = []
         if mapped.phase == .loadingTokenizer,
            latestDetailProgress?.phase == .downloading {
