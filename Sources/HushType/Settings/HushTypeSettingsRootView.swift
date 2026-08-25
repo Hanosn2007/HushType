@@ -18,7 +18,6 @@ struct HushTypeSettingsRootView: View {
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .navigationTitle(model.selection.title)
         .navigationSplitViewStyle(.balanced)
         .onAppear { model.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -40,6 +39,7 @@ struct HushTypeSettingsRootView: View {
 }
 
 private struct SettingsPage<Content: View>: View {
+    let title: String
     let subtitle: String
     @ViewBuilder var content: Content
 
@@ -47,12 +47,16 @@ private struct SettingsPage<Content: View>: View {
         if #available(macOS 26.0, *) {
             scrollContent(includesSubtitle: false)
                 .safeAreaBar(edge: .top, alignment: .leading, spacing: 0) {
-                    Text(subtitle)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 28)
-                        .padding(.vertical, 12)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(title)
+                            .font(.title2.weight(.semibold))
+                        Text(subtitle)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 12)
                 }
                 .safeAreaBar(edge: .bottom, spacing: 0) {
                     // A real, non-zero safe-area bar gives the system a
@@ -74,6 +78,8 @@ private struct SettingsPage<Content: View>: View {
             VStack {
                 VStack(alignment: .leading, spacing: 20) {
                     if includesSubtitle {
+                        Text(title)
+                            .font(.title2.weight(.semibold))
                         Text(subtitle)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -109,6 +115,7 @@ private struct SettingsOverviewView: View {
 
     var body: some View {
         SettingsPage(
+            title: model.selection.title,
             subtitle: L10n.string("settings.overview.subtitle", fallback: "A quick view of HushType and its local speech model.")
         ) {
             SettingsCard {
@@ -198,6 +205,7 @@ private struct SettingsDictationView: View {
 
     var body: some View {
         SettingsPage(
+            title: model.selection.title,
             subtitle: L10n.string("settings.dictation.window_subtitle", fallback: "Configure local recognition and output cleanup.")
         ) {
             if model.currentDictationEngine == .local {
@@ -250,6 +258,7 @@ private struct SettingsModelView: View {
 
     var body: some View {
         SettingsPage(
+            title: model.selection.title,
             subtitle: L10n.string("settings.model.subtitle", fallback: "Manage the Qwen3-ASR model stored in memory for local dictation.")
         ) {
             SettingsCard {
@@ -485,6 +494,7 @@ private struct SettingsDictionaryView: View {
 
     var body: some View {
         SettingsPage(
+            title: model.selection.title,
             subtitle: L10n.string("settings.dictionary.subtitle", fallback: "Correct names, technical terms, and recurring transcription mistakes.")
         ) {
             SettingsCard {
@@ -514,6 +524,7 @@ private struct SettingsPermissionsView: View {
 
     var body: some View {
         SettingsPage(
+            title: model.selection.title,
             subtitle: L10n.string("settings.permissions.subtitle", fallback: "HushType needs these permissions for its global hotkey and microphone input.")
         ) {
             permissionCard(
@@ -643,6 +654,7 @@ private struct SettingsGeneralView: View {
 
     var body: some View {
         SettingsPage(
+            title: model.selection.title,
             subtitle: L10n.string("settings.general.subtitle", fallback: "Adjust how HushType presents and cleans up dictation.")
         ) {
             SettingsCard {

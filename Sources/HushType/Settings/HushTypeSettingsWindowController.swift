@@ -11,6 +11,9 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
     /// These are content dimensions. The matching frame dimensions include
     /// the title bar and are calculated from the actual window below.
     private static let defaultContentSize = NSSize(width: 960, height: 680)
+    /// Keep the sidebar usable and detail controls readable without making a
+    /// selected page dictate a new window size. This is a lower bound only;
+    /// `defaultContentSize` is used solely for a brand-new window.
     private static let minimumContentSize = NSSize(width: 900, height: 560)
 
     private let model = HushTypeSettingsModel()
@@ -26,7 +29,7 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
         // The selected pane's SwiftUI navigation title lives in the unified
         // toolbar. Besides matching native settings windows, that stationary
         // toolbar is what macOS uses to render the official scroll-edge effect.
-        window.titleVisibility = .visible
+        window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.toolbarStyle = .unified
         // `contentMinSize` alone did not constrain old frame-autosave values
@@ -38,7 +41,14 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
         ).size
         window.isReleasedWhenClosed = false
         window.setFrameAutosaveName("hushtype.settings.main")
-        window.contentViewController = NSHostingController(rootView: HushTypeSettingsRootView(model: model))
+        let hosting = NSHostingController(rootView: HushTypeSettingsRootView(model: model))
+        // A settings pane's ideal SwiftUI size changes with its content (the
+        // model library is much taller than Permissions, for example).  Do not
+        // let those intrinsic-size updates resize the user's NSWindow frame
+        // when the sidebar selection changes; AppKit owns this resizable
+        // window, constrained only by the explicit minimum above.
+        hosting.sizingOptions = []
+        window.contentViewController = hosting
 
         super.init(window: window)
         window.delegate = self
