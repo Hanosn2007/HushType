@@ -51,12 +51,14 @@ private struct SettingsPage<Content: View>: View {
         if #available(macOS 26.0, *) {
             scrollContent(includesTitle: false)
                 .safeAreaBar(edge: .top, spacing: 0) {
-                    // The actual title is a toolbar item. This minimal native
-                    // bar only anchors macOS's scroll-edge transition without
-                    // creating a second, content-sized header below it.
+                    // This manual NSWindow has a native window title, but no
+                    // detail-column toolbar controls for the system scroll
+                    // edge to transition into. Reserve a real stationary bar
+                    // and let macOS render the soft blur; a near-zero anchor
+                    // is not large enough to produce a visible transition.
                     Color.clear
                         .frame(maxWidth: .infinity)
-                        .frame(height: 1)
+                        .frame(height: 32)
                         .accessibilityHidden(true)
                 }
                 .scrollEdgeEffectStyle(.soft, for: .top)
