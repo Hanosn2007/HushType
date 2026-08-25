@@ -19,6 +19,14 @@ struct HushTypeSettingsRootView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .navigationSplitViewStyle(.balanced)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Text(model.selection.title)
+                    .font(.title2.weight(.semibold))
+                    .fixedSize()
+                    .accessibilityAddTraits(.isHeader)
+            }
+        }
         .onAppear { model.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.refresh()
@@ -45,45 +53,33 @@ private struct SettingsPage<Content: View>: View {
 
     var body: some View {
         if #available(macOS 26.0, *) {
-            scrollContent(includesSubtitle: false)
-                .safeAreaBar(edge: .top, alignment: .leading, spacing: 0) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(title)
-                            .font(.title2.weight(.semibold))
-                        Text(subtitle)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 12)
-                }
-                .safeAreaBar(edge: .bottom, spacing: 0) {
-                    // A real, non-zero safe-area bar gives the system a
-                    // stationary bottom edge to transition into. The bar is
-                    // intentionally content-free; macOS owns the visual.
+            scrollContent(includesTitle: false)
+                .safeAreaBar(edge: .top, spacing: 0) {
+                    // The actual title is a toolbar item. This minimal native
+                    // bar only anchors macOS's scroll-edge transition without
+                    // creating a second, content-sized header below it.
                     Color.clear
                         .frame(maxWidth: .infinity)
-                        .frame(height: 18)
+                        .frame(height: 1)
                         .accessibilityHidden(true)
                 }
-                .scrollEdgeEffectStyle(.soft, for: .vertical)
+                .scrollEdgeEffectStyle(.soft, for: .top)
         } else {
-            scrollContent(includesSubtitle: true)
+            scrollContent(includesTitle: true)
         }
     }
 
-    private func scrollContent(includesSubtitle: Bool) -> some View {
+    private func scrollContent(includesTitle: Bool) -> some View {
         ScrollView {
             VStack {
                 VStack(alignment: .leading, spacing: 20) {
-                    if includesSubtitle {
+                    if includesTitle {
                         Text(title)
                             .font(.title2.weight(.semibold))
-                        Text(subtitle)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
+                    Text(subtitle)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     content
                     Spacer(minLength: 16)
                 }

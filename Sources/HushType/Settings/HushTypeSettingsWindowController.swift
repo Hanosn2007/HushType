@@ -26,9 +26,8 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
             defer: false
         )
         window.title = L10n.string("window.settings.title", fallback: "HushType Settings")
-        // The selected pane's SwiftUI navigation title lives in the unified
-        // toolbar. Besides matching native settings windows, that stationary
-        // toolbar is what macOS uses to render the official scroll-edge effect.
+        // Keep a meaningful logical window title while the selected page title
+        // is rendered by a SwiftUI toolbar item in the detail column.
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.toolbarStyle = .unified
@@ -97,14 +96,6 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
 
     func windowDidBecomeKey(_ notification: Notification) {
         model.refresh()
-    }
-
-    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
-        let minimumFrameSize = minimumFrameSize(for: sender)
-        return NSSize(
-            width: max(frameSize.width, minimumFrameSize.width),
-            height: max(frameSize.height, minimumFrameSize.height)
-        )
     }
 
     func windowWillClose(_ notification: Notification) {
