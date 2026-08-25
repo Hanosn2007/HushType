@@ -54,47 +54,24 @@ private struct SettingsPage<Content: View>: View {
 
     private var scrollContent: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(title).font(.system(size: 26, weight: .semibold))
-                    Text(subtitle).foregroundStyle(.secondary)
+            VStack {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text(subtitle)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    content
+                    Spacer(minLength: 16)
                 }
-                content
-                Spacer(minLength: 16)
+                .frame(maxWidth: 900, alignment: .leading)
             }
-            .frame(maxWidth: 900, alignment: .leading)
-            .padding(28)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 28)
         }
-        .overlay(alignment: .top) {
-            SettingsScrollEdgeMaterial(edge: .top)
-        }
-        .overlay(alignment: .bottom) {
-            SettingsScrollEdgeMaterial(edge: .bottom)
-        }
-    }
-}
-
-/// A visible fallback for detail panes that have no pinned toolbar or safe-area
-/// controls. SwiftUI's native soft scroll-edge effect only materializes when
-/// scrolling content overlaps one of those stationary regions; this masked
-/// material keeps the same progressive blur in a plain settings ScrollView.
-private struct SettingsScrollEdgeMaterial: View {
-    let edge: VerticalEdge
-
-    var body: some View {
-        Rectangle()
-            .fill(.regularMaterial)
-            .mask(
-                LinearGradient(
-                    colors: edge == .top ? [.black, .clear] : [.clear, .black],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-            .frame(height: 34)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        // Keep the scroll view itself full-width so the system scroll-edge
+        // effect and scrollbar reach the detail pane edges. Only the scrolling
+        // content receives reading-width margins, matching Thaw's native form.
+        .contentMargins(.horizontal, 28, for: .scrollContent)
+        .navigationTitle(title)
     }
 }
 
