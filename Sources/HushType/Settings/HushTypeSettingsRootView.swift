@@ -18,6 +18,7 @@ struct HushTypeSettingsRootView: View {
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .navigationTitle(model.selection.title)
         .navigationSplitViewStyle(.balanced)
         .onAppear { model.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -39,26 +40,44 @@ struct HushTypeSettingsRootView: View {
 }
 
 private struct SettingsPage<Content: View>: View {
-    let title: String
     let subtitle: String
     @ViewBuilder var content: Content
 
     var body: some View {
         if #available(macOS 26.0, *) {
-            scrollContent
-                .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
-        } else {
-            scrollContent
-        }
-    }
-
-    private var scrollContent: some View {
-        ScrollView {
-            VStack {
-                VStack(alignment: .leading, spacing: 20) {
+            scrollContent(includesSubtitle: false)
+                .safeAreaBar(edge: .top, alignment: .leading, spacing: 0) {
                     Text(subtitle)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 28)
+                        .padding(.vertical, 12)
+                }
+                .safeAreaBar(edge: .bottom, spacing: 0) {
+                    // A real, non-zero safe-area bar gives the system a
+                    // stationary bottom edge to transition into. The bar is
+                    // intentionally content-free; macOS owns the visual.
+                    Color.clear
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 18)
+                        .accessibilityHidden(true)
+                }
+                .scrollEdgeEffectStyle(.soft, for: .vertical)
+        } else {
+            scrollContent(includesSubtitle: true)
+        }
+    }
+
+    private func scrollContent(includesSubtitle: Bool) -> some View {
+        ScrollView {
+            VStack {
+                VStack(alignment: .leading, spacing: 20) {
+                    if includesSubtitle {
+                        Text(subtitle)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     content
                     Spacer(minLength: 16)
                 }
@@ -71,7 +90,6 @@ private struct SettingsPage<Content: View>: View {
         // effect and scrollbar reach the detail pane edges. Only the scrolling
         // content receives reading-width margins, matching Thaw's native form.
         .contentMargins(.horizontal, 28, for: .scrollContent)
-        .navigationTitle(title)
     }
 }
 
@@ -91,7 +109,6 @@ private struct SettingsOverviewView: View {
 
     var body: some View {
         SettingsPage(
-            title: L10n.string("settings.overview.title", fallback: "Overview"),
             subtitle: L10n.string("settings.overview.subtitle", fallback: "A quick view of HushType and its local speech model.")
         ) {
             SettingsCard {
@@ -181,7 +198,6 @@ private struct SettingsDictationView: View {
 
     var body: some View {
         SettingsPage(
-            title: L10n.string("settings.dictation.title", fallback: "Dictation"),
             subtitle: L10n.string("settings.dictation.window_subtitle", fallback: "Configure local recognition and output cleanup.")
         ) {
             if model.currentDictationEngine == .local {
@@ -234,7 +250,6 @@ private struct SettingsModelView: View {
 
     var body: some View {
         SettingsPage(
-            title: L10n.string("settings.model.title", fallback: "Local Model"),
             subtitle: L10n.string("settings.model.subtitle", fallback: "Manage the Qwen3-ASR model stored in memory for local dictation.")
         ) {
             SettingsCard {
@@ -470,7 +485,6 @@ private struct SettingsDictionaryView: View {
 
     var body: some View {
         SettingsPage(
-            title: L10n.string("settings.dictionary.title", fallback: "Dictionary"),
             subtitle: L10n.string("settings.dictionary.subtitle", fallback: "Correct names, technical terms, and recurring transcription mistakes.")
         ) {
             SettingsCard {
@@ -500,7 +514,6 @@ private struct SettingsPermissionsView: View {
 
     var body: some View {
         SettingsPage(
-            title: L10n.string("settings.permissions.title", fallback: "Permissions"),
             subtitle: L10n.string("settings.permissions.subtitle", fallback: "HushType needs these permissions for its global hotkey and microphone input.")
         ) {
             permissionCard(
@@ -630,7 +643,6 @@ private struct SettingsGeneralView: View {
 
     var body: some View {
         SettingsPage(
-            title: L10n.string("settings.general.title", fallback: "General"),
             subtitle: L10n.string("settings.general.subtitle", fallback: "Adjust how HushType presents and cleans up dictation.")
         ) {
             SettingsCard {
