@@ -31,27 +31,28 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.toolbarStyle = .unified
-        // `contentMinSize` alone did not constrain old frame-autosave values
-        // reliably. Set both coordinate systems and also clamp restored/user
-        // resize frames in the delegate below.
-        window.contentMinSize = Self.minimumContentSize
-        window.minSize = window.frameRect(
-            forContentRect: NSRect(origin: .zero, size: Self.minimumContentSize)
-        ).size
         window.isReleasedWhenClosed = false
         window.setFrameAutosaveName("hushtype.settings.main")
         let hosting = NSHostingController(rootView: HushTypeSettingsRootView(model: model))
-        // A settings pane's ideal SwiftUI size changes with its content (the
-        // model library is much taller than Permissions, for example).  Do not
-        // let those intrinsic-size updates resize the user's NSWindow frame
-        // when the sidebar selection changes; AppKit owns this resizable
-        // window, constrained only by the explicit minimum above.
-        hosting.sizingOptions = []
+        // Keep the hosting view's intrinsic layout information, but do not let
+        // page-specific SwiftUI minimum/maximum measurements drive the window
+        // when the sidebar selection changes. An empty sizing option set is
+        // invalid here: this controller is the window's root content view and
+        // still needs a usable intrinsic layout.
+        hosting.sizingOptions = [.intrinsicContentSize]
+
+        // AppKit ignores NSWindow.minSize/contentMinSize for Auto Layout-backed
+        // content. Required constraints on the root hosting view are therefore
+        // the authoritative, section-independent lower bound.
+        NSLayoutConstraint.activate([
+            hosting.view.widthAnchor.constraint(greaterThanOrEqualToConstant: Self.minimumContentSize.width),
+            hosting.view.heightAnchor.constraint(greaterThanOrEqualToConstant: Self.minimumContentSize.height),
+        ])
         window.contentViewController = hosting
 
         super.init(window: window)
         window.delegate = self
-        enforceMinimumSize(of: window)
+        clampRestoredFrameIfNeeded(of: window)
     }
 
     @available(*, unavailable)
@@ -72,7 +73,7 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
         NSApp.activate(ignoringOtherApps: true)
         showWindow(nil)
         if let window {
-            enforceMinimumSize(of: window)
+            clampRestoredFrameIfNeeded(of: window)
         }
         window?.deminiaturize(nil)
         window?.makeKeyAndOrderFront(nil)
@@ -103,26 +104,22 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
         NSApp.setActivationPolicy(.accessory)
     }
 
-    private func minimumFrameSize(for window: NSWindow) -> NSSize {
-        window.frameRect(
-            forContentRect: NSRect(origin: .zero, size: Self.minimumContentSize)
-        ).size
-    }
-
     /// Frame autosave restoration can happen before this controller receives
     /// its delegate. Clamp it explicitly, preserving the saved origin as much
     /// as possible, and repeat on every presentation in case AppKit restores a
     /// stale frame later in the window lifecycle.
-    private func enforceMinimumSize(of window: NSWindow) {
-        let minimumFrameSize = minimumFrameSize(for: window)
-        window.contentMinSize = Self.minimumContentSize
-        window.minSize = minimumFrameSize
-
+    private func clampRestoredFrameIfNeeded(of window: NSWindow) {
         let frame = window.frame
-        guard frame.size.width < minimumFrameSize.width || frame.size.height < minimumFrameSize.height else {
+        let contentSize = window.contentRect(forFrameRect: frame).size
+        guard contentSize.width < Self.minimumContentSize.width
+            || contentSize.height < Self.minimumContentSize.height
+        else {
             return
         }
 
+        let minimumFrameSize = window.frameRect(
+            forContentRect: NSRect(origin: .zero, size: Self.minimumContentSize)
+        ).size
         let constrainedFrame = NSRect(
             origin: frame.origin,
             size: NSSize(
