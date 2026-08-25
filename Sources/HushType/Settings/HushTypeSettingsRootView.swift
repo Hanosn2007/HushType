@@ -19,14 +19,10 @@ struct HushTypeSettingsRootView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .navigationSplitViewStyle(.balanced)
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Text(model.selection.title)
-                    .font(.title2.weight(.semibold))
-                    .fixedSize()
-                    .accessibilityAddTraits(.isHeader)
-            }
-        }
+        // Page names are window titles, not interactive toolbar items.
+        // On macOS 26 a ToolbarItem receives a Liquid Glass control surface,
+        // which incorrectly made this title look like a capsule button.
+        .navigationTitle(model.selection.title)
         .onAppear { model.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.refresh()

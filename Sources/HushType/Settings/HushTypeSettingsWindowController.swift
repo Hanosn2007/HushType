@@ -26,9 +26,10 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
             defer: false
         )
         window.title = L10n.string("window.settings.title", fallback: "HushType Settings")
-        // Keep a meaningful logical window title while the selected page title
-        // is rendered by a SwiftUI toolbar item in the detail column.
-        window.titleVisibility = .hidden
+        // The hosting controller bridges SwiftUI's navigationTitle into the
+        // native window title. Keep it visible so macOS renders plain title
+        // text instead of treating it as a Liquid Glass toolbar control.
+        window.titleVisibility = .visible
         window.titlebarAppearsTransparent = true
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
