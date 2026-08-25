@@ -66,6 +66,35 @@ private struct SettingsPage<Content: View>: View {
             .frame(maxWidth: 900, alignment: .leading)
             .padding(28)
         }
+        .overlay(alignment: .top) {
+            SettingsScrollEdgeMaterial(edge: .top)
+        }
+        .overlay(alignment: .bottom) {
+            SettingsScrollEdgeMaterial(edge: .bottom)
+        }
+    }
+}
+
+/// A visible fallback for detail panes that have no pinned toolbar or safe-area
+/// controls. SwiftUI's native soft scroll-edge effect only materializes when
+/// scrolling content overlaps one of those stationary regions; this masked
+/// material keeps the same progressive blur in a plain settings ScrollView.
+private struct SettingsScrollEdgeMaterial: View {
+    let edge: VerticalEdge
+
+    var body: some View {
+        Rectangle()
+            .fill(.regularMaterial)
+            .mask(
+                LinearGradient(
+                    colors: edge == .top ? [.black, .clear] : [.clear, .black],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .frame(height: 34)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 

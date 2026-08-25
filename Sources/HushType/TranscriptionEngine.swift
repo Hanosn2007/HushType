@@ -100,6 +100,7 @@ final class ModelDownloadMonitor: @unchecked Sendable {
     private var previousBytes: Int64 = 0
     private var previousSampleAt = Date()
     private var latestSpeed: Double?
+    private var recentSpeeds: [Double] = []
     private var latestBytes: Int64 = 0
     private var sawDownload = false
     private var emittedVerification = false
@@ -125,7 +126,10 @@ final class ModelDownloadMonitor: @unchecked Sendable {
             while !Task.isCancelled {
                 self.sample()
                 do {
-                    try await Task.sleep(nanoseconds: 100_000_000)
+                    // Half-second sampling keeps speed and ETA readable. A
+                    // 100 ms cadence made both values flicker faster than a
+                    // person can track and amplified short network bursts.
+                    try await Task.sleep(nanoseconds: 500_000_000)
                 } catch {
                     break
                 }
@@ -177,11 +181,18 @@ final class ModelDownloadMonitor: @unchecked Sendable {
             previousBytes = candidate.bytes
             previousSampleAt = now
             latestSpeed = nil
+            recentSpeeds.removeAll(keepingCapacity: true)
         } else {
             let elapsed = now.timeIntervalSince(previousSampleAt)
             let delta = candidate.bytes - previousBytes
-            if delta >= 0, elapsed > 0, delta > 0 {
-                latestSpeed = Double(delta) / elapsed
+            if delta >= 0, elapsed > 0 {
+                // Average the latest three seconds of half-second samples so
+                // short CFNetwork bursts do not make speed and ETA oscillate.
+                recentSpeeds.append(Double(delta) / elapsed)
+                if recentSpeeds.count > 6 {
+                    recentSpeeds.removeFirst(recentSpeeds.count - 6)
+                }
+                latestSpeed = recentSpeeds.reduce(0, +) / Double(recentSpeeds.count)
             }
             previousBytes = candidate.bytes
             previousSampleAt = now
