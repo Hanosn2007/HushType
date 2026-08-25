@@ -44,6 +44,15 @@ private struct SettingsPage<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
+        if #available(macOS 26.0, *) {
+            scrollContent
+                .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+        } else {
+            scrollContent
+        }
+    }
+
+    private var scrollContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -374,8 +383,14 @@ private struct SettingsModelView: View {
     @ViewBuilder
     private func modelInstallAction(_ descriptor: LocalModelDescriptor, state: LocalModelInstallState) -> some View {
         switch state {
-        case .notInstalled, .failed:
+        case .notInstalled:
             Button(L10n.string("settings.model.install", fallback: "Install")) {
+                library.install(descriptor)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(library.activeInstallModelID != nil || library.isEngineLoading)
+        case .failed:
+            Button(L10n.string("settings.model.reinstall", fallback: "Reinstall")) {
                 library.install(descriptor)
             }
             .buttonStyle(.borderedProminent)

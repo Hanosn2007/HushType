@@ -1519,6 +1519,7 @@
 "settings.model.not_installed" = "Not installed";
 "settings.model.installed" = "Installed";
 "settings.model.install" = "Install";
+"settings.model.reinstall" = "Reinstall";
 "settings.model.delete" = "Delete";
 "settings.model.deleting" = "Moving to Trash…";
 "settings.model.in_use" = "In use";

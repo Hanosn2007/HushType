@@ -1,6 +1,9 @@
 APP_NAME = HushType
 BUILD_DIR = .build/release
-BUNDLE_DIR = $(APP_NAME).app
+# Callers may direct packaging to a staging path so a development build never
+# overwrites an app bundle that is currently running. The traditional local
+# output remains the default for explicit release packaging.
+BUNDLE_DIR ?= $(APP_NAME).app
 
 # OpenCC paths (Homebrew on Apple Silicon)
 OPENCC_BIN = /opt/homebrew/bin/opencc

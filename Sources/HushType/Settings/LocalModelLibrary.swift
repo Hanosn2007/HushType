@@ -1,6 +1,12 @@
 import AudioCommon
 import Combine
 import Foundation
+import os
+
+private let modelLibraryLog = Logger(
+    subsystem: "com.felix.hushtype",
+    category: "model-library"
+)
 
 struct LocalModelDescriptor: Identifiable, Equatable, Sendable {
     let id: String
@@ -63,14 +69,28 @@ enum LocalModelCatalog {
     }
 
     static func cacheDirectoryForDownload(modelID: String) throws -> URL {
-        if let model = descriptor(for: modelID),
-           let legacyDirectory = cacheDirectories(for: modelID).last,
-           FileManager.default.fileExists(atPath: legacyDirectory.path),
-           !isComplete(model, at: legacyDirectory) {
-            var trashedURL: NSURL?
-            try FileManager.default.trashItem(at: legacyDirectory, resultingItemURL: &trashedURL)
-        }
         return try HuggingFaceDownloader.getCacheDirectory(for: modelID)
+    }
+
+    /// Clears only snapshots that have already reached an explicit
+    /// "download finished but files are incomplete" failure. A normal stop
+    /// remains resumable; the failed-state retry deliberately starts clean so
+    /// Hub metadata cannot immediately reproduce the same incomplete result.
+    @discardableResult
+    static func moveIncompleteCachesToTrash(for model: LocalModelDescriptor) throws -> Int {
+        let fileManager = FileManager.default
+        let base = modelCacheBaseDirectory().standardizedFileURL
+        let allowedPrefix = base.path.hasSuffix("/") ? base.path : base.path + "/"
+        var removed = 0
+
+        for location in cacheDirectories(for: model.id)
+        where fileManager.fileExists(atPath: location.path) && !isComplete(model, at: location) {
+            guard location.standardizedFileURL.path.hasPrefix(allowedPrefix) else { continue }
+            var trashedURL: NSURL?
+            try fileManager.trashItem(at: location, resultingItemURL: &trashedURL)
+            removed += 1
+        }
+        return removed
     }
 
     static func writeInstallReceipt(for model: LocalModelDescriptor, directory: URL) throws {
@@ -277,8 +297,17 @@ final class LocalModelLibrary: ObservableObject {
         guard activeInstallModelID == nil,
               !isEngineLoading,
               state(for: model) != .installed else { return }
+        let isRetryingIncompleteInstall: Bool
+        if case .failed = state(for: model) {
+            isRetryingIncompleteInstall = true
+        } else {
+            isRetryingIncompleteInstall = false
+        }
         activeInstallModelID = model.id
         states[model.id] = .preparing
+        modelLibraryLog.info(
+            "Install requested model=\(model.id, privacy: .public) cleanRetry=\(isRetryingIncompleteInstall, privacy: .public)"
+        )
 
         let monitor = ModelDownloadMonitor(totalBytes: model.weightBytes) { [weak self] progress in
             Task { @MainActor in
@@ -292,6 +321,12 @@ final class LocalModelLibrary: ObservableObject {
         installTask = Task { [weak self] in
             guard let self else { return }
             do {
+                if isRetryingIncompleteInstall {
+                    let removed = try LocalModelCatalog.moveIncompleteCachesToTrash(for: model)
+                    modelLibraryLog.info(
+                        "Prepared clean retry model=\(model.id, privacy: .public) trashedIncompleteCaches=\(removed, privacy: .public)"
+                    )
+                }
                 let directory = try LocalModelCatalog.cacheDirectoryForDownload(modelID: model.id)
                 try await HuggingFaceDownloader.downloadWeights(
                     modelId: model.id,
@@ -319,13 +354,18 @@ final class LocalModelLibrary: ObservableObject {
                 }
                 try LocalModelCatalog.writeInstallReceipt(for: model, directory: directory)
                 states[model.id] = .installed
+                modelLibraryLog.info("Install completed model=\(model.id, privacy: .public)")
             } catch {
                 monitor.stop()
                 downloadMonitor = nil
                 if Task.isCancelled {
                     states[model.id] = .notInstalled
+                    modelLibraryLog.info("Install stopped model=\(model.id, privacy: .public)")
                 } else {
                     states[model.id] = .failed(error.localizedDescription)
+                    modelLibraryLog.error(
+                        "Install failed model=\(model.id, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                    )
                 }
             }
             activeInstallModelID = nil

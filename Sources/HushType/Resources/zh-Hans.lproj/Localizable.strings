@@ -1521,6 +1521,7 @@
 "settings.model.not_installed" = "未安装";
 "settings.model.installed" = "已安装";
 "settings.model.install" = "安装";
+"settings.model.reinstall" = "重新安装";
 "settings.model.delete" = "删除";
 "settings.model.deleting" = "正在移到废纸篓…";
 "settings.model.in_use" = "正在使用";
