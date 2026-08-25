@@ -68,6 +68,26 @@ enum LocalModelCatalog {
         cacheDirectories(for: model.id).contains { isComplete(model, at: $0) }
     }
 
+    static func hasIncompleteCache(_ model: LocalModelDescriptor) -> Bool {
+        let fileManager = FileManager.default
+        return cacheDirectories(for: model.id).contains { directory in
+            guard fileManager.fileExists(atPath: directory.path),
+                  !isComplete(model, at: directory),
+                  let enumerator = fileManager.enumerator(
+                    at: directory,
+                    includingPropertiesForKeys: [.isRegularFileKey],
+                    options: [.skipsHiddenFiles]
+                  ) else { return false }
+
+            for case let url as URL in enumerator {
+                if (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+                    return true
+                }
+            }
+            return false
+        }
+    }
+
     static func cacheDirectoryForDownload(modelID: String) throws -> URL {
         return try HuggingFaceDownloader.getCacheDirectory(for: modelID)
     }
@@ -233,7 +253,15 @@ final class LocalModelLibrary: ObservableObject {
     func refresh() {
         for model in LocalModelCatalog.models
         where model.id != activeInstallModelID && model.id != engineLoadingModelID {
-            states[model.id] = LocalModelCatalog.isInstalled(model) ? .installed : .notInstalled
+            if LocalModelCatalog.isInstalled(model) {
+                states[model.id] = .installed
+            } else if LocalModelCatalog.hasIncompleteCache(model) {
+                states[model.id] = .failed(
+                    LocalModelLibraryError.incompleteInstall.localizedDescription
+                )
+            } else {
+                states[model.id] = .notInstalled
+            }
         }
     }
 
