@@ -78,5 +78,20 @@
 		</dict>
 	</dict>
 
+	<key>settings.dictionary.entry_count</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringFormatSpecTypeInt</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>l</string>
+			<key>other</key>
+			<string>已加载 %1$ld 条词典规则</string>
+		</dict>
+	</dict>
+
 </dict>
 </plist>

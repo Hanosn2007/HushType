@@ -105,6 +105,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var translationManager: TranslationManager!
     private var liveCaptionManager: LiveCaptionManager?
     private let tapArbiter = TapArbiter()
+    private var hotkeyResumeWorkItem: DispatchWorkItem?
+    private var hotkeyLifecycleGeneration: UInt = 0
+    private var inputSessionIsActive = true
+    private var displayIsAwake = true
     private var consecutiveCloudNetworkFailures = 0
     /// Rejects progress callbacks that were already queued when a download
     /// was stopped and then started again.
@@ -138,6 +142,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("[HushType] Starting...")
+
+        // Resolve app-owned model storage before Qwen or the model library
+        // asks the dependency downloader for a cache directory.
+        AppStoragePaths.prepareModelStorage()
 
         // Cap MLX's GPU buffer recycle pool process-wide. The dictation path
         // never bounds this pool (clearCache() runs only on manual Unload and
@@ -186,6 +194,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyManager.onF5Toggle = { [weak self] in
             self?.handleF5Toggle()
         }
+        hotkeyManager.shouldPassThroughF5 = { [weak self] in
+            guard let self else { return true }
+            return AppConfig.shared.releaseF5WhenModelUnloaded
+                && AppConfig.shared.dictationEngine == .local
+                && self.state == .unloaded
+        }
+        hotkeyManager.onTapDisabled = { [weak self] reason in
+            self?.rebuildHotkeyAfterSystemDisable(reason: reason)
+        }
 
         // RMS callback fires on the CoreAudio IO thread — must hop to main
         // before touching @Published state on the overlay model.
@@ -218,6 +235,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         statusBar.onDictationEngineChanged = { [weak self] engine in
             self?.switchDictationEngine(to: engine)
+        }
+
+        let settingsWindow = HushTypeSettingsWindowController.shared
+        settingsWindow.configure(actions: HushTypeSettingsActions(
+            loadedModelID: { [weak self] in
+                self?.localEngine.loadedModelID
+            },
+            loadingModelID: { [weak self] in
+                self?.localEngine.loadingModelID
+            },
+            reloadModel: { [weak self] in
+                self?.reloadModel()
+            },
+            unloadModel: { [weak self] in
+                Task { @MainActor in
+                    await self?.unloadModel()
+                }
+            },
+            stopModelDownload: { [weak self] in
+                self?.stopModelDownload()
+            },
+            switchDictationEngine: { [weak self] engine in
+                self?.switchDictationEngine(to: engine)
+            },
+            openDictionary: {
+                DictionaryReplacer.createTemplateIfMissing()
+                NSWorkspace.shared.open(AppConfig.dictionaryFileURL)
+            },
+            openAccessibilitySettings: {
+                OnboardingManager.openAccessibilitySettings()
+            },
+            resetOldAccessibilityEntry: {
+                OnboardingManager.resetOldAccessibilityEntry()
+            },
+            requestMicrophone: { completion in
+                OnboardingManager.requestMicrophoneAccess(completion: completion)
+            },
+            openMicrophoneSettings: {
+                OnboardingManager.openMicrophoneSettings()
+            },
+            restart: {
+                OnboardingManager.relaunchAndQuit(reopenPermissions: true)
+            },
+            quit: { [weak self] in
+                self?.hotkeyManager.stop()
+                self?.hideOverlay()
+                NSApp.terminate(nil)
+            }
+        ))
+        statusBar.onOpenSettings = { section in
+            settingsWindow.present(section: section)
+        }
+        HushTypeMainMenuController.shared.install {
+            settingsWindow.present(section: .overview)
+        }
+        statusBar.onStateChanged = { state in
+            settingsWindow.updateAppState(state)
         }
 
         // Wire Live Caption (local) submenu. The manager exists from launch;
@@ -273,6 +347,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // A session event tap must not survive across lock-screen secure input
+        // or display/system sleep. Rebuild it only after the active session has
+        // settled again.
+        observeInputSessionLifecycle()
+
         // Start hotkey listener
         hotkeyManager.start()
 
@@ -291,7 +370,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let loadAttemptID = UUID()
         modelLoadAttemptID = loadAttemptID
         statusBar.setState(.loadingDetailed(ModelLoadProgress(
-            phase: .connecting,
+            phase: .checkingLocalModel,
             fraction: 0,
             totalBytes: QwenModelDownloadSizing.weightBytes(for: AppConfig.shared.modelId)
         )))
@@ -341,6 +420,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        hotkeyResumeWorkItem?.cancel()
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
         tapArbiter.reset()
         hotkeyManager.stop()
         hideOverlay()
@@ -350,6 +431,115 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidBecomeActive(_ notification: Notification) {
         TextPolisher.refreshAvailabilityCache()
         statusBar?.setTextPolishAvailability(TextPolisher.isAvailableCached)
+    }
+
+    private func observeInputSessionLifecycle() {
+        let center = NSWorkspace.shared.notificationCenter
+        center.addObserver(
+            self,
+            selector: #selector(inputSessionDidResignActive(_:)),
+            name: NSWorkspace.sessionDidResignActiveNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(inputSessionDidBecomeActive(_:)),
+            name: NSWorkspace.sessionDidBecomeActiveNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(displayWillSleep(_:)),
+            name: NSWorkspace.willSleepNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(displayDidWake(_:)),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(displayWillSleep(_:)),
+            name: NSWorkspace.screensDidSleepNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(displayDidWake(_:)),
+            name: NSWorkspace.screensDidWakeNotification,
+            object: nil
+        )
+    }
+
+    @objc private func inputSessionDidResignActive(_ notification: Notification) {
+        inputSessionIsActive = false
+        suspendHotkey(reason: "session resigned active")
+    }
+
+    @objc private func inputSessionDidBecomeActive(_ notification: Notification) {
+        inputSessionIsActive = true
+        scheduleHotkeyResume(reason: "session became active")
+    }
+
+    @objc private func displayWillSleep(_ notification: Notification) {
+        displayIsAwake = false
+        suspendHotkey(reason: "display or system will sleep")
+    }
+
+    @objc private func displayDidWake(_ notification: Notification) {
+        displayIsAwake = true
+        scheduleHotkeyResume(reason: "display or system woke")
+    }
+
+    private func rebuildHotkeyAfterSystemDisable(reason: HotkeyManager.DisableReason) {
+        suspendHotkey(reason: "tap disabled by \(reason.rawValue)")
+        scheduleHotkeyResume(reason: "tap disabled by \(reason.rawValue)")
+    }
+
+    private func suspendHotkey(reason: String) {
+        hotkeyLifecycleGeneration &+= 1
+        hotkeyResumeWorkItem?.cancel()
+        hotkeyResumeWorkItem = nil
+        tapArbiter.reset()
+        hotkeyManager.stop()
+        log.info("Hotkey suspended: \(reason, privacy: .public)")
+    }
+
+    private func scheduleHotkeyResume(reason: String) {
+        guard inputSessionIsActive, displayIsAwake else {
+            log.info("Hotkey resume deferred while session/display is inactive: \(reason, privacy: .public)")
+            return
+        }
+
+        hotkeyLifecycleGeneration &+= 1
+        let generation = hotkeyLifecycleGeneration
+        hotkeyResumeWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            guard let self,
+                  self.hotkeyLifecycleGeneration == generation,
+                  self.inputSessionIsActive,
+                  self.displayIsAwake,
+                  AXIsProcessTrusted() else { return }
+            self.hotkeyManager.stop()
+            self.hotkeyManager.start()
+            self.hotkeyResumeWorkItem = nil
+            log.info("Hotkey rebuilt after session transition (generation \(generation))")
+        }
+        hotkeyResumeWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: item)
+        log.info("Hotkey rebuild scheduled: \(reason, privacy: .public)")
+    }
+
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows flag: Bool
+    ) -> Bool {
+        if !flag {
+            HushTypeSettingsWindowController.shared.reopen()
+        }
+        return true
     }
 
     // MARK: - Overlay helpers
@@ -1367,6 +1557,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func reloadModel() {
+        guard AXIsProcessTrusted() else {
+            statusBar.setState(.setupRequired)
+            let settingsWindow = HushTypeSettingsWindowController.shared
+            settingsWindow.setOnboardingRequired(true)
+            settingsWindow.present(section: .permissions)
+            return
+        }
         guard state == .unloaded || !localEngine.isLoaded else {
             print("[HushType] Model already loaded")
             return
@@ -1376,7 +1573,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let loadAttemptID = UUID()
         modelLoadAttemptID = loadAttemptID
         statusBar.setState(.loadingDetailed(ModelLoadProgress(
-            phase: .connecting,
+            phase: .checkingLocalModel,
             fraction: 0,
             totalBytes: QwenModelDownloadSizing.weightBytes(for: AppConfig.shared.modelId)
         )))
@@ -1521,11 +1718,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             state = .idle
             statusBar.setState(.idle)
             hideOverlay()
-            DictationEngineSettingsWindowController.shared.presentAndFocus(
-                onSwitchEngine: { [weak self] engine in
-                    self?.switchDictationEngine(to: engine)
-                }
-            )
+            HushTypeSettingsWindowController.shared.present(section: .dictation)
         case .alertSecondButtonReturn:
             await transcribeLocallyOnce(
                 samples: samples,
@@ -1587,11 +1780,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             state = .idle
             statusBar.setState(.idle)
             hideOverlay()
-            DictationEngineSettingsWindowController.shared.presentAndFocus(
-                onSwitchEngine: { [weak self] engine in
-                    self?.switchDictationEngine(to: engine)
-                }
-            )
+            HushTypeSettingsWindowController.shared.present(section: .dictation)
         case .openKeyFile:
             state = .idle
             statusBar.setState(.idle)
@@ -1613,7 +1802,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !localEngine.isLoaded {
                 state = .loading
                 statusBar.setState(.loadingDetailed(ModelLoadProgress(
-                    phase: .connecting,
+                    phase: .checkingLocalModel,
                     fraction: 0,
                     totalBytes: QwenModelDownloadSizing.weightBytes(for: AppConfig.shared.modelId)
                 )))

@@ -30,6 +30,7 @@ final class AppConfig {
         static let cloudDictationModelOpenAI = "hushtype.cloudDictationModelOpenAI"
         static let cloudDictationModelGemini = "hushtype.cloudDictationModelGemini"
         static let interfaceLanguage = "hushtype.interfaceLanguage"
+        static let releaseF5WhenModelUnloaded = "hushtype.releaseF5WhenModelUnloaded"
     }
 
     /// Dictation deliberately persists its engine choice across launches so
@@ -105,12 +106,13 @@ final class AppConfig {
         }
     }
 
-    /// HuggingFace model IDs for the two supported local Qwen3-ASR paths.
+    /// HuggingFace model IDs for the supported local Qwen3-ASR variants.
     ///
     /// The 1.7B 8-bit model is the quality-first default. The 0.6B 4-bit
     /// model remains an explicit power-saving choice for machines where the
-    /// larger model's memory footprint is undesirable.
+    /// larger models' memory footprint is undesirable.
     static let defaultModelId = "mlx-community/Qwen3-ASR-1.7B-8bit"
+    static let balancedModelId = "aufklarer/Qwen3-ASR-1.7B-MLX-4bit"
     static let powerSavingModelId = "aufklarer/Qwen3-ASR-0.6B-MLX-4bit"
 
     /// HuggingFace model ID for Qwen3-ASR.
@@ -151,6 +153,13 @@ final class AppConfig {
             defaults.set(newValue, forKey: Keys.floatingOverlayEnabled)
             log.info("Floating overlay enabled: \(newValue, privacy: .public)")
         }
+    }
+
+    /// If enabled, an explicitly unloaded local model also releases F5 back
+    /// to macOS instead of using the next press to reload HushType's model.
+    var releaseF5WhenModelUnloaded: Bool {
+        get { defaults.bool(forKey: Keys.releaseF5WhenModelUnloaded) }
+        set { defaults.set(newValue, forKey: Keys.releaseF5WhenModelUnloaded) }
     }
 
     /// Whether the user has seen the welcome onboarding modal at least once.

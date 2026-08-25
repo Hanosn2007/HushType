@@ -150,7 +150,7 @@ struct DictationEngineSettingsView: View {
             Spacer(minLength: 0)
         }
         .padding(20)
-        .frame(width: 460, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .onAppear { model.refreshDerived() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.refreshDerived()

@@ -34,14 +34,27 @@ private let log = Logger(subsystem: "com.felix.hushtype", category: "onboarding"
 ///     repair so the flow stays consistent.
 @MainActor
 enum OnboardingManager {
+    private static let reopenPermissionsAfterRelaunchKey =
+        "hushtype.reopenPermissionsAfterRelaunch"
 
     /// Returns `true` if onboarding handled the launch and the caller should
     /// NOT continue with normal app startup (because the app is about to quit
     /// or wait on a modal). Returns `false` if no onboarding was needed and
     /// the caller should proceed normally.
     static func runIfNeeded() -> Bool {
+        let defaults = UserDefaults.standard
+        let shouldReopenPermissions = defaults.bool(
+            forKey: reopenPermissionsAfterRelaunchKey
+        )
+
         if AXIsProcessTrusted() {
             // Permission granted — fire mic prompt if not yet asked, then proceed.
+            let settingsWindow = HushTypeSettingsWindowController.shared
+            settingsWindow.setOnboardingRequired(false)
+            if shouldReopenPermissions {
+                settingsWindow.present(section: .permissions)
+                clearPermissionsReopenIntent(in: defaults)
+            }
             triggerMicPermissionIfNeeded()
             return false
         }
@@ -53,49 +66,35 @@ enum OnboardingManager {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
-        OnboardingSetupWindowController.present(
-            onOpenAccessibilitySettings: {
-                AppConfig.shared.onboardingCompleted = true
-                openAccessibilitySettings()
-                PermissionSettingsGuidePanel.shared.showAccessibilityGuide()
-            },
-            onResetOldAccessibilityEntry: {
-                guard confirmAccessibilityReset() else { return false }
-                AppConfig.shared.onboardingCompleted = true
-                let didReset = resetStaleAccessibilityEntries()
-                openAccessibilitySettings()
-                PermissionSettingsGuidePanel.shared.showAccessibilityGuide()
-                return didReset
-            },
-            onRequestMicrophone: { completion in
-                AppConfig.shared.onboardingCompleted = true
-                requestMicrophoneAccess(completion: completion)
-            },
-            onOpenMicrophoneSettings: {
-                AppConfig.shared.onboardingCompleted = true
-                openMicrophoneSettings()
-            },
-            onRestart: {
-                relaunchAndQuit()
-            },
-            onQuit: {
-                log.info("User quit during onboarding")
-                NSApp.terminate(nil)
-            }
-        )
+        let settingsWindow = HushTypeSettingsWindowController.shared
+        settingsWindow.setOnboardingRequired(true)
+        settingsWindow.present(section: .permissions)
+        if shouldReopenPermissions {
+            clearPermissionsReopenIntent(in: defaults)
+        }
 
         return true
     }
 
-    // MARK: - Settings links
-
-    private static func openAccessibilitySettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-            NSWorkspace.shared.open(url)
+    private static func clearPermissionsReopenIntent(in defaults: UserDefaults) {
+        defaults.removeObject(forKey: reopenPermissionsAfterRelaunchKey)
+        if !defaults.synchronize() {
+            log.error("Failed to clear the post-relaunch Permissions intent")
         }
     }
 
-    private static func openMicrophoneSettings() {
+    // MARK: - Settings links
+
+    static func openAccessibilitySettings() {
+        AppConfig.shared.onboardingCompleted = true
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+            PermissionSettingsGuidePanel.shared.showAccessibilityGuide()
+        }
+    }
+
+    static func openMicrophoneSettings() {
+        AppConfig.shared.onboardingCompleted = true
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
             NSWorkspace.shared.open(url)
         }
@@ -136,7 +135,8 @@ enum OnboardingManager {
         requestMicrophoneAccess { _ in }
     }
 
-    private static func requestMicrophoneAccess(completion: @escaping (Bool) -> Void) {
+    static func requestMicrophoneAccess(completion: @escaping (Bool) -> Void) {
+        AppConfig.shared.onboardingCompleted = true
         let status = AVCaptureDevice.authorizationStatus(for: .audio)
         guard status == .notDetermined else {
             log.info("Mic permission already \(String(describing: status), privacy: .public)")
@@ -152,6 +152,14 @@ enum OnboardingManager {
     }
 
     // MARK: - TCC reset
+
+    static func resetOldAccessibilityEntry() -> Bool {
+        guard confirmAccessibilityReset() else { return false }
+        AppConfig.shared.onboardingCompleted = true
+        let didReset = resetStaleAccessibilityEntries()
+        openAccessibilitySettings()
+        return didReset
+    }
 
     @discardableResult
     private static func resetStaleAccessibilityEntries() -> Bool {
@@ -179,9 +187,21 @@ enum OnboardingManager {
     /// `internal` (not `private`) so `SystemAudioPermissionFlow` can reuse this
     /// helper for Screen Recording grants — that permission has the same per-
     /// process cache barrier as Accessibility.
-    static func relaunchAndQuit() {
+    static func relaunchAndQuit(reopenPermissions: Bool = false) {
         let bundleURL = Bundle.main.bundleURL
         log.info("Relaunching HushType from \(bundleURL.path, privacy: .public)")
+
+        if reopenPermissions {
+            // A restart initiated from the Permissions page should restore
+            // that page instead of leaving the user with only the menu-bar
+            // icon. Synchronize explicitly because termination follows almost
+            // immediately; the new process clears the key after presenting.
+            let defaults = UserDefaults.standard
+            defaults.set(true, forKey: reopenPermissionsAfterRelaunchKey)
+            if !defaults.synchronize() {
+                log.error("Failed to persist the post-relaunch Permissions intent")
+            }
+        }
 
         // Spawn `/bin/sh -c "sleep 1 && open -n <path>"` and let it reparent
         // to launchd when we terminate. Doing `open -n` ourselves and dying

@@ -1,4 +1,6 @@
 import AppKit
+import ApplicationServices
+import AVFoundation
 import os
 
 private let log = Logger(subsystem: "com.felix.hushtype", category: "statusbar")
@@ -77,6 +79,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     var onUnloadModel: (() -> Void)?
     var onReloadModel: (() -> Void)?
     var onStopModelDownload: (() -> Void)?
+    var onOpenSettings: ((HushTypeSettingsSection) -> Void)?
+    var onStateChanged: ((State) -> Void)?
     /// Both the menu radios and the settings window route through this one
     /// AppDelegate switch path so Cloud → Local always reloads when needed.
     var onDictationEngineChanged: ((AppConfig.DictationEngine) -> Void)?
@@ -191,6 +195,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             self.updateIcon(for: state)
             self.updateStatusText(for: state)
             self.updateUnloadMenuItem(for: state)
+            self.onStateChanged?(state)
         }
     }
 
@@ -203,16 +208,19 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         updateLocalModelCheckmarks()
         updateUnloadMenuItem(for: currentState)
         updateInterfaceLanguageMenu()
+        refreshPermissionMenuItemVisibility()
 
-        // Refresh dictionary subtitle (entry count may change if user edited file externally)
-        let dictSubAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 10),
-            .foregroundColor: NSColor.secondaryLabelColor,
-        ]
-        dictionarySubtitleItem.attributedTitle = NSAttributedString(
-            string: "    \(dictionarySubtitleText())",
-            attributes: dictSubAttrs
-        )
+        if let dictionarySubtitleItem {
+            // Legacy submenu can still be constructed by future product modes.
+            let dictSubAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 10),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ]
+            dictionarySubtitleItem.attributedTitle = NSAttributedString(
+                string: "    \(dictionarySubtitleText())",
+                attributes: dictSubAttrs
+            )
+        }
     }
 
     // MARK: - Private
@@ -232,10 +240,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         permissionSettingsMenuItem = NSMenuItem(
             title: L10n.string(
-                "common.button.open_system_settings",
-                fallback: "Open System Settings"
+                "menu.permissions",
+                fallback: "Open Permissions"
             ),
-            action: #selector(openAccessibilitySettings),
+            action: #selector(openPermissions),
             keyEquivalent: ""
         )
         permissionSettingsMenuItem.target = self
@@ -290,15 +298,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         )
         polishInstructionsItem.target = self
 
-        // ────────────────────── Dictation Settings ──────────────────────
-        let dictationSettingsItem = NSMenuItem(
-            title: L10n.string("menu.dictation_settings", fallback: "Dictation Settings"),
-            action: nil,
-            keyEquivalent: ""
-        )
-        dictationSettingsItem.submenu = buildDictationSettingsSubmenu()
-        menu.addItem(dictationSettingsItem)
-
         menu.addItem(.separator())
 
         // iOS Server toggle
@@ -330,15 +329,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        // This preference applies on the next launch. Selection never
-        // restarts, quits, or interrupts active work.
-        let interfaceLanguageItem = NSMenuItem(
-            title: L10n.string("menu.interface_language", fallback: "Interface Language"),
-            action: nil,
-            keyEquivalent: ""
+        let settingsItem = NSMenuItem(
+            title: L10n.string("menu.settings", fallback: "Settings…"),
+            action: #selector(openSettings),
+            keyEquivalent: ","
         )
-        interfaceLanguageItem.submenu = buildInterfaceLanguageMenu()
-        menu.addItem(interfaceLanguageItem)
+        settingsItem.target = self
+        menu.addItem(settingsItem)
 
         // About
         let aboutItem = NSMenuItem(
@@ -1729,11 +1726,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         NSApp.terminate(nil)
     }
 
-    @objc private func openAccessibilitySettings() {
-        guard let url = URL(
-            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-        ) else { return }
-        NSWorkspace.shared.open(url)
+    @objc private func openPermissions() {
+        onOpenSettings?(.permissions)
+    }
+
+    @objc private func openSettings() {
+        onOpenSettings?(.overview)
     }
 
     private func updateLanguageCheckmarks() {
@@ -1755,7 +1753,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             symbolName = "arrow.down.circle"
         case .loadingDetailed(let progress):
             switch progress.phase {
-            case .connecting, .downloading:
+            case .checkingLocalModel, .downloading:
                 symbolName = "arrow.down.circle"
             case .verifying:
                 symbolName = "checkmark.seal"
@@ -1783,14 +1781,15 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     private func updateStatusText(for state: State) {
         currentState = state
-        if let permissionSettingsMenuItem {
-            if case .setupRequired = state {
-                permissionSettingsMenuItem.isHidden = false
-            } else {
-                permissionSettingsMenuItem.isHidden = true
-            }
-        }
+        refreshPermissionMenuItemVisibility()
         refreshStatusLine()
+    }
+
+    private func refreshPermissionMenuItemVisibility() {
+        guard let permissionSettingsMenuItem else { return }
+        let accessibilityGranted = AXIsProcessTrusted()
+        let microphoneGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        permissionSettingsMenuItem.isHidden = accessibilityGranted && microphoneGranted
     }
 
     private func statusText(for state: State) -> String {
@@ -1800,18 +1799,17 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 "status.setup_required",
                 fallback: "Waiting for permission setup"
             )
-        case .loading(let progress):
-            return L10n.format(
-                "status.loading_model_percent",
-                "Loading model (%1$d%%)...",
-                arguments: [Int32(Int(progress * 100))]
+        case .loading:
+            return L10n.string(
+                "status.model.checking_local",
+                fallback: "Checking local model files…"
             )
         case .loadingDetailed(let progress):
             switch progress.phase {
-            case .connecting:
+            case .checkingLocalModel:
                 return L10n.string(
-                    "status.model.connecting",
-                    fallback: "Connecting to model repository…"
+                    "status.model.checking_local",
+                    fallback: "Checking local model files…"
                 )
             case .downloading:
                 let downloaded = progress.downloadedBytes.map(formattedByteCount) ?? "—"
@@ -1941,14 +1939,17 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             unloadMenuItem.isHidden = !localSelected
             if localSelected {
                 if case .loading = state {
-                    setModelDownloadInProgress()
-                    unloadMenuItem.isEnabled = true
+                    // A legacy cumulative progress callback cannot prove that
+                    // bytes are being fetched. Reserve the stop verb for the
+                    // detailed monitor's actual `.downloading` phase.
+                    unloadMenuItem.isHidden = true
+                    unloadMenuItem.isEnabled = false
                 } else if case .loadingDetailed(let progress) = state {
                     switch progress.phase {
-                    case .connecting, .downloading:
+                    case .downloading:
                         setModelDownloadInProgress()
                         unloadMenuItem.isEnabled = true
-                    case .verifying, .loadingTokenizer, .loadingAudio, .loadingText, .ready:
+                    case .checkingLocalModel, .verifying, .loadingTokenizer, .loadingAudio, .loadingText, .ready:
                         // Once the network transfer has finished there is no
                         // download to stop. Hide the model-memory action until
                         // the model is ready rather than present a false verb.

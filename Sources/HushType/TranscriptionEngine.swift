@@ -22,7 +22,10 @@ extension TranscriptionEngine {
 /// richer state alongside that legacy callback for the status-bar UI.
 struct ModelLoadProgress: Equatable, Sendable {
     enum Phase: String, Sendable {
-        case connecting
+        /// The loader is checking the app-owned cache and preparing a load.
+        /// This deliberately makes no network claim: a cached model reaches
+        /// the next phases without downloading anything.
+        case checkingLocalModel
         case downloading
         case verifying
         case loadingTokenizer
@@ -58,16 +61,18 @@ struct ModelLoadProgress: Equatable, Sendable {
 }
 
 /// Sizes of the model weight files observed from the Hugging Face HEAD
-/// metadata for the two model choices shipped by HushType. The Hub progress
+/// metadata for the model choices shipped by HushType. The Hub progress
 /// object is file-weighted rather than byte-weighted, so these values are
 /// needed to make the visible download percentage and ETA meaningful.
 enum QwenModelDownloadSizing {
     static let powerSavingWeightBytes: Int64 = 708_236_945
+    static let balancedWeightBytes: Int64 = 2_225_411_512
     static let defaultWeightBytes: Int64 = 2_463_307_541
 
     static func weightBytes(for modelID: String) -> Int64? {
         let lowercased = modelID.lowercased()
         if lowercased.contains("0.6b") { return powerSavingWeightBytes }
+        if lowercased.contains("1.7b") && lowercased.contains("4bit") { return balancedWeightBytes }
         if lowercased.contains("1.7b") { return defaultWeightBytes }
         return nil
     }
@@ -78,7 +83,7 @@ enum QwenModelDownloadSizing {
 /// `/tmp`, so the monitor deliberately reports the current temp-file attempt;
 /// when a retry swaps paths, the byte/rate sample is reset instead of adding
 /// the new attempt to the old one.
-private final class ModelDownloadMonitor: @unchecked Sendable {
+final class ModelDownloadMonitor: @unchecked Sendable {
     private struct Candidate {
         let url: URL
         let bytes: Int64
@@ -115,7 +120,7 @@ private final class ModelDownloadMonitor: @unchecked Sendable {
             lifecycleLock.unlock()
             return
         }
-        let newTask = Task { [weak self] in
+        let newTask = Task.detached(priority: .utility) { [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
                 self.sample()
@@ -264,7 +269,9 @@ enum TranscriptionError: Error, Equatable, Sendable {
 final class Qwen3TranscriptionEngine: TranscriptionEngine {
     private let loadLock = NSLock()
     private var model: Qwen3ASRModel?
+    private var loadedModelIdentifier: String?
     private var inFlightLoad: Task<Qwen3ASRModel, Error>?
+    private var inFlightModelIdentifier: String?
     private var inFlightGeneration: UInt = 0
     private var loadGeneration: UInt = 0
     private var progressHandlers: [UUID: (Double, String) -> Void] = [:]
@@ -276,6 +283,7 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
     private struct PreparedLoad {
         let task: Task<Qwen3ASRModel, Error>
         let generation: UInt
+        let modelIdentifier: String
         let replayProgress: (Double, String)?
         let replayDetailProgress: ModelLoadProgress?
     }
@@ -293,6 +301,20 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         loadLock.lock()
         defer { loadLock.unlock() }
         return model
+    }
+
+    /// The model actually resident in memory. This intentionally does not
+    /// mirror the model preference, which can change before the next load.
+    var loadedModelID: String? {
+        loadLock.lock()
+        defer { loadLock.unlock() }
+        return loadedModelIdentifier
+    }
+
+    var loadingModelID: String? {
+        loadLock.lock()
+        defer { loadLock.unlock() }
+        return inFlightModelIdentifier
     }
 
     func load(progressHandler: ((Double, String) -> Void)? = nil) async throws {
@@ -336,6 +358,7 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
             guard commitLoadedModel(
                 loadedModel,
                 generation: prepared.generation,
+                modelIdentifier: prepared.modelIdentifier,
                 handlerID: handlerID,
                 detailHandlerID: detailHandlerID
             ) else {
@@ -375,9 +398,11 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         let replayDetailProgress = latestDetailProgress
 
         if let existing = inFlightLoad {
+            guard let inFlightModelIdentifier else { return nil }
             return PreparedLoad(
                 task: existing,
                 generation: inFlightGeneration,
+                modelIdentifier: inFlightModelIdentifier,
                 replayProgress: replayProgress,
                 replayDetailProgress: replayDetailProgress
             )
@@ -386,8 +411,9 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         let modelId = AppConfig.shared.modelId
         let generation = loadGeneration
         inFlightGeneration = generation
+        inFlightModelIdentifier = modelId
         let initialDetailProgress = ModelLoadProgress(
-            phase: .connecting,
+            phase: .checkingLocalModel,
             fraction: 0,
             totalBytes: QwenModelDownloadSizing.weightBytes(for: modelId)
         )
@@ -419,6 +445,7 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         return PreparedLoad(
             task: task,
             generation: generation,
+            modelIdentifier: modelId,
             replayProgress: replayProgress,
             replayDetailProgress: replayDetailProgress ?? initialDetailProgress
         )
@@ -427,6 +454,7 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
     private func commitLoadedModel(
         _ loadedModel: Qwen3ASRModel,
         generation: UInt,
+        modelIdentifier: String,
         handlerID: UUID?,
         detailHandlerID: UUID?
     ) -> Bool {
@@ -438,8 +466,10 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
             return false
         }
         model = loadedModel
+        loadedModelIdentifier = modelIdentifier
         if inFlightLoad != nil && inFlightGeneration == generation {
             inFlightLoad = nil
+            inFlightModelIdentifier = nil
             progressHandlers.removeAll()
             detailProgressHandlers.removeAll()
             latestProgress = nil
@@ -461,6 +491,7 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         defer { loadLock.unlock() }
         if inFlightLoad != nil && inFlightGeneration == generation {
             inFlightLoad = nil
+            inFlightModelIdentifier = nil
             progressHandlers.removeAll()
             detailProgressHandlers.removeAll()
             latestProgress = nil
@@ -484,7 +515,7 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         }
         latestProgress = (progress, description)
         let mapped = mapDetailProgress(progress: progress, description: description)
-        if mapped.phase != .connecting && mapped.phase != .downloading {
+        if mapped.phase != .checkingLocalModel && mapped.phase != .downloading {
             downloadMonitor?.stop()
         }
         var detailEvents: [ModelLoadProgress] = []
@@ -561,17 +592,18 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
                latestDetailProgress.phase == .downloading {
                 return latestDetailProgress
             }
-            // Fallback for custom models where the temporary-file monitor
-            // cannot know a byte total; the public callback reserves 0–80%
-            // for this stage.
+            // The public loader uses this text both when it reuses its cache
+            // and when it fetches weights. Only our temporary-file monitor
+            // proves that bytes are actually arriving from the network, so do
+            // not turn this into a cancellable download prematurely.
             return ModelLoadProgress(
-                phase: .downloading,
-                fraction: min(max(progress / 0.80, 0), 1),
+                phase: .checkingLocalModel,
+                fraction: 0,
                 totalBytes: QwenModelDownloadSizing.weightBytes(for: AppConfig.shared.modelId)
             )
         }
         return ModelLoadProgress(
-            phase: .connecting,
+            phase: .checkingLocalModel,
             fraction: 0,
             totalBytes: QwenModelDownloadSizing.weightBytes(for: AppConfig.shared.modelId)
         )
@@ -579,7 +611,7 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
 
     private func legacyDescription(for phase: ModelLoadProgress.Phase) -> String {
         switch phase {
-        case .connecting: return "Connecting to model repository..."
+        case .checkingLocalModel: return "Checking local model files..."
         case .downloading: return "Downloading weights..."
         case .verifying: return "Verifying downloaded model..."
         case .loadingTokenizer: return "Loading tokenizer..."
@@ -632,6 +664,7 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         loadGeneration &+= 1
         inFlightLoad?.cancel()
         inFlightLoad = nil
+        inFlightModelIdentifier = nil
         progressHandlers.removeAll()
         detailProgressHandlers.removeAll()
         latestProgress = nil
@@ -639,6 +672,7 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         let monitor = downloadMonitor
         downloadMonitor = nil
         model = nil
+        loadedModelIdentifier = nil
         loadLock.unlock()
         monitor?.stop()
         log.info("Model unloaded")

@@ -24,7 +24,7 @@ final class DictationEngineSettingsWindowController: NSWindowController, NSWindo
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 460, height: 600),
-            styleMask: [.titled, .closable, .miniaturizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -33,6 +33,7 @@ final class DictationEngineSettingsWindowController: NSWindowController, NSWindo
             fallback: "Dictation Engine Settings"
         )
         window.contentViewController = hosting
+        window.minSize = NSSize(width: 460, height: 520)
         window.isReleasedWhenClosed = false
         window.setFrameAutosaveName("hushtype.settings.dictationEngine")
         window.center()

@@ -23,12 +23,54 @@ final class OverlayStateModel: ObservableObject {
     @Published var state: OverlayState = .hidden
 }
 
+// MARK: - Overlay appearance and host geometry
+
+/// The visual pill and its transparent host must agree about the same shadow.
+/// SwiftUI creates a shadow by blurring the source alpha and then translating
+/// it. A blur is mathematically unbounded, so a finite NSHostingView keeps
+/// three blur radii (the conventional Gaussian 3σ coverage) before applying
+/// that translation on every edge.
+enum FloatingOverlayAppearance {
+    struct Shadow {
+        let color: Color
+        let radius: CGFloat
+        let x: CGFloat
+        let y: CGFloat
+    }
+
+    static let cornerRadius: CGFloat = 16
+    static let shadow = Shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 4)
+
+    private static let gaussianCoverage: CGFloat = 3
+
+    static var shadowInsets: EdgeInsets {
+        let blurOutset = shadow.radius * gaussianCoverage
+        return EdgeInsets(
+            top: max(0, blurOutset - shadow.y),
+            leading: max(0, blurOutset - shadow.x),
+            bottom: max(0, blurOutset + shadow.y),
+            trailing: max(0, blurOutset + shadow.x)
+        )
+    }
+}
+
 // MARK: - Pill view
 
 struct FloatingOverlayView: View {
     @ObservedObject var model: OverlayStateModel
 
+    private let pillShape = RoundedRectangle(
+        cornerRadius: FloatingOverlayAppearance.cornerRadius,
+        style: .continuous
+    )
+
     var body: some View {
+        pill
+            .padding(FloatingOverlayAppearance.shadowInsets)
+            .fixedSize()
+    }
+
+    private var pill: some View {
         HStack(spacing: 12) {
             Image(systemName: iconName)
                 .font(.system(size: 14, weight: .semibold))
@@ -67,13 +109,17 @@ struct FloatingOverlayView: View {
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
         .background(VisualEffectBlur(material: .hudWindow))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(pillShape)
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            pillShape
                 .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
         )
-        .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 4)
-        .fixedSize()
+        .shadow(
+            color: FloatingOverlayAppearance.shadow.color,
+            radius: FloatingOverlayAppearance.shadow.radius,
+            x: FloatingOverlayAppearance.shadow.x,
+            y: FloatingOverlayAppearance.shadow.y
+        )
     }
 
     private var label: String {

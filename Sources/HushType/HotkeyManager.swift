@@ -4,6 +4,11 @@ import os
 private let log = Logger(subsystem: "com.felix.hushtype", category: "hotkey")
 
 final class HotkeyManager {
+    enum DisableReason: String {
+        case timeout
+        case userInput
+    }
+
     var onPress: (() -> Void)?
     var onRelease: (() -> Void)?
     var onCancelledRelease: (() -> Void)?
@@ -14,14 +19,22 @@ final class HotkeyManager {
     /// ⌘ + / continues to work for editor comment-toggle as expected.
     var onLiveCaptionToggle: (() -> Void)?
     /// Fires once for each physical F5 press (auto-repeat is ignored). The
-    /// caller owns the start/stop toggle; both the key-down and key-up events
-    /// are consumed so macOS cannot also treat F5 as a system shortcut.
+    /// caller owns the start/stop toggle; unless pass-through is enabled, both
+    /// the key-down and key-up events are consumed so macOS cannot also treat
+    /// F5 as a system shortcut.
     var onF5Toggle: (() -> Void)?
+    /// Returning true passes the complete F5 press through to macOS. The
+    /// decision is latched from key-down through key-up for a valid sequence.
+    var shouldPassThroughF5: (() -> Bool)?
+    /// The system can disable an active tap while secure input or the login
+    /// session is changing. Recovery must happen outside the tap callback.
+    var onTapDisabled: ((DisableReason) -> Void)?
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var isRightOptionDown = false
     private var otherKeyPressedDuringHold = false
+    private var passThroughF5KeyCode: Int64?
 
     private static let rightOptionKeyCode: Int64 = 61 // kVK_RightOption
     // Standard F5 is kVK_F5 (96). Some Apple top-row media-mode keyboards
@@ -37,6 +50,10 @@ final class HotkeyManager {
     private static let leftCommandFlagBit: UInt64 = 0x08
 
     func start() {
+        if eventTap != nil || runLoopSource != nil {
+            stop()
+        }
+
         let eventMask: CGEventMask = (1 << CGEventType.flagsChanged.rawValue)
             | (1 << CGEventType.keyDown.rawValue)
             | (1 << CGEventType.keyUp.rawValue)
@@ -70,11 +87,15 @@ final class HotkeyManager {
     }
 
     func stop() {
+        isRightOptionDown = false
+        otherKeyPressedDuringHold = false
+        passThroughF5KeyCode = nil
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
             if let source = runLoopSource {
                 CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
             }
+            CFMachPortInvalidate(tap)
         }
         eventTap = nil
         runLoopSource = nil
@@ -82,10 +103,16 @@ final class HotkeyManager {
     }
 
     private func handleEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
-        // Re-enable tap if it was disabled by the system
+        // Never re-enable an active tap from inside its callback. In
+        // particular, user-input disablement can happen while macOS is
+        // transitioning through the lock-screen secure-input session.
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            if let tap = eventTap {
-                CGEvent.tapEnable(tap: tap, enable: true)
+            passThroughF5KeyCode = nil
+            let reason: DisableReason = type == .tapDisabledByTimeout ? .timeout : .userInput
+            log.error("Event tap disabled by \(reason.rawValue, privacy: .public); scheduling a clean rebuild")
+            let recovery = onTapDisabled
+            DispatchQueue.main.async {
+                recovery?(reason)
             }
             return Unmanaged.passUnretained(event)
         }
@@ -99,6 +126,10 @@ final class HotkeyManager {
         if type == .keyDown {
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
             if Self.f5KeyCodes.contains(keyCode) {
+                if passThroughF5KeyCode == keyCode || shouldPassThroughF5?() == true {
+                    passThroughF5KeyCode = keyCode
+                    return Unmanaged.passUnretained(event)
+                }
                 // F5 owns this chord. If Right Option is already held, mark
                 // that hold as cancelled so its release cannot become a tap.
                 if isRightOptionDown {
@@ -109,7 +140,10 @@ final class HotkeyManager {
                 let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
                 if !isRepeat {
                     log.debug("F5 pressed")
-                    onF5Toggle?()
+                    let action = onF5Toggle
+                    DispatchQueue.main.async {
+                        action?()
+                    }
                 }
                 return nil // consume F5 — do not trigger system dictation
             }
@@ -130,6 +164,10 @@ final class HotkeyManager {
         if type == .keyUp {
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
             if Self.f5KeyCodes.contains(keyCode) {
+                if passThroughF5KeyCode == keyCode {
+                    passThroughF5KeyCode = nil
+                    return Unmanaged.passUnretained(event)
+                }
                 log.debug("F5 released")
                 return nil // consume F5 release as well
             }

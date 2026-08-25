@@ -62,8 +62,13 @@ final class FloatingOverlayWindow: NSPanel {
         let fittingSize = (contentView as? NSHostingView<FloatingOverlayView>)?.fittingSize
             ?? NSSize(width: 220, height: 56)
 
+        // fittingSize includes the transparent Gaussian shadow safety region.
+        // Offset the panel so the pill itself remains centered and 80 pt above
+        // the visible-frame bottom, independent of its current text width.
+        let shadowInsets = FloatingOverlayAppearance.shadowInsets
         let x = visible.midX - fittingSize.width / 2
-        let y = visible.minY + 80
+            + (shadowInsets.trailing - shadowInsets.leading) / 2
+        let y = visible.minY + 80 - shadowInsets.bottom
         let frame = NSRect(origin: CGPoint(x: x, y: y), size: fittingSize)
         setFrame(frame, display: false)
 
