@@ -10,11 +10,11 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
 
     /// These are content dimensions. The matching frame dimensions include
     /// the title bar and are calculated from the actual window below.
-    private static let defaultContentSize = NSSize(width: 960, height: 680)
+    private static let defaultContentSize = NSSize(width: 950, height: 650)
     /// Keep the sidebar usable and detail controls readable without making a
     /// selected page dictate a new window size. This is a lower bound only;
     /// `defaultContentSize` is used solely for a brand-new window.
-    private static let minimumContentSize = NSSize(width: 900, height: 560)
+    private static let minimumContentSize = NSSize(width: 850, height: 600)
 
     private let model = HushTypeSettingsModel()
 
@@ -26,11 +26,8 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
             defer: false
         )
         window.title = L10n.string("window.settings.title", fallback: "HushType Settings")
-        // The hosting controller bridges SwiftUI's navigationTitle into the
-        // native window title. Keep it visible so macOS renders plain title
-        // text instead of treating it as a Liquid Glass toolbar control.
         window.titleVisibility = .visible
-        window.titlebarAppearsTransparent = true
+        window.titlebarAppearsTransparent = false
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
         window.setFrameAutosaveName("hushtype.settings.main")

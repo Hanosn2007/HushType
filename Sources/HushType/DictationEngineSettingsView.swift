@@ -139,18 +139,60 @@ struct DictationEngineSettingsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionHeader
-            Divider().padding(.vertical, 12)
-            sectionEngine
-            Divider().padding(.vertical, 12)
-            sectionGuardrails
-            Divider().padding(.vertical, 12)
-            sectionAPIKeys
-            Spacer(minLength: 0)
+        Group {
+            Section {
+                engineRows
+            } header: {
+                Label(
+                    L10n.string("settings.dictation.engine_section", fallback: "Engine"),
+                    systemImage: "cpu"
+                )
+            } footer: {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(L10n.string(
+                        "settings.dictation.description",
+                        fallback: "Choose where speech becomes text. Local is private and free. Cloud engines send audio directly to the provider using your own API key — no relay, no HushType server in the middle."
+                    ))
+                    Text(L10n.string(
+                        "settings.engine.local_model.apply_note",
+                        fallback: "The model choice applies the next time the local model loads."
+                    ))
+                    Text(L10n.string(
+                        "settings.engine.cloud_unloads_local",
+                        fallback: "While a cloud engine is selected the speech model stays unloaded. The iOS companion server always uses the local model."
+                    ))
+                }
+            }
+
+            Section {
+                guardrailRows
+            } header: {
+                Label(
+                    L10n.string("settings.daily_spend.title", fallback: "Daily spend warning"),
+                    systemImage: "dollarsign.circle"
+                )
+            }
+
+            Section {
+                apiKeyRow(
+                    provider: "OpenAI",
+                    path: OpenAIKeyStore.displayPath,
+                    status: model.openAIKeyStatus,
+                    providerID: .openai
+                )
+                apiKeyRow(
+                    provider: "Gemini",
+                    path: GeminiKeyStore.displayPath,
+                    status: model.geminiKeyStatus,
+                    providerID: .gemini
+                )
+            } header: {
+                Label(
+                    L10n.string("settings.api_keys.title", fallback: "API keys"),
+                    systemImage: "key.fill"
+                )
+            }
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
         .onAppear { model.refreshDerived() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.refreshDerived()
@@ -160,218 +202,150 @@ struct DictationEngineSettingsView: View {
         }
     }
 
-    private var sectionHeader: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(
-                L10n.string("menu.dictation_engine", fallback: "Dictation Engine"),
-                systemImage: "mic.fill"
-            )
-                .font(.headline)
-            Text(L10n.string(
-                "settings.dictation.description",
-                fallback: "Choose where speech becomes text. Local is private and free. Cloud engines send audio directly to the provider using your own API key — no relay, no HushType server in the middle."
-            ))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+    @ViewBuilder
+    private var engineRows: some View {
+        Picker("", selection: $model.engine) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L10n.string("menu.engine.local_qwen", fallback: "Local (Qwen3-ASR)"))
+                Text(L10n.string(
+                    "settings.engine.local.detail",
+                    fallback: "Private · Free · ~2.1 GB RAM when loaded"
+                ))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .tag(AppConfig.DictationEngine.local)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L10n.string("menu.engine.openai_cloud", fallback: "OpenAI Cloud"))
+                Text(L10n.format(
+                    "settings.engine.cloud.detail",
+                    "%1$@ · No model RAM",
+                    arguments: [rateText(model.openAIRate)]
+                ))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .tag(AppConfig.DictationEngine.openai)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L10n.string("menu.engine.gemini_cloud", fallback: "Gemini Cloud"))
+                Text(L10n.format(
+                    "settings.engine.gemini.detail",
+                    "%1$@ · No model RAM",
+                    arguments: [rateText(model.geminiRate)]
+                ))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .tag(AppConfig.DictationEngine.gemini)
         }
-    }
+        .labelsHidden()
+        .pickerStyle(.radioGroup)
 
-    private var sectionEngine: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(
-                L10n.string("settings.dictation.engine_section", fallback: "Engine"),
-                systemImage: "cpu"
-            ).font(.headline)
-
-            Picker("", selection: $model.engine) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(L10n.string("menu.engine.local_qwen", fallback: "Local (Qwen3-ASR)"))
-                    Text(L10n.string(
-                        "settings.engine.local.detail",
-                        fallback: "Private · Free · ~2.1 GB RAM when loaded"
-                    ))
-                        .font(.caption).foregroundStyle(.secondary)
+        HStack(spacing: 8) {
+            Text(L10n.string(
+                "settings.engine.local_model",
+                fallback: "Local model:"
+            ))
+            Picker("", selection: $model.localModelId) {
+                Text(L10n.string(
+                    "settings.model.qwen_1_7b",
+                    fallback: "Qwen3-ASR 1.7B 8-bit (quality)"
+                )).tag(AppConfig.defaultModelId)
+                Text(L10n.string(
+                    "settings.model.qwen_0_6b",
+                    fallback: "Qwen3-ASR 0.6B 4-bit (power saving)"
+                )).tag(AppConfig.powerSavingModelId)
+                if model.localModelId != AppConfig.defaultModelId,
+                   model.localModelId != AppConfig.powerSavingModelId {
+                    Text(model.localModelId).tag(model.localModelId)
                 }
-                .tag(AppConfig.DictationEngine.local)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(L10n.string("menu.engine.openai_cloud", fallback: "OpenAI Cloud"))
-                    Text(L10n.format(
-                        "settings.engine.cloud.detail",
-                        "%1$@ · No model RAM",
-                        arguments: [rateText(model.openAIRate)]
-                    ))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                .tag(AppConfig.DictationEngine.openai)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(L10n.string("menu.engine.gemini_cloud", fallback: "Gemini Cloud"))
-                    Text(L10n.format(
-                        "settings.engine.gemini.detail",
-                        "%1$@ · No model RAM",
-                        arguments: [rateText(model.geminiRate)]
-                    ))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                .tag(AppConfig.DictationEngine.gemini)
             }
             .labelsHidden()
-            .pickerStyle(.radioGroup)
+        }
 
-            HStack(spacing: 8) {
+        HStack(spacing: 8) {
+            Text(L10n.string("settings.engine.openai_model", fallback: "OpenAI model:"))
+            Picker("", selection: $model.openAIModel) {
                 Text(L10n.string(
-                    "settings.engine.local_model",
-                    fallback: "Local model:"
-                ))
-                Picker("", selection: $model.localModelId) {
-                    Text(L10n.string(
-                        "settings.model.qwen_1_7b",
-                        fallback: "Qwen3-ASR 1.7B 8-bit (quality)"
-                    )).tag(AppConfig.defaultModelId)
-                    Text(L10n.string(
-                        "settings.model.qwen_0_6b",
-                        fallback: "Qwen3-ASR 0.6B 4-bit (power saving)"
-                    )).tag(AppConfig.powerSavingModelId)
-                    if model.localModelId != AppConfig.defaultModelId,
-                       model.localModelId != AppConfig.powerSavingModelId {
-                        Text(model.localModelId).tag(model.localModelId)
-                    }
-                }
-                .labelsHidden()
+                    "settings.model.recommended",
+                    fallback: "gpt-4o-mini-transcribe (recommended)"
+                )).tag("gpt-4o-mini-transcribe")
+                Text(L10n.string(
+                    "settings.model.gpt_transcribe",
+                    fallback: "gpt-transcribe"
+                )).tag("gpt-transcribe")
             }
+            .labelsHidden()
+            .disabled(model.engine != .openai)
+        }
 
+        HStack(spacing: 8) {
+            Text(L10n.string("settings.engine.gemini_model", fallback: "Gemini model:"))
+            Picker("", selection: $model.geminiModel) {
+                Text(L10n.string(
+                    "settings.model.quality",
+                    fallback: "gemini-3.7-flash (quality)"
+                )).tag("gemini-3.7-flash")
+                Text(L10n.string(
+                    "settings.model.budget",
+                    fallback: "gemini-3.5-flash-lite (budget)"
+                )).tag("gemini-3.5-flash-lite")
+            }
+            .labelsHidden()
+            .disabled(model.engine != .gemini)
+        }
+    }
+
+    @ViewBuilder
+    private var guardrailRows: some View {
+        HStack {
             Text(L10n.string(
-                "settings.engine.local_model.apply_note",
-                fallback: "The model choice applies the next time the local model loads."
+                "settings.daily_spend.block_at",
+                fallback: "Block new cloud uploads at:"
             ))
+            Stepper(value: $model.dailyCap, in: 0.5...100.0, step: 0.5) {
+                Text(CloudUsageTracker.formatDollars(model.dailyCap))
+                    .frame(minWidth: 60, alignment: .trailing)
+                    .monospacedDigit()
+            }
+        }
+
+        HStack {
+            Text(model.usageLine)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: 8) {
-                Text(L10n.string("settings.engine.openai_model", fallback: "OpenAI model:"))
-                Picker("", selection: $model.openAIModel) {
-                    Text(L10n.string(
-                        "settings.model.recommended",
-                        fallback: "gpt-4o-mini-transcribe (recommended)"
-                    )).tag("gpt-4o-mini-transcribe")
-                    Text(L10n.string(
-                        "settings.model.gpt_transcribe",
-                        fallback: "gpt-transcribe"
-                    )).tag("gpt-transcribe")
-                }
-                .labelsHidden()
-                .disabled(model.engine != .openai)
+            Spacer()
+            Button(L10n.string("common.button.reset_counter", fallback: "Reset counter")) {
+                model.resetCounter()
             }
-
-            HStack(spacing: 8) {
-                Text(L10n.string("settings.engine.gemini_model", fallback: "Gemini model:"))
-                Picker("", selection: $model.geminiModel) {
-                    Text(L10n.string(
-                        "settings.model.quality",
-                        fallback: "gemini-3.7-flash (quality)"
-                    )).tag("gemini-3.7-flash")
-                    Text(L10n.string(
-                        "settings.model.budget",
-                        fallback: "gemini-3.5-flash-lite (budget)"
-                    )).tag("gemini-3.5-flash-lite")
-                }
-                .labelsHidden()
-                .disabled(model.engine != .gemini)
-            }
-
-            Text(L10n.string(
-                "settings.engine.cloud_unloads_local",
-                fallback: "While a cloud engine is selected the speech model stays unloaded. The iOS companion server always uses the local model."
-            ))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
         }
     }
 
-    private var sectionGuardrails: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(
-                L10n.string("settings.daily_spend.title", fallback: "Daily spend warning"),
-                systemImage: "dollarsign.circle"
-            ).font(.headline)
-
-            HStack {
-                Text(L10n.string(
-                    "settings.daily_spend.block_at",
-                    fallback: "Block new cloud uploads at:"
-                ))
-                Stepper(value: $model.dailyCap, in: 0.5...100.0, step: 0.5) {
-                    Text(CloudUsageTracker.formatDollars(model.dailyCap))
-                        .frame(minWidth: 60, alignment: .trailing)
-                        .monospacedDigit()
-                }
-            }
-
-            HStack {
-                Text(model.usageLine)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer()
-                Button(L10n.string("common.button.reset_counter", fallback: "Reset counter")) {
-                    model.resetCounter()
-                }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-            }
-        }
-    }
-
-    private var sectionAPIKeys: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(
-                L10n.string("settings.api_keys.title", fallback: "API keys"),
-                systemImage: "key.fill"
-            ).font(.headline)
-            apiKeySubsection(
-                provider: "OpenAI",
-                path: OpenAIKeyStore.displayPath,
-                status: model.openAIKeyStatus,
-                providerID: .openai
-            )
-            apiKeySubsection(
-                provider: "Gemini",
-                path: GeminiKeyStore.displayPath,
-                status: model.geminiKeyStatus,
-                providerID: .gemini
-            )
-        }
-    }
-
-    private func apiKeySubsection(
+    private func apiKeyRow(
         provider: String,
         path: String,
         status: String,
         providerID: CloudUsageTracker.Provider
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(provider).font(.body.bold())
-            Text(path)
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-            HStack {
-                Button(L10n.string(
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(provider).font(.body.bold())
+                Text(path)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                Text(status).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 12)
+            Button(L10n.string(
                     "common.button.open_in_textedit",
                     fallback: "Open file in TextEdit"
-                )) { model.openKeyFile(provider: providerID) }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                Spacer()
-            }
-            Text(status).font(.caption).foregroundStyle(.secondary)
+            )) { model.openKeyFile(provider: providerID) }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
         }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor)))
     }
 
     private func rateText(_ rate: Double) -> String {

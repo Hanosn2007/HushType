@@ -1476,6 +1476,8 @@
 
 /* Native settings window. */
 "window.settings.title" = "HushType 设置";
+"settings.navigation.back" = "后退";
+"settings.navigation.forward" = "前进";
 "settings.sidebar.overview" = "概览";
 "settings.sidebar.dictation" = "听写";
 "settings.sidebar.model" = "模型";

@@ -4,29 +4,69 @@ import SwiftUI
 struct HushTypeSettingsRootView: View {
     @ObservedObject var model: HushTypeSettingsModel
 
+    private var sections: [HushTypeSettingsSection] {
+        model.visibleSections
+    }
+
+    private var currentSectionIndex: Int? {
+        sections.firstIndex(of: model.selection)
+    }
+
+    private var isFirstSection: Bool {
+        currentSectionIndex == 0
+    }
+
+    private var isLastSection: Bool {
+        currentSectionIndex == sections.count - 1
+    }
+
     var body: some View {
         NavigationSplitView {
-            List(selection: $model.selection) {
-                ForEach(model.visibleSections) { section in
-                    Label(section.title, systemImage: section.symbolName)
-                        .tag(section)
-                }
-            }
-            .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 180, ideal: 205, max: 270)
+            sidebar
         } detail: {
             detail
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .id(model.selection)
         }
-        .navigationSplitViewStyle(.balanced)
-        // Page names are window titles, not interactive toolbar items.
-        // On macOS 26 a ToolbarItem receives a Liquid Glass control surface,
-        // which incorrectly made this title look like a capsule button.
         .navigationTitle(model.selection.title)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                ControlGroup {
+                    Button(action: navigateBack) {
+                        Label(
+                            L10n.string("settings.navigation.back", fallback: "Back"),
+                            systemImage: "chevron.left"
+                        )
+                    }
+                    .disabled(isFirstSection)
+
+                    Button(action: navigateForward) {
+                        Label(
+                            L10n.string("settings.navigation.forward", fallback: "Forward"),
+                            systemImage: "chevron.right"
+                        )
+                    }
+                    .disabled(isLastSection)
+                }
+                .controlGroupStyle(.navigation)
+            }
+        }
         .onAppear { model.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.refresh()
         }
+    }
+
+    private var sidebar: some View {
+        List(selection: $model.selection) {
+            Section {
+                ForEach(sections) { section in
+                    Label(section.title, systemImage: section.symbolName)
+                        .tag(section)
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .navigationSplitViewColumnWidth(ideal: 180, max: 220)
     }
 
     @ViewBuilder
@@ -40,67 +80,72 @@ struct HushTypeSettingsRootView: View {
         case .general: SettingsGeneralView(model: model)
         }
     }
+
+    private func navigateBack() {
+        guard let currentSectionIndex, currentSectionIndex > 0 else { return }
+        model.selection = sections[currentSectionIndex - 1]
+    }
+
+    private func navigateForward() {
+        guard let currentSectionIndex, currentSectionIndex < sections.count - 1 else { return }
+        model.selection = sections[currentSectionIndex + 1]
+    }
 }
 
 private struct SettingsPage<Content: View>: View {
-    let title: String
+    @State private var formWidth: CGFloat = 0
+
     let subtitle: String
     @ViewBuilder var content: Content
 
+    @ViewBuilder
     var body: some View {
         if #available(macOS 26.0, *) {
-            scrollContent(includesTitle: false)
-                .safeAreaBar(edge: .top, spacing: 0) {
-                    // This manual NSWindow has a native window title, but no
-                    // detail-column toolbar controls for the system scroll
-                    // edge to transition into. Reserve a real stationary bar
-                    // and let macOS render the soft blur; a near-zero anchor
-                    // is not large enough to produce a visible transition.
-                    Color.clear
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 32)
-                        .accessibilityHidden(true)
-                }
+            settingsForm
                 .scrollEdgeEffectStyle(.soft, for: .top)
         } else {
-            scrollContent(includesTitle: true)
+            settingsForm
         }
     }
 
-    private func scrollContent(includesTitle: Bool) -> some View {
-        ScrollView {
-            VStack {
-                VStack(alignment: .leading, spacing: 20) {
-                    if includesTitle {
-                        Text(title)
-                            .font(.title2.weight(.semibold))
-                    }
-                    Text(subtitle)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    content
-                    Spacer(minLength: 16)
-                }
-                .frame(maxWidth: 900, alignment: .leading)
+    private var settingsForm: some View {
+        Form {
+            Section {
+                Text(subtitle)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 28)
+            .listRowBackground(Color.clear)
+
+            content
         }
-        // Keep the scroll view itself full-width so the system scroll-edge
-        // effect and scrollbar reach the detail pane edges. Only the scrolling
-        // content receives reading-width margins, matching Thaw's native form.
-        .contentMargins(.horizontal, 28, for: .scrollContent)
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { _, newWidth in
+            formWidth = newWidth
+        }
+        .contentMargins(.horizontal, readingGutter, for: .scrollContent)
+        .focusSection()
+        .accessibilityElement(children: .contain)
+    }
+
+    private var readingGutter: CGFloat {
+        let available = formWidth - 56
+        let overflow = available - 680
+        return max(0, overflow / 2)
     }
 }
 
-private struct SettingsCard<Content: View>: View {
+private struct SettingsSection<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        content
-            .padding(18)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        Section {
+            content
+        }
     }
 }
 
@@ -109,10 +154,9 @@ private struct SettingsOverviewView: View {
 
     var body: some View {
         SettingsPage(
-            title: model.selection.title,
             subtitle: L10n.string("settings.overview.subtitle", fallback: "A quick view of HushType and its local speech model.")
         ) {
-            SettingsCard {
+            SettingsSection {
                 HStack(alignment: .center, spacing: 16) {
                     Image(systemName: model.statusSymbol)
                         .font(.system(size: 28, weight: .medium))
@@ -144,10 +188,10 @@ private struct SettingsOverviewView: View {
             }
 
             if !model.permissionsComplete {
-                Button {
-                    model.selection = .permissions
-                } label: {
-                    SettingsCard {
+                SettingsSection {
+                    Button {
+                        model.selection = .permissions
+                    } label: {
                         HStack(alignment: .top, spacing: 12) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundStyle(.orange)
@@ -161,11 +205,11 @@ private struct SettingsOverviewView: View {
                             Image(systemName: "chevron.right").foregroundStyle(.tertiary)
                         }
                     }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
 
-            SettingsCard {
+            SettingsSection {
                 VStack(alignment: .leading, spacing: 8) {
                     Label(L10n.string("settings.overview.how_to.title", fallback: "How to dictate"), systemImage: "keyboard")
                         .font(.headline)
@@ -199,11 +243,10 @@ private struct SettingsDictationView: View {
 
     var body: some View {
         SettingsPage(
-            title: model.selection.title,
             subtitle: L10n.string("settings.dictation.window_subtitle", fallback: "Configure local recognition and output cleanup.")
         ) {
             if model.currentDictationEngine == .local {
-                SettingsCard {
+                SettingsSection {
                     VStack(alignment: .leading, spacing: 8) {
                         Label(L10n.string("settings.dictation.local_engine", fallback: "Local (Qwen3-ASR)"), systemImage: "cpu")
                             .font(.headline)
@@ -212,29 +255,26 @@ private struct SettingsDictationView: View {
                     }
                 }
             } else {
-                SettingsCard {
-                    DictationEngineSettingsView(onSwitchEngine: model.switchDictationEngine)
-                }
+                DictationEngineSettingsView(onSwitchEngine: model.switchDictationEngine)
             }
 
-            SettingsCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(L10n.string("settings.dictation.output", fallback: "Recognition and output")).font(.headline)
-                    Picker(L10n.string("menu.speech_to_text_language", fallback: "Speech-to-Text Language"), selection: $model.speechLanguage) {
-                        Text(L10n.string("menu.choice.auto", fallback: "Auto")).tag("auto")
-                        Text(L10n.string("picker.autonym.en", fallback: "English")).tag("english")
-                        Text(L10n.string("picker.autonym.zh", fallback: "中文")).tag("chinese")
-                        Text(L10n.string("picker.autonym.ja", fallback: "日本語")).tag("japanese")
-                    }
-                    Toggle(L10n.string("settings.general.number_conversion", fallback: "Convert Chinese numbers to digits"), isOn: $model.numberConversionEnabled)
-                    Toggle(L10n.string("settings.dictation.traditional_chinese", fallback: "Convert Simplified Chinese output to Traditional Chinese"), isOn: $model.chineseConversionEnabled)
-                    Picker(L10n.string("settings.general.punctuation", fallback: "Punctuation cleanup"), selection: $model.punctuationMode) {
-                        Text(L10n.string("settings.general.punctuation.soft", fallback: "Soft")).tag(PunctuationMode.soft)
-                        Text(L10n.string("settings.general.punctuation.hard", fallback: "Strict")).tag(PunctuationMode.hard)
-                        Text(L10n.string("settings.general.punctuation.off", fallback: "Off")).tag(PunctuationMode.off)
-                    }
-                    .pickerStyle(.segmented)
+            Section {
+                Picker(L10n.string("menu.speech_to_text_language", fallback: "Speech-to-Text Language"), selection: $model.speechLanguage) {
+                    Text(L10n.string("menu.choice.auto", fallback: "Auto")).tag("auto")
+                    Text(L10n.string("picker.autonym.en", fallback: "English")).tag("english")
+                    Text(L10n.string("picker.autonym.zh", fallback: "中文")).tag("chinese")
+                    Text(L10n.string("picker.autonym.ja", fallback: "日本語")).tag("japanese")
                 }
+                Toggle(L10n.string("settings.general.number_conversion", fallback: "Convert Chinese numbers to digits"), isOn: $model.numberConversionEnabled)
+                Toggle(L10n.string("settings.dictation.traditional_chinese", fallback: "Convert Simplified Chinese output to Traditional Chinese"), isOn: $model.chineseConversionEnabled)
+                Picker(L10n.string("settings.general.punctuation", fallback: "Punctuation cleanup"), selection: $model.punctuationMode) {
+                    Text(L10n.string("settings.general.punctuation.soft", fallback: "Soft")).tag(PunctuationMode.soft)
+                    Text(L10n.string("settings.general.punctuation.hard", fallback: "Strict")).tag(PunctuationMode.hard)
+                    Text(L10n.string("settings.general.punctuation.off", fallback: "Off")).tag(PunctuationMode.off)
+                }
+                .pickerStyle(.segmented)
+            } header: {
+                Text(L10n.string("settings.dictation.output", fallback: "Recognition and output"))
             }
         }
     }
@@ -252,10 +292,9 @@ private struct SettingsModelView: View {
 
     var body: some View {
         SettingsPage(
-            title: model.selection.title,
             subtitle: L10n.string("settings.model.subtitle", fallback: "Manage the Qwen3-ASR model stored in memory for local dictation.")
         ) {
-            SettingsCard {
+            SettingsSection {
                 VStack(alignment: .leading, spacing: 14) {
                     Text(model.statusTitle).font(.headline)
                     Text(model.statusDetail).foregroundStyle(.secondary)
@@ -280,54 +319,51 @@ private struct SettingsModelView: View {
                 }
             }
 
-            SettingsCard {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(L10n.string("settings.model.installed_picker", fallback: "Installed models")).font(.headline)
-                    if library.installedModels.isEmpty && model.loadedModelID == nil {
-                        Text(L10n.string(
-                            "settings.model.no_installed_models",
-                            fallback: "No models are installed. Install one from the model library below."
-                        ))
-                        .foregroundStyle(.secondary)
-                    } else {
-                        Picker(
-                            L10n.string("settings.model.select_model", fallback: "Select model"),
-                            selection: $model.modelID
-                        ) {
-                            ForEach(library.installedModels) { descriptor in
-                                Text(descriptor.title).tag(descriptor.id)
-                            }
-                            if let loadedModelID = model.loadedModelID,
-                               LocalModelCatalog.descriptor(for: loadedModelID) == nil {
-                                Text(loadedModelID).tag(loadedModelID)
-                            }
+            Section {
+                if library.installedModels.isEmpty && model.loadedModelID == nil {
+                    Text(L10n.string(
+                        "settings.model.no_installed_models",
+                        fallback: "No models are installed. Install one from the model library below."
+                    ))
+                    .foregroundStyle(.secondary)
+                } else {
+                    Picker(
+                        L10n.string("settings.model.select_model", fallback: "Select model"),
+                        selection: $model.modelID
+                    ) {
+                        ForEach(library.installedModels) { descriptor in
+                            Text(descriptor.title).tag(descriptor.id)
+                        }
+                        if let loadedModelID = model.loadedModelID,
+                           LocalModelCatalog.descriptor(for: loadedModelID) == nil {
+                            Text(loadedModelID).tag(loadedModelID)
                         }
                     }
-                    Text(L10n.string(
-                        "settings.model.apply_next_load",
-                            fallback: "Model changes take effect the next time it loads."
-                    ))
-                        .font(.subheadline).foregroundStyle(.secondary)
                 }
+            } header: {
+                Text(L10n.string("settings.model.installed_picker", fallback: "Installed models"))
+            } footer: {
+                Text(L10n.string(
+                    "settings.model.apply_next_load",
+                    fallback: "Model changes take effect the next time it loads."
+                ))
             }
 
-            SettingsCard {
-                VStack(alignment: .leading, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(L10n.string("settings.model.library.title", fallback: "Model Library"))
-                            .font(.headline)
-                        Text(L10n.string(
-                            "settings.model.library.subtitle",
-                            fallback: "Install models before selecting them. Downloads continue if this window is closed."
-                        ))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    }
-
-                    ForEach(Array(LocalModelCatalog.models.enumerated()), id: \.element.id) { index, descriptor in
-                        if index > 0 { Divider() }
-                        modelLibraryRow(descriptor)
-                    }
+            Section {
+                ForEach(LocalModelCatalog.models) { descriptor in
+                    modelLibraryRow(descriptor)
+                }
+            } header: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L10n.string("settings.model.library.title", fallback: "Model Library"))
+                        .font(.headline)
+                    Text(L10n.string(
+                        "settings.model.library.subtitle",
+                        fallback: "Install models before selecting them. Downloads continue if this window is closed."
+                    ))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .textCase(nil)
                 }
             }
         }
@@ -488,10 +524,9 @@ private struct SettingsDictionaryView: View {
 
     var body: some View {
         SettingsPage(
-            title: model.selection.title,
             subtitle: L10n.string("settings.dictionary.subtitle", fallback: "Correct names, technical terms, and recurring transcription mistakes.")
         ) {
-            SettingsCard {
+            SettingsSection {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(L10n.string("settings.dictionary.entries", fallback: "Customized Dictionary")).font(.headline)
                     Text(dictionaryDetail).foregroundStyle(.secondary)
@@ -518,7 +553,6 @@ private struct SettingsPermissionsView: View {
 
     var body: some View {
         SettingsPage(
-            title: model.selection.title,
             subtitle: L10n.string("settings.permissions.subtitle", fallback: "HushType needs these permissions for its global hotkey and microphone input.")
         ) {
             permissionCard(
@@ -579,7 +613,7 @@ private struct SettingsPermissionsView: View {
             }
 
             if model.needsPermissionRestart {
-                SettingsCard {
+                SettingsSection {
                     VStack(alignment: .leading, spacing: 12) {
                         Label(L10n.string("settings.permissions.restart_required.title", fallback: "Restart HushType to apply permissions"), systemImage: "arrow.triangle.2.circlepath")
                             .font(.headline)
@@ -594,7 +628,7 @@ private struct SettingsPermissionsView: View {
                     }
                 }
             } else if model.onboardingRequired {
-                SettingsCard {
+                SettingsSection {
                     VStack(alignment: .leading, spacing: 12) {
                         Label(L10n.string("settings.permissions.finish_setup", fallback: "Finish setup to start HushType"), systemImage: "lock.fill")
                             .font(.headline)
@@ -622,7 +656,7 @@ private struct SettingsPermissionsView: View {
         isGranted: Bool,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        SettingsCard {
+        SettingsSection {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: icon).font(.title2).foregroundStyle(isGranted ? .green : .orange)
@@ -648,35 +682,30 @@ private struct SettingsGeneralView: View {
 
     var body: some View {
         SettingsPage(
-            title: model.selection.title,
             subtitle: L10n.string("settings.general.subtitle", fallback: "Adjust how HushType presents and cleans up dictation.")
         ) {
-            SettingsCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    Toggle(L10n.string("settings.general.floating_overlay", fallback: "Show the floating recording overlay"), isOn: $model.floatingOverlayEnabled)
-                    Toggle(
-                        L10n.string(
-                            "settings.general.release_f5_when_unloaded",
-                            fallback: "Return F5 to macOS after unloading the model"
-                        ),
-                        isOn: $model.releaseF5WhenModelUnloaded
-                    )
-                    Toggle(L10n.string("settings.general.text_polish", fallback: "Enable text polishing"), isOn: $model.textPolishEnabled)
-                }
+            SettingsSection {
+                Toggle(L10n.string("settings.general.floating_overlay", fallback: "Show the floating recording overlay"), isOn: $model.floatingOverlayEnabled)
+                Toggle(
+                    L10n.string(
+                        "settings.general.release_f5_when_unloaded",
+                        fallback: "Return F5 to macOS after unloading the model"
+                    ),
+                    isOn: $model.releaseF5WhenModelUnloaded
+                )
+                Toggle(L10n.string("settings.general.text_polish", fallback: "Enable text polishing"), isOn: $model.textPolishEnabled)
             }
-            SettingsCard {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(L10n.string("menu.interface_language", fallback: "Interface Language")).font(.headline)
-                    Picker(L10n.string("menu.interface_language", fallback: "Interface Language"), selection: $model.interfaceLanguageRaw) {
-                        Text(L10n.string("menu.interface_language.follow_system", fallback: "Follow System")).tag(InterfaceLanguage.system.rawValue)
-                        Text(L10n.string("menu.interface_language.english", fallback: "English")).tag(InterfaceLanguage.english.rawValue)
-                        Text(L10n.string("menu.interface_language.simplified_chinese", fallback: "简体中文")).tag(InterfaceLanguage.simplifiedChinese.rawValue)
-                        Text(L10n.string("menu.interface_language.traditional_chinese_taiwan", fallback: "繁體中文（台灣）")).tag(InterfaceLanguage.traditionalChineseTaiwan.rawValue)
-                    }
-                    Text(L10n.string("menu.interface_language.applied_next_launch", fallback: "Changes apply the next time HushType launches."))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+            Section {
+                Picker(L10n.string("menu.interface_language", fallback: "Interface Language"), selection: $model.interfaceLanguageRaw) {
+                    Text(L10n.string("menu.interface_language.follow_system", fallback: "Follow System")).tag(InterfaceLanguage.system.rawValue)
+                    Text(L10n.string("menu.interface_language.english", fallback: "English")).tag(InterfaceLanguage.english.rawValue)
+                    Text(L10n.string("menu.interface_language.simplified_chinese", fallback: "简体中文")).tag(InterfaceLanguage.simplifiedChinese.rawValue)
+                    Text(L10n.string("menu.interface_language.traditional_chinese_taiwan", fallback: "繁體中文（台灣）")).tag(InterfaceLanguage.traditionalChineseTaiwan.rawValue)
                 }
+            } header: {
+                Text(L10n.string("menu.interface_language", fallback: "Interface Language"))
+            } footer: {
+                Text(L10n.string("menu.interface_language.applied_next_launch", fallback: "Changes apply the next time HushType launches."))
             }
         }
     }

@@ -1474,6 +1474,8 @@
 
 /* Native settings window. */
 "window.settings.title" = "HushType Settings";
+"settings.navigation.back" = "Back";
+"settings.navigation.forward" = "Forward";
 "settings.sidebar.overview" = "Overview";
 "settings.sidebar.dictation" = "Dictation";
 "settings.sidebar.model" = "Model";
