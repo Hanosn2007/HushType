@@ -99,6 +99,10 @@
 
 "status.recording" = "正在录音…";
 
+/* Immediately stops and discards the active push-to-talk recording. */
+
+"menu.recording.cancel" = "取消本次录音";
+
 /* Status-menu transcription state. */
 
 "status.transcribing" = "正在转录…";

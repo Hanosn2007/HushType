@@ -31,6 +31,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let localEngine: Qwen3TranscriptionEngine
     /// Combined status + memory row, e.g. "Ready · Memory 2.1 GB".
     private let statusMenuItem: NSMenuItem
+    /// Emergency escape hatch for an active push-to-talk recording. This is
+    /// driven by app state rather than hotkey permission so it remains usable
+    /// when Accessibility access disappears mid-recording.
+    private var cancelRecordingMenuItem: NSMenuItem!
     private var permissionSettingsMenuItem: NSMenuItem!
     private let languageMenu: NSMenu
     private var languageItems: [NSMenuItem] = []
@@ -79,6 +83,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     var onUnloadModel: (() -> Void)?
     var onReloadModel: (() -> Void)?
     var onStopModelDownload: (() -> Void)?
+    var onCancelRecording: (() -> Void)?
     var onOpenSettings: ((HushTypeSettingsSection) -> Void)?
     var onStateChanged: ((State) -> Void)?
     /// Both the menu radios and the settings window route through this one
@@ -194,6 +199,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         DispatchQueue.main.async {
             self.updateIcon(for: state)
             self.updateStatusText(for: state)
+            self.updateCancelRecordingMenuItem(for: state)
             self.updateUnloadMenuItem(for: state)
             self.onStateChanged?(state)
         }
@@ -206,6 +212,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         refreshStatusLine()
         updateDictationEngineCheckmarks()
         updateLocalModelCheckmarks()
+        updateCancelRecordingMenuItem(for: currentState)
         updateUnloadMenuItem(for: currentState)
         updateInterfaceLanguageMenu()
         refreshPermissionMenuItemVisibility()
@@ -235,6 +242,22 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         // Combined status + memory row, e.g. "Ready · Memory 2.1 GB"
         refreshStatusLine()
         menu.addItem(statusMenuItem)
+
+        cancelRecordingMenuItem = NSMenuItem(
+            title: L10n.string(
+                "menu.recording.cancel",
+                fallback: "Cancel Recording"
+            ),
+            action: #selector(cancelRecordingClicked),
+            keyEquivalent: ""
+        )
+        cancelRecordingMenuItem.target = self
+        cancelRecordingMenuItem.image = NSImage(
+            systemSymbolName: "stop.circle.fill",
+            accessibilityDescription: nil
+        )
+        cancelRecordingMenuItem.isHidden = true
+        menu.addItem(cancelRecordingMenuItem)
 
         menu.addItem(.separator())
 
@@ -1730,6 +1753,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         onOpenSettings?(.permissions)
     }
 
+    @objc private func cancelRecordingClicked() {
+        onCancelRecording?()
+    }
+
     @objc private func openSettings() {
         onOpenSettings?(.overview)
     }
@@ -1783,6 +1810,17 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         currentState = state
         refreshPermissionMenuItemVisibility()
         refreshStatusLine()
+    }
+
+    private func updateCancelRecordingMenuItem(for state: State) {
+        guard let cancelRecordingMenuItem else { return }
+        if case .recording = state {
+            cancelRecordingMenuItem.isHidden = false
+            cancelRecordingMenuItem.isEnabled = true
+        } else {
+            cancelRecordingMenuItem.isHidden = true
+            cancelRecordingMenuItem.isEnabled = false
+        }
     }
 
     private func refreshPermissionMenuItemVisibility() {

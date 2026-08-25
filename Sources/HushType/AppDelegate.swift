@@ -233,6 +233,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBar.onStopModelDownload = { [weak self] in
             self?.stopModelDownload()
         }
+        statusBar.onCancelRecording = { [weak self] in
+            self?.cancelActiveRecording(reason: "status menu")
+        }
         statusBar.onDictationEngineChanged = { [weak self] engine in
             self?.switchDictationEngine(to: engine)
         }
@@ -1014,19 +1017,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleCancelledHotkeyRelease() {
-        tapArbiter.reset()
-        liveCaptionGatePressTimestamp = nil
+        cancelActiveRecording(reason: "option-character chord")
+    }
 
+    /// Stops and discards the current capture without entering the normal
+    /// stop-and-transcribe path. The state guard takes ownership before the
+    /// capture service is stopped, so a delayed hotkey release or a second
+    /// menu click cannot stop the same recording twice.
+    private func cancelActiveRecording(reason: String) {
         guard state == .recording else {
-            log.info("Suppressed Right Option release had no active recording")
+            log.info("Ignoring recording cancellation from \(reason, privacy: .public) — no active recording")
             return
         }
 
-        _ = audioCapture.stopRecording()
         state = .idle
-        statusBar.setState(.idle)
+        recordingTrigger = nil
+        liveCaptionGatePressTimestamp = nil
+        tapArbiter.reset()
+        _ = audioCapture.stopRecording()
         hideOverlay()
-        log.info("Cancelled recording after option-character chord")
+
+        if AXIsProcessTrusted() {
+            statusBar.setState(.idle)
+        } else {
+            // The tray action does not rely on the event tap, so it still
+            // works after Accessibility permission disappears. Stop any stale
+            // tap and expose the existing permission-recovery entry.
+            suspendHotkey(reason: "Accessibility permission missing after recording cancellation")
+            statusBar.setState(.setupRequired)
+            HushTypeSettingsWindowController.shared.setOnboardingRequired(true)
+        }
+        log.info("Cancelled and discarded recording from \(reason, privacy: .public)")
     }
 
     // MARK: - Translation
