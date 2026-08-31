@@ -114,6 +114,7 @@
 /* Status-menu wrapper around an app-owned localized state error; argument 1 is error text. */
 
 "status.error" = "錯誤：%1$@";
+"status.needs_attention" = "需要處理";
 
 /* Status-menu state after unloading the local speech model. */
 
@@ -1143,6 +1144,10 @@
 /* HushType-owned continuous-capture NSError. */
 
 "error.audio_capture.target_format" = "無法建立目標音訊格式。";
+
+/* 參數 1 為 AVAudioEngine 或裝置格式故障。 */
+
+"error.audio_capture.unavailable" = "無法啟動麥克風輸入：%1$@。請檢查目前的輸入裝置後再試一次。";
 
 /* HushType-owned backend NSError after authentication failure. */
 

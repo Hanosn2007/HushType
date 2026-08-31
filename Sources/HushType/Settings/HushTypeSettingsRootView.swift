@@ -759,7 +759,7 @@ private extension HushTypeSettingsModel {
         case .recording: L10n.string("status.recording", fallback: "Listening")
         case .transcribing: L10n.string("status.transcribing", fallback: "Transcribing")
         case .polishing: L10n.string("status.polishing", fallback: "Polishing text")
-        case .error: L10n.string("status.error", fallback: "Needs attention")
+        case .error: L10n.string("status.needs_attention", fallback: "Needs attention")
         case .unloaded: L10n.string("status.model_unloaded", fallback: "Model unloaded")
         }
     }

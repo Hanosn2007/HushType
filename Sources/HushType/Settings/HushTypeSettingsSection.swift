@@ -181,7 +181,9 @@ final class HushTypeSettingsModel: ObservableObject {
             }
         case .idle:
             return .unload
-        case .error, .unloaded:
+        case .error:
+            return loadedModelID == nil ? .load : .unload
+        case .unloaded:
             return .load
         case .setupRequired, .recording, .transcribing, .polishing:
             return .none

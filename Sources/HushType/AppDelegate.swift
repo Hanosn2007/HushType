@@ -681,11 +681,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startRecording(trigger: RecordingTrigger) {
+        do {
+            try audioCapture.startRecording()
+        } catch {
+            recordingTrigger = nil
+            state = .idle
+            hideOverlay()
+            statusBar.setState(.error(error.localizedDescription))
+            log.error("Failed to start recording: \(error.localizedDescription, privacy: .public)")
+            NSSound.beep()
+            return
+        }
         recordingTrigger = trigger
         state = .recording
         statusBar.setState(.recording)
         showOverlayRecording()
-        audioCapture.startRecording()
         print("[HushType] Recording started...")
     }
 

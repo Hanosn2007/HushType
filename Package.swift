@@ -17,9 +17,15 @@ let package = Package(
         .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.30.0"),
     ],
     targets: [
+        .target(
+            name: "ExceptionCatcher",
+            path: "Sources/ExceptionCatcher",
+            publicHeadersPath: "include"
+        ),
         .executableTarget(
             name: "HushType",
             dependencies: [
+                "ExceptionCatcher",
                 .product(name: "Qwen3ASR", package: "speech-swift"),
                 .product(name: "AudioCommon", package: "speech-swift"),
                 .product(name: "SpeechVAD", package: "speech-swift"),
@@ -35,7 +41,7 @@ let package = Package(
         ),
         .testTarget(
             name: "HushTypeTests",
-            dependencies: ["HushType"],
+            dependencies: ["HushType", "ExceptionCatcher"],
             path: "Tests/HushTypeTests"
         ),
     ],

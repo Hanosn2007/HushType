@@ -113,6 +113,7 @@
 /* Status-menu wrapper around an app-owned localized state error; argument 1 is error text. */
 
 "status.error" = "Error: %1$@";
+"status.needs_attention" = "Needs attention";
 
 /* Status-menu state after unloading the local speech model. */
 
@@ -1141,6 +1142,10 @@
 /* HushType-owned continuous-capture NSError. */
 
 "error.audio_capture.target_format" = "Failed to create target audio format.";
+
+/* Argument 1 is the AVAudioEngine or device-format failure. */
+
+"error.audio_capture.unavailable" = "Could not start microphone input: %1$@. Check the selected input device and try again.";
 
 /* HushType-owned backend NSError after authentication failure. */
 
