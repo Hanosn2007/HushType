@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>HushType Updates</title>
+    <link>https://hanosn2007.github.io/HushType/appcast.xml</link>
+    <description>HushType release updates</description>
+    <language>zh-CN</language>
+  </channel>
+</rss>

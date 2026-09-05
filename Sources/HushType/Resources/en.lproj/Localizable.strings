@@ -113,6 +113,8 @@
 /* Status-menu wrapper around an app-owned localized state error; argument 1 is error text. */
 
 "status.error" = "Error: %1$@";
+"status.insertion_permission_denied" = "macOS blocked automatic paste. The transcription is on the clipboard. Allow HushType in Accessibility, relaunch, and try again.";
+"status.insertion_failed" = "HushType couldn't insert the transcription. Try pasting it from the clipboard.";
 "status.needs_attention" = "Needs attention";
 
 /* Status-menu state after unloading the local speech model. */

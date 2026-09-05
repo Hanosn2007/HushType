@@ -114,6 +114,8 @@
 /* Status-menu wrapper around an app-owned localized state error; argument 1 is error text. */
 
 "status.error" = "错误：%1$@";
+"status.insertion_permission_denied" = "macOS 阻止了自动粘贴。转写文本已保存在剪贴板；请在“辅助功能”中允许 HushType，重启后再试。";
+"status.insertion_failed" = "HushType 无法插入转写文本，请尝试从剪贴板手动粘贴。";
 "status.needs_attention" = "需要处理";
 
 /* Status-menu state after unloading the local speech model. */

@@ -10,6 +10,7 @@ let package = Package(
     defaultLocalization: "en",
     platforms: [.macOS(.v15)],
     dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.6"),
         .package(url: "https://github.com/felixfu824/speech-swift.git", revision: "d603472b11c21f5fb6492e9448a04ee669d0bf64"),
         // Direct mlx-swift dep so live caption can bound the GPU buffer cache
         // (MLX.GPU.set(cacheLimit:) / clearCache) — speech-swift transitively
@@ -26,6 +27,7 @@ let package = Package(
             name: "HushType",
             dependencies: [
                 "ExceptionCatcher",
+                .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "Qwen3ASR", package: "speech-swift"),
                 .product(name: "AudioCommon", package: "speech-swift"),
                 .product(name: "SpeechVAD", package: "speech-swift"),

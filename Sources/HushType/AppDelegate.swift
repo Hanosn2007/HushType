@@ -2,6 +2,7 @@ import AppKit
 import ApplicationServices
 import MLX
 import os
+import Sparkle
 import UserNotifications
 
 private let log = Logger(subsystem: "com.felix.hushtype", category: "app")
@@ -97,6 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private var updaterController: SPUStandardUpdaterController!
     private var statusBar: StatusBarController!
     private var hotkeyManager: HotkeyManager!
     private var audioCapture: AudioCaptureService!
@@ -142,6 +144,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("[HushType] Starting...")
+
+        updaterController = SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: nil,
+            userDriverDelegate: nil
+        )
 
         // Resolve app-owned model storage before Qwen or the model library
         // asks the dependency downloader for a cache directory.
@@ -220,6 +228,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.hotkeyManager.stop()
             self?.hideOverlay()
         }
+        statusBar.onCheckForUpdates = { [weak self] in
+            self?.updaterController.checkForUpdates(nil)
+        }
 
         // Wire unload/reload
         statusBar.onUnloadModel = { [weak self] in
@@ -277,6 +288,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             openMicrophoneSettings: {
                 OnboardingManager.openMicrophoneSettings()
+            },
+            checkForUpdates: { [weak self] in
+                self?.updaterController.checkForUpdates(nil)
             },
             restart: {
                 OnboardingManager.relaunchAndQuit(reopenPermissions: true)
@@ -979,11 +993,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         print("[HushType] Transcription result: '\(text)'")
         print("[HushType] Inserting text...")
         state = .inserting
-        TextInserter.insert(text)
+        let insertionFailure = TextInserter.insert(text)
         state = .idle
-        statusBar.setState(.idle)
+        if let insertionFailure {
+            statusBar.setState(.error(insertionFailure.message))
+            NSSound.beep()
+        } else {
+            statusBar.setState(.idle)
+        }
         hideOverlay()
-        print("[HushType] Done")
+        print(insertionFailure == nil ? "[HushType] Done" : "[HushType] Text left on clipboard")
     }
 
     private func finishWithoutInsertion(restoreFocus application: NSRunningApplication?) async {
@@ -1158,13 +1177,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             switch result {
             case .success(let polished, let changed):
+                var insertionFailure: TextInserter.Failure?
                 if changed {
                     // The source application must retain focus through the
                     // complete simulated paste before any result window appears.
-                    TextInserter.insert(polished)
+                    insertionFailure = TextInserter.insert(polished)
                 }
 
                 self.finishPolishing()
+                if let insertionFailure {
+                    self.statusBar.setState(.error(insertionFailure.message))
+                    NSSound.beep()
+                }
                 self.polishCardWindow.show(
                     originalText: selection.text,
                     polishedText: polished,

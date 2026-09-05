@@ -17,9 +17,11 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.5.10</string>
+	<string>0.5.12</string>
 	<key>CFBundleVersion</key>
-	<string>28</string>
+	<string>30</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
@@ -65,5 +67,15 @@
 			</array>
 		</dict>
 	</array>
+	<key>SUAllowsAutomaticUpdates</key>
+	<false/>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://hanosn2007.github.io/HushType/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>t03MbKlENG2dF1UpTPvMf1b4l/6dVEOSWdLf6SyoU24=</string>
 </dict>
 </plist>

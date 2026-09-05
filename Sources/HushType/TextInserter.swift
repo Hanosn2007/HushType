@@ -1,13 +1,34 @@
 import AppKit
+import CoreGraphics
 import os
 
 private let log = Logger(subsystem: "com.felix.hushtype", category: "insertion")
 
 struct TextInserter {
-    static func insert(_ text: String) {
+    enum Failure {
+        case postEventAccessDenied
+        case insertionFailed
+
+        var message: String {
+            switch self {
+            case .postEventAccessDenied:
+                return L10n.string(
+                    "status.insertion_permission_denied",
+                    fallback: "macOS blocked automatic paste. The transcription is on the clipboard. Allow HushType in Accessibility, relaunch, and try again."
+                )
+            case .insertionFailed:
+                return L10n.string(
+                    "status.insertion_failed",
+                    fallback: "HushType couldn't insert the transcription. Try pasting it from the clipboard."
+                )
+            }
+        }
+    }
+
+    static func insert(_ text: String) -> Failure? {
         guard !text.isEmpty else {
             print("[TextInserter] Empty text, skipping")
-            return
+            return .insertionFailed
         }
 
         let pasteboard = NSPasteboard.general
@@ -17,7 +38,16 @@ struct TextInserter {
         // lets the user re-paste elsewhere or recover if cursor paste was blocked
         // by the focused app.
         pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
+        guard pasteboard.setString(text, forType: .string) else {
+            log.error("Failed to write transcription to the pasteboard")
+            return .insertionFailed
+        }
+
+        guard CGPreflightPostEventAccess() else {
+            log.error("PostEvent access denied; requesting access and leaving transcription on the pasteboard")
+            _ = CGRequestPostEventAccess()
+            return .postEventAccessDenied
+        }
 
         // Handle CJK input method
         var previousInputSourceID: String?
@@ -28,7 +58,12 @@ struct TextInserter {
         }
 
         // Simulate Cmd+V
-        simulatePaste()
+        guard simulatePaste() else {
+            if let previousID = previousInputSourceID {
+                InputSourceManager.restore(inputSourceID: previousID)
+            }
+            return .insertionFailed
+        }
         print("[TextInserter] Cmd+V sent")
 
         // Wait longer for paste to complete
@@ -41,16 +76,17 @@ struct TextInserter {
         }
 
         print("[TextInserter] Insert complete")
+        return nil
     }
 
-    private static func simulatePaste() {
+    private static func simulatePaste() -> Bool {
         let source = CGEventSource(stateID: .hidSystemState)
 
         // kVK_ANSI_V = 0x09
         guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true),
               let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false) else {
-            print("[TextInserter] ERROR: Failed to create CGEvent")
-            return
+            log.error("Failed to create paste CGEvents")
+            return false
         }
 
         keyDown.flags = .maskCommand
@@ -59,5 +95,6 @@ struct TextInserter {
         keyDown.post(tap: .cghidEventTap)
         usleep(50_000) // 50ms between key down and up
         keyUp.post(tap: .cghidEventTap)
+        return true
     }
 }

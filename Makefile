@@ -1,5 +1,6 @@
 APP_NAME = HushType
 BUILD_DIR = .build/release
+SPARKLE_FRAMEWORK = .build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework
 # Callers may direct packaging to a staging path so a development build never
 # overwrites an app bundle that is currently running. The traditional local
 # output remains the default for explicit release packaging.
@@ -40,10 +41,14 @@ run: build
 
 bundle: build l10n-verify
 	@mkdir -p "$(BUNDLE_DIR)/Contents/MacOS"
+	@mkdir -p "$(BUNDLE_DIR)/Contents/Frameworks"
 	@mkdir -p "$(BUNDLE_DIR)/Contents/Resources"
 	@cp "$(BUILD_DIR)/$(APP_NAME)" "$(BUNDLE_DIR)/Contents/MacOS/"
-	@cp "$(BUILD_DIR)/mlx.metallib" "$(BUNDLE_DIR)/Contents/MacOS/" 2>/dev/null || true
+	@test -s "$(BUILD_DIR)/mlx.metallib"
+	@cp "$(BUILD_DIR)/mlx.metallib" "$(BUNDLE_DIR)/Contents/MacOS/"
 	@cp Resources/Info.plist "$(BUNDLE_DIR)/Contents/"
+	@test -d "$(SPARKLE_FRAMEWORK)"
+	@ditto "$(SPARKLE_FRAMEWORK)" "$(BUNDLE_DIR)/Contents/Frameworks/Sparkle.framework"
 	@cp Resources/HushType.icns "$(BUNDLE_DIR)/Contents/Resources/" 2>/dev/null || true
 	@cp scripts/ios_server.py "$(BUNDLE_DIR)/Contents/Resources/" 2>/dev/null || true
 	@# Interface localization: remove ONLY the exact supported + known legacy
@@ -51,7 +56,7 @@ bundle: build l10n-verify
 	@# what makes the negative stale-output test honest — a previous bundle
 	@# with deleted tables/keys or a stale zh-Hant.lproj can never satisfy the
 	@# post-copy destination manifest check (l10n-verify-dest).
-	@for d in $(L10N_LOCALES) $(L10N_LEGACY_LOCALES); do rm -rf "$(BUNDLE_DIR)/Contents/Resources/$$d"; done
+	@for d in $(L10N_LOCALES) $(L10N_LEGACY_LOCALES); do if test -e "$(BUNDLE_DIR)/Contents/Resources/$$d"; then trash_dir=$$(mktemp -d "$$HOME/.Trash/hushtype-locale.XXXXXX"); mv "$(BUNDLE_DIR)/Contents/Resources/$$d" "$$trash_dir/"; fi; done
 	@for d in $(L10N_LOCALES); do cp -R "Sources/HushType/Resources/$$d" "$(BUNDLE_DIR)/Contents/Resources/"; done
 	@$(MAKE) l10n-verify-dest
 	@# Strip debug symbols + scrub developer-path leakage from the binary
@@ -74,18 +79,17 @@ count = data.count(prefix); \
 replacement = b'/redacted' + b'\x00' * (len(prefix) - 9); \
 binary.write_bytes(data.replace(prefix, replacement)) if count else None; \
 print(f'  Scrubbed {count} dev-path occurrence(s) from binary')"
+	@install_name_tool -add_rpath "@executable_path/../Frameworks" "$(BUNDLE_DIR)/Contents/MacOS/$(APP_NAME)"
 	@# Local-only MVP keeps Qwen's Simplified Chinese output and does not
 	@# expose Traditional conversion, so OpenCC is intentionally not bundled.
 	@# The bundle-opencc target remains available for a future Hant build.
 	@echo "OpenCC skipped (local Simplified-Chinese MVP)"
-	@# Sign the entire bundle with an explicit stable identifier so macOS TCC
-	@# tracks accessibility permission by identifier (constant across builds)
-	@# instead of cdhash (which changes every build). Without this, every
-	@# `make install` revokes the user's previously-granted permission.
-	@# --deep is required because Mach-O binaries inside a bundle can't be
-	@# signed independently — codesign always treats them as part of the
-	@# enclosing bundle.
-	@codesign --force --deep --sign - --identifier "com.felix.hushtype" "$(BUNDLE_DIR)"
+	@# Keep the bundle identifier stable. Ad-hoc signatures still change per
+	@# build and may require TCC reauthorization after replacement.
+	@# Keep Sparkle's shipped nested signatures intact; --deep is verification,
+	@# not a safe signing strategy for a framework with helpers and XPC services.
+	@if test -f "$(BUNDLE_DIR)/Contents/MacOS/mlx.metallib"; then codesign --force --sign - "$(BUNDLE_DIR)/Contents/MacOS/mlx.metallib"; fi
+	@codesign --force --sign - --identifier "com.felix.hushtype" "$(BUNDLE_DIR)"
 	@# Verify the final signature on the built bundle. Fatal on any nested
 	@# invalid signature (e.g. a dylib modified after its inner sign).
 	@codesign --verify --deep --strict "$(BUNDLE_DIR)"
@@ -138,7 +142,7 @@ uninstall:
 dmg: bundle
 	@# OpenCC binaries are already signed in bundle-opencc; just sign the outer bundle.
 	@echo "Signing app bundle..."
-	@codesign --force --deep --sign - "$(BUNDLE_DIR)"
+	@codesign --verify --deep --strict "$(BUNDLE_DIR)"
 	@rm -f $(APP_NAME).dmg
 	@mkdir -p dmg_staging
 	@cp -R "$(BUNDLE_DIR)" dmg_staging/

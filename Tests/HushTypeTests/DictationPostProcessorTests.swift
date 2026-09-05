@@ -11,11 +11,14 @@ import XCTest
 /// a no-op.
 final class DictationPostProcessorTests: XCTestCase {
 
+    private var savedChineseConversionEnabled = false
     private var savedNumberConversionEnabled: Bool = true
     private var savedPunctuationMode: PunctuationMode = .soft
 
     override func setUp() {
         super.setUp()
+        savedChineseConversionEnabled = AppConfig.shared.chineseConversionEnabled
+        AppConfig.shared.chineseConversionEnabled = true
         savedNumberConversionEnabled = AppConfig.shared.numberConversionEnabled
         savedPunctuationMode = AppConfig.shared.punctuationMode
         AppConfig.shared.numberConversionEnabled = true
@@ -23,6 +26,7 @@ final class DictationPostProcessorTests: XCTestCase {
     }
 
     override func tearDown() {
+        AppConfig.shared.chineseConversionEnabled = savedChineseConversionEnabled
         AppConfig.shared.numberConversionEnabled = savedNumberConversionEnabled
         AppConfig.shared.punctuationMode = savedPunctuationMode
         super.tearDown()
@@ -31,6 +35,11 @@ final class DictationPostProcessorTests: XCTestCase {
     private func assertGolden(_ input: String, _ expected: String) {
         let output = DictationPostProcessor.apply(input)
         XCTAssertEqual(output, expected, "Golden mismatch for input: \(input)")
+    }
+
+    func testSimplifiedOutputWhenConversionDisabled() {
+        AppConfig.shared.chineseConversionEnabled = false
+        assertGolden("数据学习", "数据学习")
     }
 
     // MARK: - Golden ITN (cribbed verbatim from scripts/test_number_normalizer.swift)

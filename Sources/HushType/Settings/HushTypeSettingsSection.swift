@@ -57,6 +57,7 @@ struct HushTypeSettingsActions {
     var resetOldAccessibilityEntry: () -> Bool = { false }
     var requestMicrophone: (@escaping (Bool) -> Void) -> Void = { completion in completion(false) }
     var openMicrophoneSettings: () -> Void = {}
+    var checkForUpdates: () -> Void = {}
     var restart: () -> Void = {}
     var quit: () -> Void = {}
 
@@ -72,6 +73,7 @@ struct HushTypeSettingsActions {
         resetOldAccessibilityEntry: @escaping () -> Bool = { false },
         requestMicrophone: @escaping (@escaping (Bool) -> Void) -> Void = { completion in completion(false) },
         openMicrophoneSettings: @escaping () -> Void = {},
+        checkForUpdates: @escaping () -> Void = {},
         restart: @escaping () -> Void = {},
         quit: @escaping () -> Void = {}
     ) {
@@ -86,6 +88,7 @@ struct HushTypeSettingsActions {
         self.resetOldAccessibilityEntry = resetOldAccessibilityEntry
         self.requestMicrophone = requestMicrophone
         self.openMicrophoneSettings = openMicrophoneSettings
+        self.checkForUpdates = checkForUpdates
         self.restart = restart
         self.quit = quit
     }
@@ -271,6 +274,7 @@ final class HushTypeSettingsModel: ObservableObject {
         actions.openMicrophoneSettings()
     }
 
+    func checkForUpdates() { actions.checkForUpdates() }
     func restart() { actions.restart() }
     func quit() { actions.quit() }
 

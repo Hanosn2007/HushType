@@ -1,0 +1,69 @@
+name: Build release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag matching Info.plist, for example v0.5.11
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify version
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)
+          test "$RELEASE_TAG" = "v$version"
+          ! git rev-parse --verify --quiet "refs/tags/$RELEASE_TAG"
+
+      - name: Prepare Metal toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+
+      - name: Test
+        run: |
+          brew install opencc
+          swift test -c release --disable-sandbox
+
+      - name: Build app
+        run: make bundle BUNDLE_DIR="$RUNNER_TEMP/HushType.app"
+
+      - name: Verify app
+        run: |
+          codesign --verify --deep --strict "$RUNNER_TEMP/HushType.app"
+          test -s "$RUNNER_TEMP/HushType.app/Contents/MacOS/mlx.metallib"
+          test -d "$RUNNER_TEMP/HushType.app/Contents/Frameworks/Sparkle.framework"
+          otool -L "$RUNNER_TEMP/HushType.app/Contents/MacOS/HushType" | grep -Fq '@rpath/Sparkle.framework/'
+          otool -l "$RUNNER_TEMP/HushType.app/Contents/MacOS/HushType" | grep -Fq '@executable_path/../Frameworks'
+
+      - name: Archive
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          version=${RELEASE_TAG#v}
+          ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/HushType.app" "$RUNNER_TEMP/HushType-$version.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HushType-${{ inputs.tag }}
+          path: ${{ runner.temp }}/HushType-*.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          version=${RELEASE_TAG#v}
+          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" "$RUNNER_TEMP/HushType-$version.zip" --draft --generate-notes --target "$GITHUB_SHA" --title "$RELEASE_TAG"

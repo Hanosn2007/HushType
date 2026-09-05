@@ -707,6 +707,11 @@ private struct SettingsGeneralView: View {
             } footer: {
                 Text(L10n.string("menu.interface_language.applied_next_launch", fallback: "Changes apply the next time HushType launches."))
             }
+            SettingsSection {
+                Button(L10n.string("about.check_updates", fallback: "Check for Updates…")) {
+                    model.checkForUpdates()
+                }
+            }
         }
     }
 }
