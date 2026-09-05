@@ -1,8 +1,12 @@
 import AppKit
+import SwiftUI
 
-let app = NSApplication.shared
-app.setActivationPolicy(.accessory)
+NSApplication.shared.setActivationPolicy(.accessory)
 
-let delegate = AppDelegate()
-app.delegate = delegate
-app.run()
+if #available(macOS 26.0, *) {
+    HushTypeSceneApplication.main()
+} else {
+    let delegate = AppDelegate()
+    NSApplication.shared.delegate = delegate
+    NSApplication.shared.run()
+}

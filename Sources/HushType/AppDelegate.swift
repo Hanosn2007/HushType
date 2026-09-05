@@ -142,10 +142,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var translationCardWindow = TranslationCardWindow()
     private lazy var polishCardWindow = PolishCardWindow()
 
-    func applicationWillFinishLaunching(_ notification: Notification) {
-        HushTypeSettingsWindowController.shared.registerSceneIfNeeded()
-    }
-
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("[HushType] Starting...")
 
@@ -308,8 +304,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBar.onOpenSettings = { section in
             settingsWindow.present(section: section)
         }
-        HushTypeMainMenuController.shared.install {
-            settingsWindow.present(section: .overview)
+        if #unavailable(macOS 26.0) {
+            HushTypeMainMenuController.shared.install {
+                settingsWindow.present(section: .overview)
+            }
         }
         statusBar.onStateChanged = { state in
             settingsWindow.updateAppState(state)

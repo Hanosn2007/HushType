@@ -2,10 +2,11 @@ import AppKit
 import SwiftUI
 
 /// A regular, resizable settings window for the otherwise menu-bar-first app.
-/// AppKit owns the singleton window lifecycle; SwiftUI owns the selected pane
+/// A SwiftUI Window scene owns the modern window; AppKit remains the macOS 15 fallback.
+/// The coordinator owns the selected pane
 /// and all presentation state through `HushTypeSettingsModel`.
 @MainActor
-final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelegate {
+final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelegate, ObservableObject {
     static let shared = HushTypeSettingsWindowController()
 
     /// These are content dimensions. The matching frame dimensions include
@@ -16,11 +17,11 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
     /// `defaultContentSize` is used solely for a brand-new window.
     fileprivate static let minimumContentSize = NSSize(width: 850, height: 600)
 
-    private let model = HushTypeSettingsModel()
+    fileprivate let model = HushTypeSettingsModel()
     // macOS 26's scene host owns the entire native window, including the
     // container geometry used by the floating NavigationSplitView sidebar.
     // Keep the legacy NSWindow path for macOS 15.
-    private var sceneRepresentation: AnyObject?
+    @Published fileprivate var presentationRequest: UInt = 0
     private weak var sceneWindow: NSWindow?
     private var sceneWindowObservers: [NSObjectProtocol] = []
 
@@ -73,20 +74,6 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
         model.configure(actions: actions)
     }
 
-    /// Register during applicationWillFinishLaunching, before onboarding or
-    /// menu actions can request a window. Suppress automatic scene launch so
-    /// the app remains menu-bar-first.
-    func registerSceneIfNeeded() {
-        guard #available(macOS 26.0, *), sceneRepresentation == nil else { return }
-        let representation = NSHostingSceneRepresentation {
-            HushTypeSettingsScene(model: model) { [weak self] window in
-                self?.attachSceneWindow(window)
-            }
-        }
-        sceneRepresentation = representation
-        NSApp.addSceneRepresentation(representation)
-    }
-
     func present(section: HushTypeSettingsSection = .overview) {
         model.selection = section
         model.refresh()
@@ -95,10 +82,7 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
         }
         NSApp.activate(ignoringOtherApps: true)
         if #available(macOS 26.0, *) {
-            registerSceneIfNeeded()
-            if let representation = sceneRepresentation as? NSHostingSceneRepresentation<HushTypeSettingsScene> {
-                representation.environment.openSettings()
-            }
+            presentationRequest &+= 1
             sceneWindow?.deminiaturize(nil)
             sceneWindow?.makeKeyAndOrderFront(nil)
             return
@@ -136,7 +120,7 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
         NSApp.setActivationPolicy(.accessory)
     }
 
-    private func attachSceneWindow(_ window: NSWindow) {
+    fileprivate func attachSceneWindow(_ window: NSWindow) {
         guard sceneWindow !== window else { return }
         sceneWindowObservers.forEach(NotificationCenter.default.removeObserver)
         sceneWindowObservers.removeAll()
@@ -187,18 +171,21 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
 }
 
 @available(macOS 26.0, *)
-private struct HushTypeSettingsScene: Scene {
-    let model: HushTypeSettingsModel
-    let onWindowReady: (NSWindow) -> Void
+struct HushTypeSettingsScene: Scene {
+    @ObservedObject private var coordinator = HushTypeSettingsWindowController.shared
+    @Environment(\.openWindow) private var openWindow
+    private static let sceneID = "hushtype.settings"
 
     var body: some Scene {
-        Settings {
-            HushTypeSettingsRootView(model: model)
+        Window(L10n.string("window.settings.title", fallback: "HushType Settings"), id: Self.sceneID) {
+            HushTypeSettingsRootView(model: coordinator.model)
                 .frame(
                     minWidth: HushTypeSettingsWindowController.minimumContentSize.width,
                     minHeight: HushTypeSettingsWindowController.minimumContentSize.height
                 )
-                .background(SettingsSceneWindowReader(onWindowReady: onWindowReady))
+                .background(SettingsSceneWindowReader { window in
+                    coordinator.attachSceneWindow(window)
+                })
         }
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
@@ -209,6 +196,20 @@ private struct HushTypeSettingsScene: Scene {
         .windowResizability(.contentSize)
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button(L10n.string("common.button.settings", fallback: "Settings…")) {
+                    coordinator.present()
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+        }
+        .onChange(of: coordinator.presentationRequest, initial: true) { _, request in
+            // A request can arrive during AppDelegate launch before this
+            // scene is installed. The initial observation preserves it.
+            guard request > 0 else { return }
+            openWindow(id: Self.sceneID)
+        }
     }
 }
 
