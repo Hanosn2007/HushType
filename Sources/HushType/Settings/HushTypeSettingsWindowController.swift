@@ -10,15 +10,26 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
 
     /// These are content dimensions. The matching frame dimensions include
     /// the title bar and are calculated from the actual window below.
-    private static let defaultContentSize = NSSize(width: 950, height: 650)
+    fileprivate static let defaultContentSize = NSSize(width: 950, height: 650)
     /// Keep the sidebar usable and detail controls readable without making a
     /// selected page dictate a new window size. This is a lower bound only;
     /// `defaultContentSize` is used solely for a brand-new window.
-    private static let minimumContentSize = NSSize(width: 850, height: 600)
+    fileprivate static let minimumContentSize = NSSize(width: 850, height: 600)
 
     private let model = HushTypeSettingsModel()
+    // macOS 26's scene host owns the entire native window, including the
+    // container geometry used by the floating NavigationSplitView sidebar.
+    // Keep the legacy NSWindow path for macOS 15.
+    private var sceneRepresentation: AnyObject?
+    private weak var sceneWindow: NSWindow?
+    private var sceneWindowObservers: [NSObjectProtocol] = []
 
     private init() {
+        if #available(macOS 26.0, *) {
+            super.init(window: nil)
+            return
+        }
+
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: Self.defaultContentSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -62,6 +73,20 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
         model.configure(actions: actions)
     }
 
+    /// Register during applicationWillFinishLaunching, before onboarding or
+    /// menu actions can request a window. Suppress automatic scene launch so
+    /// the app remains menu-bar-first.
+    func registerSceneIfNeeded() {
+        guard #available(macOS 26.0, *), sceneRepresentation == nil else { return }
+        let representation = NSHostingSceneRepresentation {
+            HushTypeSettingsScene(model: model) { [weak self] window in
+                self?.attachSceneWindow(window)
+            }
+        }
+        sceneRepresentation = representation
+        NSApp.addSceneRepresentation(representation)
+    }
+
     func present(section: HushTypeSettingsSection = .overview) {
         model.selection = section
         model.refresh()
@@ -69,6 +94,15 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
             NSApp.setActivationPolicy(.regular)
         }
         NSApp.activate(ignoringOtherApps: true)
+        if #available(macOS 26.0, *) {
+            registerSceneIfNeeded()
+            if let representation = sceneRepresentation as? NSHostingSceneRepresentation<HushTypeSettingsScene> {
+                representation.environment.openSettings()
+            }
+            sceneWindow?.deminiaturize(nil)
+            sceneWindow?.makeKeyAndOrderFront(nil)
+            return
+        }
         showWindow(nil)
         if let window {
             clampRestoredFrameIfNeeded(of: window)
@@ -102,6 +136,29 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
         NSApp.setActivationPolicy(.accessory)
     }
 
+    private func attachSceneWindow(_ window: NSWindow) {
+        guard sceneWindow !== window else { return }
+        sceneWindowObservers.forEach(NotificationCenter.default.removeObserver)
+        sceneWindowObservers.removeAll()
+        sceneWindow = window
+        // Do not replace SwiftUI's window delegate or content controller.
+        // Observe the same lifecycle events that the legacy delegate handles.
+        let center = NotificationCenter.default
+        sceneWindowObservers.append(center.addObserver(
+            forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main
+        ) { [weak self] notification in
+            MainActor.assumeIsolated { self?.windowDidBecomeKey(notification) }
+        })
+        sceneWindowObservers.append(center.addObserver(
+            forName: NSWindow.willCloseNotification, object: window, queue: .main
+        ) { [weak self] notification in
+            MainActor.assumeIsolated { self?.windowWillClose(notification) }
+        })
+        window.setFrameAutosaveName("hushtype.settings.main")
+        clampRestoredFrameIfNeeded(of: window)
+        model.refresh()
+    }
+
     /// Frame autosave restoration can happen before this controller receives
     /// its delegate. Clamp it explicitly, preserving the saved origin as much
     /// as possible, and repeat on every presentation in case AppKit restores a
@@ -126,5 +183,59 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
             )
         )
         window.setFrame(constrainedFrame, display: false)
+    }
+}
+
+@available(macOS 26.0, *)
+private struct HushTypeSettingsScene: Scene {
+    let model: HushTypeSettingsModel
+    let onWindowReady: (NSWindow) -> Void
+
+    var body: some Scene {
+        Settings {
+            HushTypeSettingsRootView(model: model)
+                .frame(
+                    minWidth: HushTypeSettingsWindowController.minimumContentSize.width,
+                    minHeight: HushTypeSettingsWindowController.minimumContentSize.height
+                )
+                .background(SettingsSceneWindowReader(onWindowReady: onWindowReady))
+        }
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+        .defaultSize(
+            width: HushTypeSettingsWindowController.defaultContentSize.width,
+            height: HushTypeSettingsWindowController.defaultContentSize.height
+        )
+        .windowResizability(.contentSize)
+        .windowStyle(.titleBar)
+        .windowToolbarStyle(.unified)
+    }
+}
+
+/// Observe the scene-created window without taking over SwiftUI's delegate.
+private struct SettingsSceneWindowReader: NSViewRepresentable {
+    let onWindowReady: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> WindowReaderView {
+        let view = WindowReaderView()
+        view.onWindowReady = onWindowReady
+        return view
+    }
+
+    func updateNSView(_ nsView: WindowReaderView, context: Context) {
+        nsView.onWindowReady = onWindowReady
+    }
+
+    final class WindowReaderView: NSView {
+        var onWindowReady: ((NSWindow) -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window else { return }
+            DispatchQueue.main.async { [weak self, weak window] in
+                guard let self, let window, self.window === window else { return }
+                self.onWindowReady?(window)
+            }
+        }
     }
 }

@@ -142,6 +142,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var translationCardWindow = TranslationCardWindow()
     private lazy var polishCardWindow = PolishCardWindow()
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        HushTypeSettingsWindowController.shared.registerSceneIfNeeded()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("[HushType] Starting...")
 
