@@ -438,6 +438,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // benefit from `prewarm()` on relaunch when Text Polish is already on.
     }
 
+    // Closing settings must leave the menu-bar app and global hotkey running.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         hotkeyResumeWorkItem?.cancel()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
