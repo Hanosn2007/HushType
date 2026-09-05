@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 380" font-family="-apple-system,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#343433"/><stop offset="1" stop-color="#272726"/></linearGradient></defs>
+  <rect x="1" y="64" width="1118" height="315" rx="30" fill="url(#bg)" stroke="#484847"/>
+  <text x="48" y="139" font-size="28" font-weight="700" fill="#eee">文字已校对</text>
+  <text x="1072" y="136" text-anchor="end" font-size="22" fill="#30db55">✓ 已复制到剪贴板</text>
+  <path d="M48 169H1072" stroke="#666"/>
+  <text x="48" y="214" font-size="21" fill="#aaa">修改内容</text>
+  <text x="971" y="214" text-anchor="end" font-size="21" fill="#ff4545" text-decoration="line-through">删除</text>
+  <text x="1072" y="214" text-anchor="end" font-size="21" fill="#30db55" text-decoration="underline">新增</text>
+  <text x="48" y="275" font-size="30" font-weight="600" fill="#eee">这事情很<tspan fill="#ff4545" text-decoration="line-through">府</tspan><tspan fill="#30db55" text-decoration="underline">复</tspan>杂，你不要<tspan fill="#ff4545" text-decoration="line-through">弯</tspan><tspan fill="#30db55" text-decoration="underline">瞒</tspan>着家人乱弄</text>
+  <text x="48" y="327" font-size="21" fill="#aaa">点击外部区域关闭</text>
+  <text x="1072" y="327" text-anchor="end" font-size="18" fill="#888">设备端 Apple Intelligence · 内容留在你的 Mac 上</text>
+</svg>
