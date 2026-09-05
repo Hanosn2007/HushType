@@ -1,0 +1,16 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>HushType</title>
+        <item>
+            <title>0.5.13</title>
+            <pubDate>Sat, 05 Sep 2026 15:51:00 +0800</pubDate>
+            <link>https://github.com/Hanosn2007/HushType/releases</link>
+            <sparkle:version>31</sparkle:version>
+            <sparkle:shortVersionString>0.5.13</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/Hanosn2007/HushType/releases/download/v0.5.13/HushType-0.5.13.zip" length="43176230" type="application/octet-stream" sparkle:edSignature="vCZXk1OhPWpCddBUMU6qgObLgTblO+ivC70PYtQiNh0DM5SlaDKHJVoi5LM9TLFsJVPJ3FgDvJM2yRAHrroUBg=="/>
+        </item>
+    </channel>
+</rss>
