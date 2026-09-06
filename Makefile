@@ -5,6 +5,11 @@ SPARKLE_FRAMEWORK = .build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-a
 # overwrites an app bundle that is currently running. The traditional local
 # output remains the default for explicit release packaging.
 BUNDLE_DIR ?= $(APP_NAME).app
+# Optional SHA-1 fingerprint of the fixed local code-signing certificate.
+# Leave unset for ad-hoc development builds; releases use bundle-stable.
+CODE_SIGN_IDENTITY ?=
+# Public SHA-1 fingerprint of the fixed local HushType signing certificate.
+override STABLE_CODE_SIGN_IDENTITY := $(shell tr -d '[:space:]' < scripts/release-signing.sha1)
 
 # OpenCC paths (Homebrew on Apple Silicon)
 OPENCC_BIN = /opt/homebrew/bin/opencc
@@ -12,7 +17,7 @@ OPENCC_LIB_DIR = /opt/homebrew/lib
 OPENCC_DATA_DIR = /opt/homebrew/share/opencc
 MARISA_LIB_DIR = /opt/homebrew/opt/marisa/lib
 
-.PHONY: build run bundle bundle-opencc install uninstall dmg clean l10n-verify l10n-verify-dest
+.PHONY: build run bundle bundle-stable bundle-opencc install uninstall dmg clean l10n-verify l10n-verify-dest
 
 # Supported interface-localization locale dirs copied into the app bundle.
 L10N_LOCALES = en.lproj zh-Hans.lproj zh-Hant-TW.lproj
@@ -84,20 +89,30 @@ print(f'  Scrubbed {count} dev-path occurrence(s) from binary')"
 	@# expose Traditional conversion, so OpenCC is intentionally not bundled.
 	@# The bundle-opencc target remains available for a future Hant build.
 	@echo "OpenCC skipped (local Simplified-Chinese MVP)"
-	@# Keep the bundle identifier stable. Ad-hoc signatures still change per
-	@# build and may require TCC reauthorization after replacement.
 	@# Keep Sparkle's shipped nested signatures intact; --deep is verification,
 	@# not a safe signing strategy for a framework with helpers and XPC services.
+	@# mlx.metallib remains ad-hoc signed in both modes. When a certificate SHA-1
+	@# is supplied, sign only the outer app with its explicit stable requirement.
 	@if test -f "$(BUNDLE_DIR)/Contents/MacOS/mlx.metallib"; then codesign --force --sign - "$(BUNDLE_DIR)/Contents/MacOS/mlx.metallib"; fi
-	@codesign --force --sign - --identifier "com.felix.hushtype" "$(BUNDLE_DIR)"
-	@# Verify the final signature on the built bundle. Fatal on any nested
-	@# invalid signature (e.g. a dylib modified after its inner sign).
-	@codesign --verify --deep --strict "$(BUNDLE_DIR)"
+	@if test -n "$(CODE_SIGN_IDENTITY)"; then \
+		bash scripts/sign_app.sh "$(BUNDLE_DIR)" "$(CODE_SIGN_IDENTITY)"; \
+	else \
+		codesign --force --sign - --identifier "com.felix.hushtype" "$(BUNDLE_DIR)"; \
+		codesign --verify --deep --strict "$(BUNDLE_DIR)"; \
+	fi
 	@# Re-validate the localization manifest on the signed bundle: the copy
 	@# happened before signing, but this proves the shipped signature covers a
 	@# bundle whose resources equal the source manifest.
 	@$(MAKE) l10n-verify-dest
 	@echo "Bundle created: $(BUNDLE_DIR) (signed as com.felix.hushtype, debug symbols stripped)"
+
+# Stable-release packaging has no ad-hoc fallback: the fixed certificate must
+# be usable in the login keychain or scripts/sign_app.sh fails the build.
+bundle-stable:
+	@case "$(STABLE_CODE_SIGN_IDENTITY)" in ""|*[!0-9A-F]*) echo "Invalid stable signing fingerprint" >&2; exit 1;; esac
+	@test "$$(printf '%s' "$(STABLE_CODE_SIGN_IDENTITY)" | wc -c | tr -d ' ')" = 40
+	@security find-identity -v -p codesigning | awk -v sha="$(STABLE_CODE_SIGN_IDENTITY)" '$$2 == sha { found = 1 } END { exit(found ? 0 : 1) }' || { echo "Fixed signing identity unavailable; refusing ad-hoc fallback" >&2; exit 1; }
+	@$(MAKE) bundle BUNDLE_DIR="$(BUNDLE_DIR)" CODE_SIGN_IDENTITY="$(STABLE_CODE_SIGN_IDENTITY)"
 
 bundle-opencc:
 	@echo "Bundling OpenCC..."

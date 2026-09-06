@@ -27,6 +27,17 @@ jobs:
           test "$RELEASE_TAG" = "v$version"
           ! git rev-parse --verify --quiet "refs/tags/$RELEASE_TAG"
 
+      # Release signing currently lives in the maintainer's login Keychain.
+      # Fail before an expensive build if this runner has not been provisioned;
+      # never generate a new identity or silently ship an ad-hoc candidate.
+      - name: Require stable release signing identity
+        run: |
+          identity=$(tr -d '[:space:]' < scripts/release-signing.sha1)
+          security find-identity -v -p codesigning | awk -v sha="$identity" '$2 == sha { found = 1 } END { exit(found ? 0 : 1) }' || {
+            echo 'Stable signing identity is unavailable. Build locally with make bundle-stable; do not generate a replacement certificate.' >&2
+            exit 1
+          }
+
       - name: Prepare Metal toolchain
         run: xcodebuild -downloadComponent MetalToolchain
 
@@ -36,7 +47,7 @@ jobs:
           swift test -c release --disable-sandbox
 
       - name: Build app
-        run: make bundle BUNDLE_DIR="$RUNNER_TEMP/HushType.app"
+        run: make bundle-stable BUNDLE_DIR="$RUNNER_TEMP/HushType.app"
 
       - name: Verify app
         run: |

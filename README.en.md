@@ -124,7 +124,7 @@ iOS (via your Mac as server):
 
 1. Download `HushType.dmg` from the [latest release](https://github.com/felixfu824/HushType/releases)
 2. Open the DMG and drag HushType to Applications
-3. Right-click HushType.app → Open (required on first launch; the app is ad-hoc signed, not notarized)
+3. Right-click HushType.app → Open (required on first launch; releases from 0.5.17 use a stable self-signed identity and are not notarized)
 4. Grant **Accessibility** and **Microphone** permissions when prompted
 5. Wait for the Qwen3-ASR 1.7B 8-bit model to download (one-time, progress shown in menu bar)
 
@@ -146,7 +146,7 @@ Updating means **replacing the `.app` bundle**. Preferences, the ASR model, and 
 
 **From source:** `git pull && make install`.
 
-**Permission re-grant:** because HushType is ad-hoc signed, macOS may require Accessibility to be enabled again after an update. The setup window will show the current permission state. Click **Open System Settings**, enable HushType in Accessibility, then click **Restart HushType** so macOS applies the grant. If you see duplicate HushType entries, cannot find HushType, or the switch does not work, use **Reset Old HushType Entry** in the setup window and add/enable HushType again.
+**Permission continuity:** version 0.5.16 and earlier used ad-hoc signing. Moving to the stable self-signed identity in 0.5.17 is expected to require one fresh grant. Later normal updates using the same identity should retain permissions; a system permission reset can still require a new grant. The setup window will show the current permission state. Click **Open System Settings**, enable HushType in Accessibility, then click **Restart HushType** so macOS applies the grant. If you see duplicate HushType entries, cannot find HushType, or the switch does not work, use **Reset Old HushType Entry** in the setup window and add/enable HushType again.
 
 **Full uninstall:** Trash `/Applications/HushType.app`, then optionally delete the `com.felix.hushtype` defaults domain and `~/Library/Caches/qwen3-speech/models/` to remove preferences and the model cache.
 
@@ -617,5 +617,5 @@ lsof -ti :8000 :8199 | xargs kill
 - Free provisioning: iOS app expires every 7 days (re-sign via Xcode)
 - Session timeout is fixed at 5 minutes (no UI to change yet)
 - Mac must be reachable from iPhone (same WiFi or Tailscale)
-- DMG is ad-hoc signed (not notarized); macOS Gatekeeper will warn on first launch. Right-click → Open to bypass.
+- Releases from 0.5.17 use a stable self-signed identity (not notarized); macOS Gatekeeper will warn on first launch. Right-click → Open to bypass.
 - Text Polish inherits Apple Foundation Models limits: a few fine-grained Chinese distinctions (e.g. 的/得/地) may be left as-is, and heavily English-dominant mixed sentences can be declined with an alert rather than risk a mistranslation. Declined always means your text is untouched.

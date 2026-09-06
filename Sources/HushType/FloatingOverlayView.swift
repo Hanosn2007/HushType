@@ -90,6 +90,9 @@ struct FloatingOverlayView: View {
             Image(systemName: iconName)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.primary)
+                // SF Symbols have different intrinsic widths. Reserve the
+                // same slot so model notices keep the listening pill's size.
+                .frame(width: 16)
 
             Text(label)
                 .font(.system(size: 13, weight: .medium))

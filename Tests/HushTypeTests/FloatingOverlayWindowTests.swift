@@ -17,15 +17,17 @@ final class FloatingOverlayWindowTests: XCTestCase {
         XCTAssertEqual(window.level, .screenSaver)
         XCTAssertTrue(window.ignoresMouseEvents)
 
-        window.showModelNotice(.unloaded, onOpenModels: {})
-        try await Task.sleep(for: .milliseconds(150))
-        XCTAssertEqual(window.frame.size.width, listeningSize.width, accuracy: 1)
-        XCTAssertEqual(window.frame.size.height, listeningSize.height, accuracy: 1)
-        XCTAssertEqual(window.level, .normal)
-        XCTAssertFalse(window.isFloatingPanel)
-        XCTAssertFalse(window.canBecomeKey)
-        XCTAssertFalse(window.canBecomeMain)
-        XCTAssertNil(NSApp.modalWindow)
+        for kind in [ModelNoticeKind.unloaded, .loaded] {
+            window.showModelNotice(kind, onOpenModels: {})
+            try await Task.sleep(for: .milliseconds(150))
+            XCTAssertEqual(window.frame.size.width, listeningSize.width, accuracy: 1)
+            XCTAssertEqual(window.frame.size.height, listeningSize.height, accuracy: 1)
+            XCTAssertEqual(window.level, .normal)
+            XCTAssertFalse(window.isFloatingPanel)
+            XCTAssertFalse(window.canBecomeKey)
+            XCTAssertFalse(window.canBecomeMain)
+            XCTAssertNil(NSApp.modalWindow)
+        }
     }
 
     @MainActor

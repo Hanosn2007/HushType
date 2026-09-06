@@ -133,7 +133,7 @@ iOS（通过你的 Mac 作为服务器）：
 
 1. 从[最新版本](https://github.com/felixfu824/HushType/releases)下载 `HushType.dmg`
 2. 打开 DMG，将 HushType 拖到「应用程序」
-3. 右键点击 HushType.app → 打开（首次启动时需要，App 使用临时签名，未经 Apple 公证）
+3. 右键点击 HushType.app → 打开（首次启动时需要，0.5.17 起使用固定自签名，未经 Apple 公证）
 4. 授予**辅助功能**与**麦克风**权限
 5. 等待 Qwen3-ASR 1.7B 8-bit 模型下载（仅首次，进度显示在菜单栏）
 
@@ -155,7 +155,7 @@ DMG/App 对本地简体中文路径是独立版本，运行时不需要 Homebrew
 
 **从源代码编译：** `git pull && make install`。
 
-**为什么每次更新都可能要重新授权？** HushType 是 ad-hoc 签名，macOS 可能会在更新后要求你重新启用辅助功能权限。设置窗口会显示目前权限状态。点 **Open System Settings**，在辅助功能列表里打开 HushType，接着点 **Restart HushType** 让 macOS 应用权限。如果你看到重复的 HushType、找不到 HushType，或开关无法正常运行，请在设置窗口中使用 **Reset Old HushType Entry**，再重新加入或启用 HushType。
+**更新后是否需要重新授权？** 0.5.16 及更早版本使用临时签名；切换到 0.5.17 的固定自签名时，预计需要再授权一次。后续保持同一签名身份的正常升级应能沿用原权限，系统权限被重置等情况仍需重新授权。设置窗口会显示目前权限状态。点 **Open System Settings**，在辅助功能列表里打开 HushType，接着点 **Restart HushType** 让 macOS 应用权限。如果你看到重复的 HushType、找不到 HushType，或开关无法正常运行，请在设置窗口中使用 **Reset Old HushType Entry**，再重新加入或启用 HushType。
 
 **完全卸载：** 把 `/Applications/HushType.app` 拖到废纸篓；如需连偏好与模型一起清除，再删除 `com.felix.hushtype` defaults domain 与 `~/Library/Caches/qwen3-speech/models/`。
 
@@ -498,5 +498,5 @@ private static let rightOptionKeyCode: Int64 = 61
 - 免费部署：iOS App 每 7 天过期（需通过 Xcode 重新签署）
 - 听写时长固定为 5 分钟（尚无界面可调整）
 - Mac 必须是 iPhone 可连接的（同一 WiFi 或 Tailscale）
-- DMG 使用临时签名（未经 Apple 公证），首次启动时 macOS Gatekeeper 会发出警告，需右键 → 打开以继续
+- 0.5.17 起的发布包使用固定自签名（未经 Apple 公证），首次启动时 macOS Gatekeeper 会发出警告，需右键 → 打开以继续
 - Text Polish 继承 Apple Foundation Models 的模型限制：少数中文细微用法（如 的/得/地）可能维持原样；英文占比极高的混合句可能被拦截并显示提醒，而不是冒着误译风险粘贴。被拦截一律代表原文完全不动
