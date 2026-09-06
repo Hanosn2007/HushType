@@ -90,4 +90,23 @@ final class AudioInputDeviceManagerTests: XCTestCase {
             isAlive: false
         ))
     }
+
+    func testBufferStallRequiresStartedMonitoringAndElapsedThreshold() {
+        XCTAssertFalse(AudioCaptureHealthPolicy.isBufferStreamStalled(
+            monitoringEnabled: false,
+            secondsSinceLastBuffer: 30
+        ))
+        XCTAssertFalse(AudioCaptureHealthPolicy.isBufferStreamStalled(
+            monitoringEnabled: true,
+            secondsSinceLastBuffer: nil
+        ))
+        XCTAssertFalse(AudioCaptureHealthPolicy.isBufferStreamStalled(
+            monitoringEnabled: true,
+            secondsSinceLastBuffer: AudioCaptureHealthPolicy.bufferStallThreshold - 0.01
+        ))
+        XCTAssertTrue(AudioCaptureHealthPolicy.isBufferStreamStalled(
+            monitoringEnabled: true,
+            secondsSinceLastBuffer: AudioCaptureHealthPolicy.bufferStallThreshold
+        ))
+    }
 }

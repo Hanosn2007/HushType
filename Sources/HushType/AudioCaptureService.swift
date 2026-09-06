@@ -11,7 +11,37 @@ enum AudioCaptureRecoveryPolicy {
     }
 }
 
+enum AudioCaptureHealthPolicy {
+    static let bufferStallThreshold: TimeInterval = 2.5
+
+    static func isBufferStreamStalled(
+        monitoringEnabled: Bool,
+        secondsSinceLastBuffer: TimeInterval?
+    ) -> Bool {
+        guard monitoringEnabled, let secondsSinceLastBuffer else { return false }
+        return secondsSinceLastBuffer >= bufferStallThreshold
+    }
+}
+
 final class AudioCaptureService {
+    private final class CaptureBufferHeartbeat: @unchecked Sendable {
+        private let lock = NSLock()
+        private var lastBufferUptime: TimeInterval?
+
+        func markBufferReceived() {
+            lock.lock()
+            lastBufferUptime = ProcessInfo.processInfo.systemUptime
+            lock.unlock()
+        }
+
+        func secondsSinceLastBuffer() -> TimeInterval? {
+            lock.lock()
+            defer { lock.unlock() }
+            guard let lastBufferUptime else { return nil }
+            return max(0, ProcessInfo.processInfo.systemUptime - lastBufferUptime)
+        }
+    }
+
     private final class SampleBufferReceiver: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
         let onBuffer: (AVAudioPCMBuffer) -> Void
 
@@ -261,6 +291,7 @@ final class AudioCaptureService {
                     excludingUID: excludingUID,
                     onDeviceResolved: { activeDeviceUID = $0 },
                     shouldMonitorAvailability: { didCompleteStart },
+                    shouldMonitorBufferFlow: { didCompleteStart },
                     onBuffer: { buffer in processBuffer(buffer, candidateID) },
                     onUnexpectedStop: { error in
                         guard self.isActiveRecordingAttempt(attemptID, candidateID: candidateID) else { return }
@@ -363,6 +394,7 @@ final class AudioCaptureService {
         excludingUID: String? = nil,
         onDeviceResolved: @escaping (String) -> Void = { _ in },
         shouldMonitorAvailability: @escaping () -> Bool = { true },
+        shouldMonitorBufferFlow: @escaping () -> Bool = { false },
         onBuffer: @escaping (AVAudioPCMBuffer) -> Void,
         onUnexpectedStop: @escaping (Error) -> Void = { _ in }
     ) throws -> String {
@@ -382,7 +414,11 @@ final class AudioCaptureService {
             throw captureError(error.localizedDescription)
         }
         let output = AVCaptureAudioDataOutput()
-        let receiver = SampleBufferReceiver(onBuffer: onBuffer)
+        let bufferHeartbeat = CaptureBufferHeartbeat()
+        let receiver = SampleBufferReceiver { buffer in
+            bufferHeartbeat.markBufferReceived()
+            onBuffer(buffer)
+        }
         output.setSampleBufferDelegate(receiver, queue: captureQueue)
 
         session.beginConfiguration()
@@ -400,7 +436,9 @@ final class AudioCaptureService {
             session: session,
             device: device,
             audioObjectID: resolvedDevice.audioObjectID,
+            bufferHeartbeat: bufferHeartbeat,
             shouldMonitorAvailability: shouldMonitorAvailability,
+            shouldMonitorBufferFlow: shouldMonitorBufferFlow,
             onUnexpectedStop: onUnexpectedStop
         )
         session.startRunning()
@@ -423,7 +461,9 @@ final class AudioCaptureService {
         session: AVCaptureSession,
         device: AVCaptureDevice,
         audioObjectID: AudioDeviceID,
+        bufferHeartbeat: CaptureBufferHeartbeat,
         shouldMonitorAvailability: @escaping () -> Bool,
+        shouldMonitorBufferFlow: @escaping () -> Bool,
         onUnexpectedStop: @escaping (Error) -> Void
     ) {
         removeCaptureObservers()
@@ -459,11 +499,10 @@ final class AudioCaptureService {
             deliver(self.captureError(detail))
         })
 
-        // Turning Bluetooth off on the Mac can remove an iPhone microphone
-        // from CoreAudio without AVCapture posting either notification above.
-        // Require two consecutive unavailable snapshots to ignore a transient
-        // device-list refresh, then route through the same generation-guarded
-        // interruption path.
+        // Turning Bluetooth off on the Mac may leave the iPhone endpoint both
+        // listed and alive while its actual audio stream has stopped. Monitor
+        // both endpoint availability and the arrival of real PCM buffers. This
+        // is deliberately independent of RMS: silence still produces buffers.
         var consecutiveUnavailableChecks = 0
         let availabilityTimer = DispatchSource.makeTimerSource(queue: sessionQueue)
         availabilityTimer.schedule(
@@ -476,8 +515,20 @@ final class AudioCaptureService {
                   let session,
                   self.captureGeneration == generation,
                   self.captureSession === session else { return }
-            guard shouldMonitorAvailability() else {
+            let monitoringEnabled = shouldMonitorAvailability()
+            guard monitoringEnabled else {
                 consecutiveUnavailableChecks = 0
+                return
+            }
+            let secondsSinceLastBuffer = bufferHeartbeat.secondsSinceLastBuffer()
+            if AudioCaptureHealthPolicy.isBufferStreamStalled(
+                monitoringEnabled: shouldMonitorBufferFlow(),
+                secondsSinceLastBuffer: secondsSinceLastBuffer
+            ) {
+                log.error(
+                    "Input buffer stream stalled for \(secondsSinceLastBuffer ?? 0, privacy: .public)s"
+                )
+                deliver(self.captureError("The input device stopped providing audio"))
                 return
             }
             if AudioInputDeviceManager.isDeviceAvailable(
