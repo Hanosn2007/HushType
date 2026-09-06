@@ -29,6 +29,16 @@ final class FloatingOverlayWindowTests: XCTestCase {
         XCTAssertEqual(window.frame.width, listeningFrame.width, accuracy: 1)
         XCTAssertEqual(window.frame.midX, listeningFrame.midX, accuracy: 1)
         XCTAssertFalse(window.ignoresMouseEvents)
+
+        model.state = .connectionDisconnected
+        window.showConnectionFailure(onOpenSettings: {})
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(window.frame.width, listeningFrame.width, accuracy: 1)
+        XCTAssertEqual(window.frame.midX, listeningFrame.midX, accuracy: 1)
+        XCTAssertFalse(window.ignoresMouseEvents)
+
+        window.hideImmediately()
+        XCTAssertEqual(model.state, .hidden)
     }
 
     @MainActor

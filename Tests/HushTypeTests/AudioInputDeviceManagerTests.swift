@@ -1,0 +1,69 @@
+import CoreAudio
+import XCTest
+@testable import HushType
+
+final class AudioInputDeviceManagerTests: XCTestCase {
+    private let remote = AudioInputDevice(
+        id: "remote",
+        name: "iPhone Microphone",
+        audioObjectID: 1,
+        isBuiltIn: false,
+        isAlive: true
+    )
+    private let builtIn = AudioInputDevice(
+        id: "built-in",
+        name: "MacBook Microphone",
+        audioObjectID: 2,
+        isBuiltIn: true,
+        isAlive: true
+    )
+    private let virtual = AudioInputDevice(
+        id: "virtual",
+        name: "Virtual Audio Device",
+        audioObjectID: 3,
+        isBuiltIn: false,
+        isAlive: true
+    )
+
+    func testAutomaticSelectionPrefersSystemDefault() {
+        let result = AudioInputDeviceManager.resolvedDevice(
+            rawValue: AudioInputSelection.automatic,
+            devices: [builtIn, remote],
+            defaultID: remote.audioObjectID
+        )
+        XCTAssertEqual(result, remote)
+    }
+
+    func testAutomaticFallbackExcludesDisconnectedDeviceAndPrefersBuiltIn() {
+        let result = AudioInputDeviceManager.resolvedDevice(
+            rawValue: AudioInputSelection.automatic,
+            devices: [remote, virtual, builtIn],
+            defaultID: remote.audioObjectID,
+            excludingUID: remote.id
+        )
+        XCTAssertEqual(result, builtIn)
+    }
+
+    func testAutomaticFallbackOccursOnlyOnce() {
+        XCTAssertTrue(AudioCaptureRecoveryPolicy.shouldAttemptAutomaticFallback(
+            selection: AudioInputSelection.automatic,
+            alreadyAttempted: false
+        ))
+        XCTAssertFalse(AudioCaptureRecoveryPolicy.shouldAttemptAutomaticFallback(
+            selection: AudioInputSelection.automatic,
+            alreadyAttempted: true
+        ))
+        XCTAssertFalse(AudioCaptureRecoveryPolicy.shouldAttemptAutomaticFallback(
+            selection: AudioInputSelection.followSystem,
+            alreadyAttempted: false
+        ))
+    }
+
+    func testExplicitDeviceDoesNotSilentlyFallBack() {
+        XCTAssertNil(AudioInputDeviceManager.resolvedDevice(
+            rawValue: AudioInputSelection.device("missing"),
+            devices: [builtIn, remote],
+            defaultID: builtIn.audioObjectID
+        ))
+    }
+}

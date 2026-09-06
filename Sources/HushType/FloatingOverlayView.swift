@@ -10,6 +10,7 @@ enum OverlayState: Equatable {
     case hidden
     case connecting
     case connectionFailed
+    case connectionDisconnected
     case recording(level: Float, provider: String?)  // 0.0–1.0 RMS
     case transcribing(provider: String?)
     case polishing
@@ -124,7 +125,7 @@ struct FloatingOverlayView: View {
                 switch model.state {
                 case .connecting:
                     AudioBarsView(level: 0)
-                case .connectionFailed:
+                case .connectionFailed, .connectionDisconnected:
                     Button(action: onOpenInputSettings) {
                         Image(systemName: "arrow.up.right")
                             .font(.system(size: 13, weight: .semibold))
@@ -215,6 +216,8 @@ struct FloatingOverlayView: View {
             return L10n.string("overlay.listening", fallback: "Listening")
         case .connectionFailed:
             return L10n.string("overlay.connection_failed", fallback: "Connection failed")
+        case .connectionDisconnected:
+            return L10n.string("overlay.connection_disconnected", fallback: "Disconnected")
         case .recording:
             return L10n.string("overlay.listening", fallback: "Listening")
         case .transcribing(let provider):
@@ -239,7 +242,7 @@ struct FloatingOverlayView: View {
 
     private var iconName: String {
         switch model.state {
-        case .connectionFailed: return "xmark"
+        case .connectionFailed, .connectionDisconnected: return "xmark"
         case .polishing: return "wand.and.sparkles"
         case .modelNotice: return "memorychip"
         default:         return "mic.fill"
@@ -251,7 +254,7 @@ struct FloatingOverlayView: View {
         // the later state swap. Cloud recording reserves provider-label width
         // up front; local recording/transcription keeps the original 80 pt.
         switch model.state {
-        case .connecting, .connectionFailed:
+        case .connecting, .connectionFailed, .connectionDisconnected:
             return 80
         case .recording(_, let provider), .transcribing(let provider):
             return provider == nil ? 80 : 150
@@ -267,10 +270,11 @@ struct FloatingOverlayView: View {
         case .hidden:        return 0
         case .connecting:    return 1
         case .connectionFailed: return 2
-        case .recording:     return 3
-        case .transcribing:  return 4
-        case .polishing:     return 5
-        case .modelNotice:   return 6
+        case .connectionDisconnected: return 3
+        case .recording:     return 4
+        case .transcribing:  return 5
+        case .polishing:     return 6
+        case .modelNotice:   return 7
         }
     }
 
@@ -299,15 +303,15 @@ private struct ModernLoadingSpinner: View {
                 ForEach(0..<spokeCount, id: \.self) { index in
                     Capsule(style: .continuous)
                         .fill(Color.primary.opacity(0.24 + Double(index) * 0.075))
-                        .frame(width: 3, height: 7)
-                        .offset(y: -5)
+                        .frame(width: 1.8, height: 4.8)
+                        .offset(y: -3.6)
                         .rotationEffect(.degrees(Double(index) * 45))
                 }
             }
-            .frame(width: 16, height: 16)
+            .frame(width: 12, height: 12)
             .rotationEffect(.degrees(progress * 360))
         }
-        .frame(width: 16, height: 16)
+        .frame(width: 12, height: 12)
         .accessibilityHidden(true)
     }
 }

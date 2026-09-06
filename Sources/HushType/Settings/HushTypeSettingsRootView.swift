@@ -248,11 +248,11 @@ private struct SettingsHistoryView: View {
 
     @ViewBuilder
     private func historyRow(_ entry: RecognitionHistoryEntry) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: 8) {
             Text(String(entryNumber(entry)))
-                .font(.caption.monospacedDigit().weight(.semibold))
+                .font(.caption2.monospacedDigit().weight(.semibold))
                 .foregroundStyle(.tertiary)
-                .frame(width: 34, alignment: .trailing)
+                .frame(width: 24, alignment: .center)
             Text(timeTitle(entry.createdAt))
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)

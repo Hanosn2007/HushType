@@ -1166,6 +1166,7 @@
 /* Floating dictation overlay recording label. */
 
 "overlay.connection_failed" = "连接失败";
+"overlay.connection_disconnected" = "连接断开";
 "overlay.open_input_settings" = "打开输入设备设置";
 
 "overlay.listening" = "监听中";

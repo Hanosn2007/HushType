@@ -205,7 +205,6 @@ final class FloatingOverlayWindow: NSPanel {
     /// its own separate overlay window.
     func hideImmediately() {
         _ = beginPresentation()
-        let wasModelNotice = isPresentingModelNotice
         isPresentingModelNotice = false
         onOpenModels = nil
         onOpenInputSettings = nil
@@ -214,9 +213,7 @@ final class FloatingOverlayWindow: NSPanel {
         ignoresMouseEvents = true
         alphaValue = 1
         orderOut(nil)
-        if wasModelNotice {
-            stateModel.state = .hidden
-        }
+        stateModel.state = .hidden
     }
 
     /// Hide with a brief fade-out, then order out. A subsequent `show()` or

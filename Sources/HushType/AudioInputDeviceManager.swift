@@ -34,10 +34,15 @@ enum AudioInputDeviceManager {
         }
     }
 
-    static func captureDevice(rawValue: String) -> AVCaptureDevice? {
+    static func captureDevice(rawValue: String, excludingUID: String? = nil) -> AVCaptureDevice? {
         let devices = availableDevices()
         let defaultID = defaultInputDeviceID()
-        let chosen = resolvedDevice(rawValue: rawValue, devices: devices, defaultID: defaultID)
+        let chosen = resolvedDevice(
+            rawValue: rawValue,
+            devices: devices,
+            defaultID: defaultID,
+            excludingUID: excludingUID
+        )
         guard let chosen else { return nil }
         let discovery = AVCaptureDevice.DiscoverySession(
             deviceTypes: [.microphone, .external],
@@ -53,24 +58,29 @@ enum AudioInputDeviceManager {
 
     static func currentDeviceName(rawValue: String, devices: [AudioInputDevice]? = nil) -> String? {
         let devices = devices ?? availableDevices()
-        return resolvedDevice(rawValue: rawValue, devices: devices, defaultID: defaultInputDeviceID())?.name
+        return resolvedDevice(
+            rawValue: rawValue,
+            devices: devices,
+            defaultID: defaultInputDeviceID()
+        )?.name
     }
 
-    private static func resolvedDevice(
+    static func resolvedDevice(
         rawValue: String,
         devices: [AudioInputDevice],
-        defaultID: AudioDeviceID?
+        defaultID: AudioDeviceID?,
+        excludingUID: String? = nil
     ) -> AudioInputDevice? {
+        let eligible = devices.filter { $0.isAlive && $0.id != excludingUID }
         if rawValue == AudioInputSelection.automatic {
-            return devices.first(where: { $0.audioObjectID == defaultID && $0.isAlive })
-                ?? devices.first(where: { $0.isBuiltIn && $0.isAlive })
-                ?? devices.first(where: { $0.isAlive })
+            return eligible.first(where: { $0.audioObjectID == defaultID })
+                ?? eligible.first(where: { $0.isBuiltIn })
+                ?? eligible.first
         }
         if let uid = AudioInputSelection.deviceUID(from: rawValue) {
-            return devices.first(where: { $0.id == uid && $0.isAlive })
-                ?? devices.first(where: { $0.audioObjectID == defaultID && $0.isAlive })
+            return eligible.first(where: { $0.id == uid })
         }
-        return devices.first(where: { $0.audioObjectID == defaultID })
+        return eligible.first(where: { $0.audioObjectID == defaultID })
     }
 
     private static func allDeviceIDs() -> [AudioDeviceID] {

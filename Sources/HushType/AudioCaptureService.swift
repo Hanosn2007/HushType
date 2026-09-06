@@ -5,6 +5,12 @@ import os
 
 private let log = Logger(subsystem: "com.felix.hushtype", category: "audio")
 
+enum AudioCaptureRecoveryPolicy {
+    static func shouldAttemptAutomaticFallback(selection: String, alreadyAttempted: Bool) -> Bool {
+        selection == AudioInputSelection.automatic && !alreadyAttempted
+    }
+}
+
 final class AudioCaptureService {
     private final class SampleBufferReceiver: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
         let onBuffer: (AVAudioPCMBuffer) -> Void
@@ -100,9 +106,12 @@ final class AudioCaptureService {
     private let samplesLock = NSLock()
     private let activeAttemptLock = NSLock()
     private var activeRecordingAttemptID: UUID?
+    private var activeRecordingCandidateID: UUID?
     private var isRecording = false
     private var recordingAttemptID: UUID?
     private var isContinuousCapturing = false
+    private var captureObserverTokens: [NSObjectProtocol] = []
+    private var captureGeneration: UUID?
 
     /// Called on each audio buffer with the current RMS level (0.0–1.0).
     var onRMSLevel: ((Float) -> Void)?
@@ -120,7 +129,10 @@ final class AudioCaptureService {
     /// delivered only after the selected device produces its first usable PCM
     /// buffer, so a remote/route-changing microphone is not reported as ready
     /// merely because AVCaptureSession says it is running.
-    func startRecording(completion: @escaping (Result<Void, Error>) -> Void) {
+    func startRecording(
+        onUnexpectedStop: @escaping (Error) -> Void,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
         let selection = AppConfig.shared.audioInputSelection
         sessionQueue.async { [weak self] in
             guard let self else { return }
@@ -140,60 +152,135 @@ final class AudioCaptureService {
 
             let attemptID = UUID()
             var didCompleteStart = false
-            let completeStart: (Result<Void, Error>) -> Void = { result in
-                self.sessionQueue.async {
-                    guard self.isRecording,
-                          self.recordingAttemptID == attemptID,
-                          !didCompleteStart else { return }
+            var didAttemptAutomaticFallback = false
+            var startTimeout: DispatchWorkItem?
+            var activeDeviceUID: String?
+
+            func finishWithError(_ error: Error) {
+                guard self.isRecording,
+                      self.recordingAttemptID == attemptID else { return }
+                startTimeout?.cancel()
+                self.setActiveRecordingAttempt(nil, candidateID: nil)
+                self.stopCapture()
+                self.isRecording = false
+                self.recordingAttemptID = nil
+                if didCompleteStart {
+                    onUnexpectedStop(error)
+                } else {
                     didCompleteStart = true
-                    completion(result)
+                    completion(.failure(error))
                 }
             }
 
-            do {
-                self.recordingAttemptID = attemptID
-                self.setActiveRecordingAttempt(attemptID)
-                try self.startCapture(selection: selection) { [weak self] buffer in
-                    guard let self else { return }
-                    guard self.isActiveRecordingAttempt(attemptID) else { return }
-                    guard let pcmBuffer = converter.convert(buffer) else { return }
-                    guard let channelData = pcmBuffer.floatChannelData?[0] else { return }
-                    let frameCount = Int(pcmBuffer.frameLength)
-                    guard frameCount > 0 else { return }
+            var startCandidate: ((String?) throws -> Void)!
+            var attemptFallbackOrFail: ((Error) -> Void)!
+            var processBuffer: ((AVAudioPCMBuffer, UUID) -> Void)!
 
-                    var rms: Float = 0
-                    for i in 0..<frameCount {
-                        rms += channelData[i] * channelData[i]
-                    }
-                    rms = sqrt(rms / max(Float(frameCount), 1))
-
-                    let newSamples = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
-                    guard self.isActiveRecordingAttempt(attemptID) else { return }
-                    self.samplesLock.lock()
-                    self.samples.append(contentsOf: newSamples)
-                    self.samplesLock.unlock()
-                    self.onRMSLevel?(rms)
-                    completeStart(.success(()))
-                }
-                self.isRecording = true
-                log.info("Capture session running; waiting for first audio buffer")
-
-                self.sessionQueue.asyncAfter(deadline: .now() + 15) {
+            func scheduleStartTimeout(candidateID: UUID, seconds: TimeInterval, detail: String) {
+                startTimeout?.cancel()
+                let timeout = DispatchWorkItem {
                     guard self.isRecording,
                           self.recordingAttemptID == attemptID,
-                          !didCompleteStart else { return }
-                    didCompleteStart = true
-                    self.setActiveRecordingAttempt(nil)
-                    self.stopCapture()
-                    self.isRecording = false
-                    self.recordingAttemptID = nil
-                    completion(.failure(self.captureError("The selected input device did not provide audio")))
+                          !didCompleteStart,
+                          self.isActiveRecordingAttempt(attemptID, candidateID: candidateID) else { return }
+                    attemptFallbackOrFail(self.captureError(detail))
                 }
+                startTimeout = timeout
+                self.sessionQueue.asyncAfter(deadline: .now() + seconds, execute: timeout)
+            }
+
+            attemptFallbackOrFail = { error in
+                guard self.isRecording,
+                      self.recordingAttemptID == attemptID else { return }
+
+                if didCompleteStart {
+                    finishWithError(error)
+                    return
+                }
+
+                guard AudioCaptureRecoveryPolicy.shouldAttemptAutomaticFallback(
+                    selection: selection,
+                    alreadyAttempted: didAttemptAutomaticFallback
+                ) else {
+                    finishWithError(error)
+                    return
+                }
+
+                didAttemptAutomaticFallback = true
+                let unavailableUID = activeDeviceUID
+                self.stopCapture()
+                do {
+                    try startCandidate(unavailableUID)
+                    log.info("Automatic input fallback started; waiting for first audio buffer")
+                } catch {
+                    finishWithError(error)
+                }
+            }
+
+            processBuffer = { [weak self] buffer, candidateID in
+                guard let self else { return }
+                guard self.isActiveRecordingAttempt(attemptID, candidateID: candidateID) else { return }
+                guard let pcmBuffer = converter.convert(buffer) else { return }
+                guard let channelData = pcmBuffer.floatChannelData?[0] else { return }
+                let frameCount = Int(pcmBuffer.frameLength)
+                guard frameCount > 0 else { return }
+
+                var rms: Float = 0
+                for i in 0..<frameCount {
+                    rms += channelData[i] * channelData[i]
+                }
+                rms = sqrt(rms / max(Float(frameCount), 1))
+
+                let newSamples = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
+                guard self.isActiveRecordingAttempt(attemptID, candidateID: candidateID) else { return }
+                self.samplesLock.lock()
+                self.samples.append(contentsOf: newSamples)
+                self.samplesLock.unlock()
+                self.onRMSLevel?(rms)
+
+                self.sessionQueue.async {
+                    guard self.isRecording,
+                          self.recordingAttemptID == attemptID,
+                          self.isActiveRecordingAttempt(attemptID, candidateID: candidateID) else { return }
+                    if !didCompleteStart {
+                        startTimeout?.cancel()
+                        startTimeout = nil
+                        didCompleteStart = true
+                        completion(.success(()))
+                    }
+                }
+            }
+
+            startCandidate = { excludingUID in
+                let candidateID = UUID()
+                self.setActiveRecordingAttempt(attemptID, candidateID: candidateID)
+                activeDeviceUID = nil
+                activeDeviceUID = try self.startCapture(
+                    selection: selection,
+                    excludingUID: excludingUID,
+                    onDeviceResolved: { activeDeviceUID = $0 },
+                    onBuffer: { buffer in processBuffer(buffer, candidateID) },
+                    onUnexpectedStop: { error in
+                        guard self.isActiveRecordingAttempt(attemptID, candidateID: candidateID) else { return }
+                        attemptFallbackOrFail(error)
+                    }
+                )
+                scheduleStartTimeout(
+                    candidateID: candidateID,
+                    seconds: didAttemptAutomaticFallback ? 5 : 15,
+                    detail: didAttemptAutomaticFallback
+                        ? "The fallback input device did not provide audio"
+                        : "The selected input device did not provide audio"
+                )
+            }
+
+            self.recordingAttemptID = attemptID
+            self.isRecording = true
+            do {
+                try startCandidate(nil)
+                log.info("Capture session running; waiting for first audio buffer")
             } catch {
-                self.setActiveRecordingAttempt(nil)
-                self.recordingAttemptID = nil
-                self.isRecording = false
-                completion(.failure(error))
+                attemptFallbackOrFail(error)
             }
         }
     }
@@ -203,7 +290,7 @@ final class AudioCaptureService {
     func stopRecording(completion: @escaping ([Float]) -> Void) {
         sessionQueue.async { [weak self] in
             guard let self else { return }
-            self.setActiveRecordingAttempt(nil)
+            self.setActiveRecordingAttempt(nil, candidateID: nil)
             if self.isRecording {
                 self.stopCapture()
             }
@@ -242,7 +329,7 @@ final class AudioCaptureService {
         }
 
         guard let converter = Converter() else { throw targetFormatError() }
-        try startCapture(selection: AppConfig.shared.audioInputSelection) { [weak self] buffer in
+        _ = try startCapture(selection: AppConfig.shared.audioInputSelection) { [weak self] buffer in
             guard let self else { return }
             guard let pcmBuffer = converter.convert(buffer) else { return }
 
@@ -252,6 +339,11 @@ final class AudioCaptureService {
 
             let newSamples = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
             self.onSamples?(newSamples)
+        } onUnexpectedStop: { [weak self] error in
+            guard let self, self.isContinuousCapturing else { return }
+            self.stopCapture()
+            self.isContinuousCapturing = false
+            self.onError?(error)
         }
         isContinuousCapturing = true
         log.info("Continuous capture started with selected capture device")
@@ -266,11 +358,18 @@ final class AudioCaptureService {
 
     private func startCapture(
         selection: String,
-        onBuffer: @escaping (AVAudioPCMBuffer) -> Void
-    ) throws {
-        guard let device = AudioInputDeviceManager.captureDevice(rawValue: selection) else {
+        excludingUID: String? = nil,
+        onDeviceResolved: @escaping (String) -> Void = { _ in },
+        onBuffer: @escaping (AVAudioPCMBuffer) -> Void,
+        onUnexpectedStop: @escaping (Error) -> Void = { _ in }
+    ) throws -> String {
+        guard let device = AudioInputDeviceManager.captureDevice(
+            rawValue: selection,
+            excludingUID: excludingUID
+        ) else {
             throw captureError("The selected input device is unavailable")
         }
+        onDeviceResolved(device.uniqueID)
         let session = AVCaptureSession()
         let input: AVCaptureDeviceInput
         do {
@@ -293,30 +392,82 @@ final class AudioCaptureService {
 
         captureSession = session
         sampleBufferReceiver = receiver
+        observeUnexpectedStop(
+            session: session,
+            device: device,
+            onUnexpectedStop: onUnexpectedStop
+        )
         session.startRunning()
         guard session.isRunning else {
             stopCapture()
             throw captureError("The selected input device did not start")
         }
         log.info("Capture session started: \(device.localizedName, privacy: .public)")
+        return device.uniqueID
     }
 
     private func stopCapture() {
+        removeCaptureObservers()
         captureSession?.stopRunning()
         captureSession = nil
         sampleBufferReceiver = nil
     }
 
-    private func setActiveRecordingAttempt(_ id: UUID?) {
+    private func observeUnexpectedStop(
+        session: AVCaptureSession,
+        device: AVCaptureDevice,
+        onUnexpectedStop: @escaping (Error) -> Void
+    ) {
+        removeCaptureObservers()
+        let generation = UUID()
+        captureGeneration = generation
+        let center = NotificationCenter.default
+
+        func deliver(_ error: Error) {
+            sessionQueue.async { [weak self] in
+                guard let self,
+                      self.captureGeneration == generation,
+                      self.captureSession === session else { return }
+                onUnexpectedStop(error)
+            }
+        }
+
+        captureObserverTokens.append(center.addObserver(
+            forName: AVCaptureDevice.wasDisconnectedNotification,
+            object: device,
+            queue: nil
+        ) { _ in
+            deliver(self.captureError("The input device was disconnected"))
+        })
+        captureObserverTokens.append(center.addObserver(
+            forName: AVCaptureSession.runtimeErrorNotification,
+            object: session,
+            queue: nil
+        ) { notification in
+            let detail = (notification.userInfo?[AVCaptureSessionErrorKey] as? Error)?.localizedDescription
+                ?? "The capture session stopped unexpectedly"
+            deliver(self.captureError(detail))
+        })
+    }
+
+    private func removeCaptureObservers() {
+        captureGeneration = nil
+        let center = NotificationCenter.default
+        captureObserverTokens.forEach(center.removeObserver)
+        captureObserverTokens.removeAll(keepingCapacity: true)
+    }
+
+    private func setActiveRecordingAttempt(_ id: UUID?, candidateID: UUID?) {
         activeAttemptLock.lock()
         activeRecordingAttemptID = id
+        activeRecordingCandidateID = candidateID
         activeAttemptLock.unlock()
     }
 
-    private func isActiveRecordingAttempt(_ id: UUID) -> Bool {
+    private func isActiveRecordingAttempt(_ id: UUID, candidateID: UUID) -> Bool {
         activeAttemptLock.lock()
         defer { activeAttemptLock.unlock() }
-        return activeRecordingAttemptID == id
+        return activeRecordingAttemptID == id && activeRecordingCandidateID == candidateID
     }
 
     private func targetFormatError() -> NSError {

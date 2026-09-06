@@ -621,6 +621,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func showOverlayConnectionDisconnected() {
+        guard AppConfig.shared.floatingOverlayEnabled else { return }
+        overlayState.state = .connectionDisconnected
+        overlayWindow.showConnectionFailure {
+            HushTypeSettingsWindowController.shared.present(section: .general)
+        }
+    }
+
     private func switchOverlayToTranscribing() {
         guard AppConfig.shared.floatingOverlayEnabled else { return }
         // Window stays visible; only the inner state changes.
@@ -766,7 +774,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showOverlayConnecting()
         print("[HushType] Connecting microphone...")
 
-        audioCapture.startRecording { [weak self] result in
+        audioCapture.startRecording(onUnexpectedStop: { [weak self] error in
+            DispatchQueue.main.async {
+                self?.handleRecordingInputDisconnected(error, attemptID: attemptID)
+            }
+        }) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self,
                       self.recordingAttemptID == attemptID,
@@ -786,6 +798,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    private func handleRecordingInputDisconnected(_ error: Error, attemptID: UUID) {
+        guard recordingAttemptID == attemptID, state == .recording else {
+            log.info("Ignoring capture interruption outside active recording")
+            return
+        }
+        recordingAttemptID = UUID()
+        recordingTrigger = nil
+        tapArbiter.reset()
+        state = .idle
+        statusBar.setState(.error(error.localizedDescription))
+        audioCapture.stopRecording { _ in }
+        showOverlayConnectionDisconnected()
+        log.error("Recording input disconnected: \(error.localizedDescription, privacy: .public)")
     }
 
     private func handleHotkeyRelease() {
