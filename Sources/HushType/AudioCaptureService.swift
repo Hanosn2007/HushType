@@ -112,6 +112,7 @@ final class AudioCaptureService {
     private var isContinuousCapturing = false
     private var captureObserverTokens: [NSObjectProtocol] = []
     private var captureGeneration: UUID?
+    private var captureAvailabilityTimer: DispatchSourceTimer?
 
     /// Called on each audio buffer with the current RMS level (0.0–1.0).
     var onRMSLevel: ((Float) -> Void)?
@@ -259,6 +260,7 @@ final class AudioCaptureService {
                     selection: selection,
                     excludingUID: excludingUID,
                     onDeviceResolved: { activeDeviceUID = $0 },
+                    shouldMonitorAvailability: { didCompleteStart },
                     onBuffer: { buffer in processBuffer(buffer, candidateID) },
                     onUnexpectedStop: { error in
                         guard self.isActiveRecordingAttempt(attemptID, candidateID: candidateID) else { return }
@@ -360,15 +362,17 @@ final class AudioCaptureService {
         selection: String,
         excludingUID: String? = nil,
         onDeviceResolved: @escaping (String) -> Void = { _ in },
+        shouldMonitorAvailability: @escaping () -> Bool = { true },
         onBuffer: @escaping (AVAudioPCMBuffer) -> Void,
         onUnexpectedStop: @escaping (Error) -> Void = { _ in }
     ) throws -> String {
-        guard let device = AudioInputDeviceManager.captureDevice(
+        guard let resolvedDevice = AudioInputDeviceManager.captureDevice(
             rawValue: selection,
             excludingUID: excludingUID
         ) else {
             throw captureError("The selected input device is unavailable")
         }
+        let device = resolvedDevice.captureDevice
         onDeviceResolved(device.uniqueID)
         let session = AVCaptureSession()
         let input: AVCaptureDeviceInput
@@ -395,6 +399,8 @@ final class AudioCaptureService {
         observeUnexpectedStop(
             session: session,
             device: device,
+            audioObjectID: resolvedDevice.audioObjectID,
+            shouldMonitorAvailability: shouldMonitorAvailability,
             onUnexpectedStop: onUnexpectedStop
         )
         session.startRunning()
@@ -416,6 +422,8 @@ final class AudioCaptureService {
     private func observeUnexpectedStop(
         session: AVCaptureSession,
         device: AVCaptureDevice,
+        audioObjectID: AudioDeviceID,
+        shouldMonitorAvailability: @escaping () -> Bool,
         onUnexpectedStop: @escaping (Error) -> Void
     ) {
         removeCaptureObservers()
@@ -434,9 +442,11 @@ final class AudioCaptureService {
 
         captureObserverTokens.append(center.addObserver(
             forName: AVCaptureDevice.wasDisconnectedNotification,
-            object: device,
+            object: nil,
             queue: nil
-        ) { _ in
+        ) { notification in
+            guard let disconnectedDevice = notification.object as? AVCaptureDevice,
+                  disconnectedDevice.uniqueID == device.uniqueID else { return }
             deliver(self.captureError("The input device was disconnected"))
         })
         captureObserverTokens.append(center.addObserver(
@@ -448,10 +458,48 @@ final class AudioCaptureService {
                 ?? "The capture session stopped unexpectedly"
             deliver(self.captureError(detail))
         })
+
+        // Turning Bluetooth off on the Mac can remove an iPhone microphone
+        // from CoreAudio without AVCapture posting either notification above.
+        // Require two consecutive unavailable snapshots to ignore a transient
+        // device-list refresh, then route through the same generation-guarded
+        // interruption path.
+        var consecutiveUnavailableChecks = 0
+        let availabilityTimer = DispatchSource.makeTimerSource(queue: sessionQueue)
+        availabilityTimer.schedule(
+            deadline: .now() + .milliseconds(400),
+            repeating: .milliseconds(400),
+            leeway: .milliseconds(100)
+        )
+        availabilityTimer.setEventHandler { [weak self, weak session] in
+            guard let self,
+                  let session,
+                  self.captureGeneration == generation,
+                  self.captureSession === session else { return }
+            guard shouldMonitorAvailability() else {
+                consecutiveUnavailableChecks = 0
+                return
+            }
+            if AudioInputDeviceManager.isDeviceAvailable(
+                audioObjectID: audioObjectID,
+                expectedUID: device.uniqueID
+            ) {
+                consecutiveUnavailableChecks = 0
+                return
+            }
+            consecutiveUnavailableChecks += 1
+            guard consecutiveUnavailableChecks >= 2 else { return }
+            deliver(self.captureError("The input device is no longer available"))
+        }
+        captureAvailabilityTimer = availabilityTimer
+        availabilityTimer.resume()
     }
 
     private func removeCaptureObservers() {
         captureGeneration = nil
+        captureAvailabilityTimer?.setEventHandler {}
+        captureAvailabilityTimer?.cancel()
+        captureAvailabilityTimer = nil
         let center = NotificationCenter.default
         captureObserverTokens.forEach(center.removeObserver)
         captureObserverTokens.removeAll(keepingCapacity: true)

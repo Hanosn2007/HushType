@@ -14,6 +14,11 @@ struct AudioInputDevice: Identifiable, Equatable, Sendable {
     let isAlive: Bool
 }
 
+struct ResolvedAudioCaptureDevice {
+    let captureDevice: AVCaptureDevice
+    let audioObjectID: AudioDeviceID
+}
+
 enum AudioInputSelection {
     static let followSystem = "system"
     static let automatic = "automatic"
@@ -34,7 +39,7 @@ enum AudioInputDeviceManager {
         }
     }
 
-    static func captureDevice(rawValue: String, excludingUID: String? = nil) -> AVCaptureDevice? {
+    static func captureDevice(rawValue: String, excludingUID: String? = nil) -> ResolvedAudioCaptureDevice? {
         let devices = availableDevices()
         let defaultID = defaultInputDeviceID()
         let chosen = resolvedDevice(
@@ -52,8 +57,12 @@ enum AudioInputDeviceManager {
         let captureDevice = discovery.devices.first(where: { $0.uniqueID == chosen.id })
         if let captureDevice {
             audioDeviceLog.info("Resolved capture device: \(captureDevice.localizedName, privacy: .public)")
+            return ResolvedAudioCaptureDevice(
+                captureDevice: captureDevice,
+                audioObjectID: chosen.audioObjectID
+            )
         }
-        return captureDevice
+        return nil
     }
 
     static func currentDeviceName(rawValue: String, devices: [AudioInputDevice]? = nil) -> String? {
@@ -81,6 +90,26 @@ enum AudioInputDeviceManager {
             return eligible.first(where: { $0.id == uid })
         }
         return eligible.first(where: { $0.audioObjectID == defaultID })
+    }
+
+    static func isDeviceAvailable(audioObjectID: AudioDeviceID, expectedUID: String) -> Bool {
+        availabilitySnapshotIsUsable(
+            audioObjectID: audioObjectID,
+            expectedUID: expectedUID,
+            listedDeviceIDs: allDeviceIDs(),
+            observedUID: stringProperty(audioObjectID, selector: kAudioDevicePropertyDeviceUID),
+            isAlive: uint32Property(audioObjectID, selector: kAudioDevicePropertyDeviceIsAlive) != 0
+        )
+    }
+
+    static func availabilitySnapshotIsUsable(
+        audioObjectID: AudioDeviceID,
+        expectedUID: String,
+        listedDeviceIDs: [AudioDeviceID],
+        observedUID: String?,
+        isAlive: Bool
+    ) -> Bool {
+        listedDeviceIDs.contains(audioObjectID) && observedUID == expectedUID && isAlive
     }
 
     private static func allDeviceIDs() -> [AudioDeviceID] {

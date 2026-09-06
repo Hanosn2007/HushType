@@ -288,7 +288,7 @@ struct FloatingOverlayView: View {
 
 // MARK: - Loading spinner
 
-/// Compact modern activity indicator made from thick, round-ended strokes.
+/// Compact modern activity indicator made from fine, round-ended strokes.
 /// It lives in the layout gap rather than being offset by a guessed x value.
 private struct ModernLoadingSpinner: View {
     private let spokeCount = 8
@@ -303,15 +303,15 @@ private struct ModernLoadingSpinner: View {
                 ForEach(0..<spokeCount, id: \.self) { index in
                     Capsule(style: .continuous)
                         .fill(Color.primary.opacity(0.24 + Double(index) * 0.075))
-                        .frame(width: 1.8, height: 4.8)
-                        .offset(y: -3.6)
+                        .frame(width: 1.2, height: 3.6)
+                        .offset(y: -4.8)
                         .rotationEffect(.degrees(Double(index) * 45))
                 }
             }
-            .frame(width: 12, height: 12)
+            .frame(width: 14, height: 14)
             .rotationEffect(.degrees(progress * 360))
         }
-        .frame(width: 12, height: 12)
+        .frame(width: 14, height: 14)
         .accessibilityHidden(true)
     }
 }

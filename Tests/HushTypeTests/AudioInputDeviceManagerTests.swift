@@ -66,4 +66,28 @@ final class AudioInputDeviceManagerTests: XCTestCase {
             defaultID: builtIn.audioObjectID
         ))
     }
+
+    func testAvailabilityRequiresSameListedAndAliveDevice() {
+        XCTAssertTrue(AudioInputDeviceManager.availabilitySnapshotIsUsable(
+            audioObjectID: remote.audioObjectID,
+            expectedUID: remote.id,
+            listedDeviceIDs: [remote.audioObjectID, builtIn.audioObjectID],
+            observedUID: remote.id,
+            isAlive: true
+        ))
+        XCTAssertFalse(AudioInputDeviceManager.availabilitySnapshotIsUsable(
+            audioObjectID: remote.audioObjectID,
+            expectedUID: remote.id,
+            listedDeviceIDs: [builtIn.audioObjectID],
+            observedUID: remote.id,
+            isAlive: true
+        ))
+        XCTAssertFalse(AudioInputDeviceManager.availabilitySnapshotIsUsable(
+            audioObjectID: remote.audioObjectID,
+            expectedUID: remote.id,
+            listedDeviceIDs: [remote.audioObjectID],
+            observedUID: remote.id,
+            isAlive: false
+        ))
+    }
 }
