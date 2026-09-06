@@ -3,14 +3,14 @@
     <channel>
         <title>HushType</title>
         <item>
-            <title>0.5.16</title>
-            <pubDate>Sun, 06 Sep 2026 13:33:48 +0800</pubDate>
+            <title>0.5.17</title>
+            <pubDate>Sun, 06 Sep 2026 14:55:47 +0800</pubDate>
             <link>https://github.com/Hanosn2007/HushType/releases</link>
-            <sparkle:version>34</sparkle:version>
-            <sparkle:shortVersionString>0.5.16</sparkle:shortVersionString>
+            <sparkle:version>36</sparkle:version>
+            <sparkle:shortVersionString>0.5.17</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/Hanosn2007/HushType/releases/download/v0.5.16/HushType-0.5.16.zip" length="43197923" type="application/octet-stream" sparkle:edSignature="DgH0ZeVmGv6HtXpjxECxEF/hc83PFhDchsob4S0r5oVKONOObboZzpK8GPRtu1Uqh+cvQwc/VSnRaoCofAzJAw=="/>
+            <enclosure url="https://github.com/Hanosn2007/HushType/releases/download/v0.5.17/HushType-0.5.17.zip" length="43198542" type="application/octet-stream" sparkle:edSignature="t3ay8iWsgq+NvEHWNWgJJ0BCTK2ZuiUDrD25AlzLum2kGyVbEBxhbg3Sx0fZpJ7Uoc4x8ufHpMvgv5FtvOXCDA=="/>
         </item>
     </channel>
 </rss>
