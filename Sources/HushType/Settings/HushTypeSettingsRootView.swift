@@ -5,6 +5,7 @@ import SwiftUI
 
 struct HushTypeSettingsRootView: View {
     @ObservedObject var model: HushTypeSettingsModel
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     private var sections: [HushTypeSettingsSection] {
         model.visibleSections
@@ -23,14 +24,28 @@ struct HushTypeSettingsRootView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebar
         } detail: {
             detail
                 .id(model.selection)
         }
+        .navigationSplitViewStyle(.prominentDetail)
         .navigationTitle(model.selection.title)
+        // Keep one toolbar-owned button alive in both layouts. The default
+        // toggle's lifetime can otherwise follow the collapsing sidebar.
+        .toolbar(removing: .sidebarToggle)
         .toolbar {
+            ToolbarItem(id: "hushtype.sidebar-toggle", placement: .navigation) {
+                Button {
+                    withAnimation(.snappy(duration: 0.25)) {
+                        columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+                    }
+                } label: {
+                    Label(L10n.string("settings.sidebar.toggle", fallback: "Toggle Sidebar"), systemImage: "sidebar.left")
+                }
+                .help(L10n.string("settings.sidebar.toggle", fallback: "Toggle Sidebar"))
+            }
             ToolbarItem(placement: .navigation) {
                 ControlGroup {
                     Button(action: navigateBack) {
@@ -126,6 +141,8 @@ private struct SettingsHistoryView: View {
     @State private var filter: RecognitionHistoryFilter = .all
     @State private var entryPendingDeletion: RecognitionHistoryEntry?
     @State private var isConfirmingClear = false
+    @State private var displayedGroups: [RecognitionHistoryDayGroup] = []
+    @State private var entryNumbers: [UUID: Int] = [:]
 
     init(model: HushTypeSettingsModel) {
         self.model = model
@@ -186,7 +203,7 @@ private struct SettingsHistoryView: View {
                 ))
             }
 
-            if groups.isEmpty {
+            if displayedGroups.isEmpty {
                 SettingsSection {
                     ContentUnavailableView {
                         Label(
@@ -203,7 +220,7 @@ private struct SettingsHistoryView: View {
                     .frame(maxWidth: .infinity, minHeight: 180)
                 }
             } else {
-                ForEach(groups) { group in
+                ForEach(displayedGroups) { group in
                     Section {
                         ForEach(group.entries) { entry in
                             historyRow(entry)
@@ -214,6 +231,18 @@ private struct SettingsHistoryView: View {
                 }
             }
 
+        }
+        .onReceive(store.$entries) { entries in rebuildHistoryPresentation(entries) }
+        .onChange(of: searchText) { _, _ in rebuildHistoryPresentation(store.entries) }
+        .onChange(of: filter) { _, _ in rebuildHistoryPresentation(store.entries) }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
+            rebuildHistoryPresentation(store.entries)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in
+            rebuildHistoryPresentation(store.entries)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            rebuildHistoryPresentation(store.entries)
         }
         .searchable(text: $searchText, prompt: L10n.string("settings.history.search", fallback: "Search recognition text"))
         .alert(
@@ -286,11 +315,15 @@ private struct SettingsHistoryView: View {
     /// Keep an entry's number stable while filtering: the newest item shows
     /// the current total, then numbers descend through the complete history.
     private func entryNumber(_ entry: RecognitionHistoryEntry) -> Int {
-        guard let index = store.entries.firstIndex(where: { $0.id == entry.id }) else { return 0 }
-        return store.entries.count - index
+        entryNumbers[entry.id, default: 0]
     }
 
-    private var groups: [RecognitionHistoryDayGroup] {
+    // Search, grouping and numbering depend on data, not on the animated
+    // detail width. Rebuild only when the data/filter/day actually changes.
+    private func rebuildHistoryPresentation(_ entries: [RecognitionHistoryEntry]) {
+        entryNumbers = Dictionary(uniqueKeysWithValues: entries.enumerated().map {
+            ($0.element.id, entries.count - $0.offset)
+        })
         let calendar = Calendar.current
         let startOfToday = calendar.startOfDay(for: Date())
         let cutoff: Date? = switch filter {
@@ -300,13 +333,13 @@ private struct SettingsHistoryView: View {
         case .thirtyDays: calendar.date(byAdding: .day, value: -29, to: startOfToday)
         }
 
-        let filtered = store.entries.filter { entry in
+        let filtered = entries.filter { entry in
             let isRecentEnough = cutoff.map { entry.createdAt >= $0 } ?? true
             let matchesSearch = searchText.isEmpty || entry.text.localizedStandardContains(searchText)
             return isRecentEnough && matchesSearch
         }
         let grouped = Dictionary(grouping: filtered) { calendar.startOfDay(for: $0.createdAt) }
-        return grouped.keys.sorted(by: >).map { day in
+        displayedGroups = grouped.keys.sorted(by: >).map { day in
             RecognitionHistoryDayGroup(
                 day: day,
                 entries: grouped[day, default: []].sorted { $0.createdAt > $1.createdAt }
@@ -334,8 +367,6 @@ private struct SettingsHistoryView: View {
 }
 
 private struct SettingsPage<Content: View>: View {
-    @State private var formWidth: CGFloat = 0
-
     let subtitle: String
     @ViewBuilder var content: Content
 
@@ -350,33 +381,26 @@ private struct SettingsPage<Content: View>: View {
     }
 
     private var settingsForm: some View {
-        Form {
-            Section {
-                Text(subtitle)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+        GeometryReader { geometry in
+            Form {
+                Section {
+                    Text(subtitle)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .listRowBackground(Color.clear)
+
+                content
             }
-            .listRowBackground(Color.clear)
-
-            content
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Derive margins directly; avoid feeding each animated width
+            // back through @State and triggering another Form update.
+            .contentMargins(.horizontal, max(0, (geometry.size.width - 736) / 2), for: .scrollContent)
+            .focusSection()
+            .accessibilityElement(children: .contain)
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.width
-        } action: { _, newWidth in
-            formWidth = newWidth
-        }
-        .contentMargins(.horizontal, readingGutter, for: .scrollContent)
-        .focusSection()
-        .accessibilityElement(children: .contain)
-    }
-
-    private var readingGutter: CGFloat {
-        let available = formWidth - 56
-        let overflow = available - 680
-        return max(0, overflow / 2)
     }
 }
 

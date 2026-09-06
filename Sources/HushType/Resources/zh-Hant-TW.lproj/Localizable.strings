@@ -803,6 +803,7 @@
 
 "permission.microphone.title" = "麥克風";
 "permission.bluetooth.title" = "藍牙";
+"settings.sidebar.toggle" = "展開或收起側邊欄";
 "permission.bluetooth.subtitle" = "提前授權，以便及時提示 iPhone 和藍牙麥克風中斷連線。內建或有線麥克風無需此權限。";
 "permission.bluetooth.allow" = "允許藍牙";
 "permission.bluetooth.open_settings" = "打開藍牙隱私設定";
