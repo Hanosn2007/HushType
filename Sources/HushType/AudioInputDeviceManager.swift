@@ -1,8 +1,9 @@
 import AVFoundation
 import AudioToolbox
 import CoreAudio
-import Darwin
+import CoreBluetooth
 import Foundation
+import IOBluetooth
 import os
 
 private let audioDeviceLog = Logger(subsystem: "com.felix.hushtype", category: "audio-device")
@@ -127,29 +128,22 @@ enum AudioInputDeviceManager {
             || transportType == kAudioDeviceTransportTypeContinuityCaptureWireless
     }
 
-    /// Reads only the controller preference state. `IOBluetoothHostController`
-    /// initializes CoreBluetooth and makes macOS require Bluetooth privacy
-    /// authorization even for this one bit, so do not use it here. blueutil and
-    /// similar macOS utilities use this compatibility symbol instead. It is not
-    /// a documented API; absence therefore means unknown and falls back to the
-    /// existing CoreAudio/AVFoundation health checks.
+    /// A missing host controller is treated as unknown instead of off so a
+    /// wired-only Mac or a future platform change cannot falsely interrupt
+    /// capture. The app declares why it reads this public Bluetooth state;
+    /// macOS owns the one-time authorization prompt.
     static func bluetoothControllerIsPoweredOn() -> Bool? {
-        guard let getPowerState = bluetoothControllerPowerStateFunction else { return nil }
-        return getPowerState() != 0
-    }
-
-    private typealias BluetoothControllerPowerStateFunction = @convention(c) () -> Int32
-
-    private static let bluetoothControllerPowerStateFunction: BluetoothControllerPowerStateFunction? = {
-        let path = "/System/Library/Frameworks/IOBluetooth.framework/IOBluetooth"
-        guard let framework = dlopen(path, RTLD_LAZY),
-              let symbol = dlsym(framework, "IOBluetoothPreferenceGetControllerPowerState") else {
+        switch CBManager.authorization {
+        case .denied, .restricted:
+            return nil
+        case .allowedAlways, .notDetermined:
+            break
+        @unknown default:
             return nil
         }
-        // Keep the framework handle open for the lifetime of the process so the
-        // cached function pointer remains valid.
-        return unsafeBitCast(symbol, to: BluetoothControllerPowerStateFunction.self)
-    }()
+        guard let controller = IOBluetoothHostController.default() else { return nil }
+        return controller.powerState == kBluetoothHCIPowerStateON
+    }
 
     private static func allDeviceIDs() -> [AudioDeviceID] {
         var address = AudioObjectPropertyAddress(

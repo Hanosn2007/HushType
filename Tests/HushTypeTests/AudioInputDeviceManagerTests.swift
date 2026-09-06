@@ -150,7 +150,7 @@ final class AudioInputDeviceManagerTests: XCTestCase {
         ))
     }
 
-    func testBluetoothPowerProbeDoesNotRequireCreatingABluetoothController() {
+    func testBluetoothPowerProbeUsesDeclaredControllerAccessWithoutCrashing() {
         _ = AudioInputDeviceManager.bluetoothControllerIsPoweredOn()
     }
 }

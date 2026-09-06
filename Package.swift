@@ -39,6 +39,8 @@ let package = Package(
             ],
             linkerSettings: [
                 .linkedFramework("Carbon"),
+                .linkedFramework("CoreBluetooth"),
+                .linkedFramework("IOBluetooth"),
             ]
         ),
         .testTarget(

@@ -4,6 +4,10 @@
 
 "NSMicrophoneUsageDescription" = "HushType needs microphone access to transcribe your voice input.";
 
+/* macOS-owned Bluetooth permission prompt; used only to detect a selected wireless microphone disconnecting. */
+
+"NSBluetoothAlwaysUsageDescription" = "HushType checks Bluetooth availability to detect when a selected wireless microphone disconnects.";
+
 /* macOS-owned TCC purpose string. High-risk privacy claim; Apple permission label needs macOS 15/26 visual verification. */
 
 "NSScreenCaptureUsageDescription" = "HushType uses Screen & System Audio Recording to caption audio from apps like Zoom, Chrome, and Safari when you wear headphones. Only audio is processed — screen contents are never read.";

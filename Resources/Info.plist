@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.5.18-preview.6</string>
+	<string>0.5.18-preview.7</string>
 	<key>CFBundleVersion</key>
-	<string>42</string>
+	<string>43</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>15.0</string>
 	<key>LSUIElement</key>
@@ -28,6 +28,8 @@
 	<string>MIT License © 2026 Felix Fu</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>HushType needs microphone access to transcribe your voice input.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>HushType checks Bluetooth availability to detect when a selected wireless microphone disconnects.</string>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>HushType uses Screen &amp; System Audio Recording to caption audio from apps like Zoom, Chrome, and Safari when you wear headphones. Only audio is processed — screen contents are never read.</string>
 	<key>NSServices</key>

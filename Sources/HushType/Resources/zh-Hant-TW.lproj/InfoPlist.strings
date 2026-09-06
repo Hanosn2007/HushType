@@ -4,6 +4,10 @@
 
 "NSMicrophoneUsageDescription" = "HushType 需要麥克風存取權，才能將你的語音輸入轉成文字。";
 
+/* macOS-owned Bluetooth permission prompt; used only to detect a selected wireless microphone disconnecting. */
+
+"NSBluetoothAlwaysUsageDescription" = "HushType 會檢查藍牙是否可用，以便在所選無線麥克風中斷連線時及時提醒你。";
+
 /* macOS-owned TCC purpose string. High-risk privacy claim; Apple permission label needs macOS 15/26 visual verification. */
 
 "NSScreenCaptureUsageDescription" = "你戴著耳機時，HushType 會使用「螢幕與系統音訊錄製」權限，為 Zoom、Chrome、Safari 等 App 的音訊產生字幕。只會處理音訊，絕不讀取螢幕內容。";
