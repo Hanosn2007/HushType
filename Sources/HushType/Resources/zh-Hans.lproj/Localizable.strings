@@ -94,6 +94,7 @@
 /* Status-menu idle state. */
 
 "status.ready" = "就绪";
+"status.connecting" = "正在连接麦克风";
 
 /* Status-menu recording state. */
 
@@ -402,6 +403,9 @@
 /* Starts the explicit-consent GitHub update check. */
 
 "about.check_updates" = "检查更新";
+"settings.general.update_channel" = "更新版本";
+"settings.general.update_channel.stable" = "正式版";
+"settings.general.update_channel.preview" = "预览版";
 
 /* Consent title shown every time before the app makes a GitHub API request. */
 
@@ -1161,6 +1165,9 @@
 
 /* Floating dictation overlay recording label. */
 
+"overlay.connection_failed" = "连接失败";
+"overlay.open_input_settings" = "打开输入设备设置";
+
 "overlay.listening" = "监听中";
 
 /* Floating dictation overlay label for local transcription. */
@@ -1487,10 +1494,41 @@
 "settings.navigation.forward" = "前进";
 "settings.sidebar.overview" = "概览";
 "settings.sidebar.dictation" = "听写";
+"settings.sidebar.history" = "识别历史";
 "settings.sidebar.model" = "模型";
 "settings.sidebar.dictionary" = "词典";
 "settings.sidebar.permissions" = "权限";
 "settings.sidebar.general" = "通用";
+"settings.history.subtitle" = "查找并复制过去的识别结果，即使文字未能输入到其他 App 也能找回。";
+"settings.history.filter" = "时间范围";
+"settings.history.filter.all" = "全部";
+"settings.history.filter.today" = "今天";
+"settings.history.filter.seven_days" = "近 7 天";
+"settings.history.filter.thirty_days" = "近 30 天";
+"settings.history.empty" = "暂无识别历史";
+"settings.history.empty_detail" = "新的听写结果会在 HushType 尝试输入前保存到这里。";
+"settings.history.no_results" = "没有匹配结果";
+"settings.history.no_results_detail" = "请尝试其他搜索词或时间范围。";
+"settings.history.error" = "识别历史未能更新";
+"settings.history.error.dismiss" = "关闭提示";
+"settings.history.search" = "搜索识别文字";
+"settings.history.copy" = "复制";
+"settings.history.delete" = "删除";
+"settings.history.delete.confirm_title" = "删除这条记录？";
+"settings.history.delete.confirm_message" = "这条识别记录将被永久删除。";
+"settings.history.clear" = "清空全部历史";
+"settings.history.clear.confirm_title" = "清空全部历史？";
+"settings.history.clear.confirm_message" = "所有识别记录都将被永久删除，且无法撤销。";
+"settings.history.storage" = "保留设置";
+"settings.history.maximum_entries" = "最多保留";
+"settings.history.retention" = "保留时间";
+"settings.history.retention.seven_days" = "7 天";
+"settings.history.retention.thirty_days" = "30 天";
+"settings.history.retention.ninety_days" = "90 天";
+"settings.history.retention.forever" = "不过期";
+"settings.history.retention_help" = "达到条数或时间任一上限时，旧记录将被永久移除；修改后会立即应用。";
+"settings.history.day.today" = "今天";
+"settings.history.day.yesterday" = "昨天";
 "settings.overview.title" = "概览";
 "settings.overview.subtitle" = "快速查看 HushType 和本地语音模型的状态。";
 "settings.overview.permissions_needed.title" = "需要处理权限";
@@ -1560,6 +1598,11 @@
 "settings.permissions.restart_required.detail" = "权限现已允许。请重新启动 HushType，以便 macOS 将辅助功能权限应用到此 App。";
 "settings.general.title" = "通用";
 "settings.general.subtitle" = "调整 HushType 的显示方式和听写文本清理方式。";
+"settings.general.input_device" = "输入设备";
+"settings.general.input_device.follow_system" = "跟随系统";
+"settings.general.input_device.automatic" = "自动选择";
+"settings.general.input_device.current" = "当前设备：%1$@";
+"settings.general.input_device.unavailable" = "不可用";
 "settings.general.floating_overlay" = "显示浮动录音提示";
 "settings.general.release_f5_when_unloaded" = "卸载模型后，将 F5 交还给 macOS 原生功能";
 "settings.general.text_polish" = "启用文本润色";
@@ -1574,6 +1617,8 @@
 "settings.status.verifying_model" = "正在验证模型文件。";
 "settings.status.loading_model" = "正在将模型加载到内存中。";
 "settings.status.ready_detail" = "按 F5 开始听写。";
+"settings.status.connecting_detail" = "正在等待麦克风音频，再按一次 F5 可取消。";
+"settings.general.input_device.selected_unavailable" = "所选设备暂不可用";
 "settings.status.recording_detail" = "说完后再按一次 F5。";
 "settings.status.transcribing_detail" = "正在将语音转换为文字。";
 "settings.status.polishing_detail" = "正在应用你的文本偏好。";

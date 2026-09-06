@@ -20,6 +20,12 @@ private final class CloudDictationPlaceholderEngine: TranscriptionEngine {
     }
 }
 
+private final class UpdateChannelDelegate: NSObject, SPUUpdaterDelegate {
+    func allowedChannels(for updater: SPUUpdater) -> Set<String> {
+        AppConfig.shared.updateChannel.allowedSparkleChannels
+    }
+}
+
 @MainActor
 private final class TapArbiter {
     static let doubleTapWindow: TimeInterval = 0.35
@@ -84,6 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     enum AppState {
         case loading
         case idle
+        case connecting
         case recording
         case transcribing
         case inserting
@@ -99,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var updaterController: SPUStandardUpdaterController!
+    private let updateChannelDelegate = UpdateChannelDelegate()
     private var statusBar: StatusBarController!
     private var hotkeyManager: HotkeyManager!
     private var audioCapture: AudioCaptureService!
@@ -115,6 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Rejects progress callbacks that were already queued when a download
     /// was stopped and then started again.
     private var modelLoadAttemptID = UUID()
+    private var historyCleanupTimer: Timer?
 
     private enum RecordingTrigger {
         case rightOption
@@ -123,6 +132,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Keeps one hotkey's release from stopping a recording started by the
     /// other hotkey when F5 and Right Option overlap.
     private var recordingTrigger: RecordingTrigger?
+    /// Rejects first-buffer/failure callbacks from a capture attempt that the
+    /// user already stopped or replaced.
+    private var recordingAttemptID = UUID()
 
     private enum SelectionSource {
         case copySelection
@@ -149,7 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
-            updaterDelegate: nil,
+            updaterDelegate: updateChannelDelegate,
             userDriverDelegate: nil
         )
 
@@ -294,6 +306,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             checkForUpdates: { [weak self] in
                 self?.updaterController.checkForUpdates(nil)
             },
+            updateChannelChanged: { [weak self] in
+                self?.updaterController.updater.resetUpdateCycle()
+            },
             restart: {
                 OnboardingManager.relaunchAndQuit(reopenPermissions: true)
             },
@@ -303,6 +318,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSApp.terminate(nil)
             }
         ))
+        settingsWindow.applyRecognitionHistoryCleanup()
+        historyCleanupTimer = Timer.scheduledTimer(
+            timeInterval: 3_600,
+            target: self,
+            selector: #selector(cleanupRecognitionHistory),
+            userInfo: nil,
+            repeats: true
+        )
         statusBar.onOpenSettings = { section in
             settingsWindow.present(section: section)
         }
@@ -446,6 +469,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        historyCleanupTimer?.invalidate()
         hotkeyResumeWorkItem?.cancel()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         tapArbiter.reset()
@@ -571,8 +595,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Overlay helpers
 
-    private func showOverlayRecording() {
+    private func showOverlayConnecting() {
         modelNoticeWindow.hideImmediately()
+        guard AppConfig.shared.floatingOverlayEnabled else { return }
+        overlayState.state = .connecting
+        overlayWindow.show()
+    }
+
+    private func switchOverlayToRecording() {
         guard AppConfig.shared.floatingOverlayEnabled else { return }
         let provider: String?
         switch AppConfig.shared.dictationEngine {
@@ -581,7 +611,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .gemini: provider = "Gemini"
         }
         overlayState.state = .recording(level: 0, provider: provider)
-        overlayWindow.show()
+    }
+
+    private func showOverlayConnectionFailed() {
+        guard AppConfig.shared.floatingOverlayEnabled else { return }
+        overlayState.state = .connectionFailed
+        overlayWindow.showConnectionFailure {
+            HushTypeSettingsWindowController.shared.present(section: .general)
+        }
     }
 
     private func switchOverlayToTranscribing() {
@@ -627,6 +664,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard NSApp.modalWindow == nil else { return }
 
         tapArbiter.reset()
+
+        if state == .connecting {
+            cancelPendingRecordingStart(reason: "F5")
+            return
+        }
 
         if state == .recording {
             finishRecording(allowTapAction: false)
@@ -716,22 +758,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startRecording(trigger: RecordingTrigger) {
-        do {
-            try audioCapture.startRecording()
-        } catch {
-            recordingTrigger = nil
-            state = .idle
-            hideOverlay()
-            statusBar.setState(.error(error.localizedDescription))
-            log.error("Failed to start recording: \(error.localizedDescription, privacy: .public)")
-            NSSound.beep()
-            return
-        }
+        let attemptID = UUID()
+        recordingAttemptID = attemptID
         recordingTrigger = trigger
-        state = .recording
-        statusBar.setState(.recording)
-        showOverlayRecording()
-        print("[HushType] Recording started...")
+        state = .connecting
+        statusBar.setState(.connecting)
+        showOverlayConnecting()
+        print("[HushType] Connecting microphone...")
+
+        audioCapture.startRecording { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self,
+                      self.recordingAttemptID == attemptID,
+                      self.state == .connecting else { return }
+                switch result {
+                case .success:
+                    self.state = .recording
+                    self.statusBar.setState(.recording)
+                    self.switchOverlayToRecording()
+                    print("[HushType] Recording started...")
+                case .failure(let error):
+                    self.recordingTrigger = nil
+                    self.state = .idle
+                    self.statusBar.setState(.error(error.localizedDescription))
+                    self.showOverlayConnectionFailed()
+                    log.error("Failed to start recording: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+        }
     }
 
     private func handleHotkeyRelease() {
@@ -768,13 +822,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func finishRecording(allowTapAction: Bool) {
-        guard state == .recording else {
+        guard state == .recording || state == .connecting else {
             print("[HushType] Ignoring recording stop — state is \(state)")
             return
         }
 
-        let samples = audioCapture.stopRecording()
+        recordingAttemptID = UUID()
         recordingTrigger = nil
+        tapArbiter.reset()
+        state = .transcribing
+        statusBar.setState(.transcribing)
+        switchOverlayToTranscribing()
+
+        audioCapture.stopRecording { [weak self] samples in
+            DispatchQueue.main.async {
+                self?.continueFinishedRecording(samples: samples, allowTapAction: allowTapAction)
+            }
+        }
+    }
+
+    private func continueFinishedRecording(samples: [Float], allowTapAction: Bool) {
+        guard state == .transcribing else { return }
         print("[HushType] Recording stopped: \(samples.count) samples (\(String(format: "%.1f", Double(samples.count) / 16000.0))s)")
 
         // Right Option's short hold remains a TAP for translation. F5 is a
@@ -796,10 +864,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        tapArbiter.reset()
-        state = .transcribing
-        statusBar.setState(.transcribing)
-        switchOverlayToTranscribing()
         print("[HushType] Transcribing...")
 
         let language = AppConfig.shared.language
@@ -1002,8 +1066,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         resetNetworkFailures: Bool
     ) async {
         if resetNetworkFailures { consecutiveCloudNetworkFailures = 0 }
-        _ = await restoreInsertionFocus(insertionFocus)
         guard !text.isEmpty else {
+            _ = await restoreInsertionFocus(insertionFocus)
             print("[HushType] Empty transcription, skipping insert")
             state = .idle
             statusBar.setState(.idle)
@@ -1012,6 +1076,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         print("[HushType] Transcription result: '\(text)'")
+        do {
+            // Persist the final, post-processed text before insertion so a
+            // blocked or unsupported target app cannot make it unrecoverable.
+            try HushTypeSettingsWindowController.shared.appendRecognitionHistory(text)
+        } catch {
+            log.error("Failed to save recognition history: \(error.localizedDescription, privacy: .public)")
+        }
+        _ = await restoreInsertionFocus(insertionFocus)
         print("[HushType] Inserting text...")
         state = .inserting
         let insertionFailure = TextInserter.insert(text)
@@ -1024,6 +1096,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         hideOverlay()
         print(insertionFailure == nil ? "[HushType] Done" : "[HushType] Text left on clipboard")
+    }
+
+    @objc private func cleanupRecognitionHistory() {
+        HushTypeSettingsWindowController.shared.applyRecognitionHistoryCleanup()
     }
 
     private func finishWithoutInsertion(restoreFocus application: NSRunningApplication?) async {
@@ -1075,16 +1151,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// capture service is stopped, so a delayed hotkey release or a second
     /// menu click cannot stop the same recording twice.
     private func cancelActiveRecording(reason: String) {
+        if state == .connecting {
+            cancelPendingRecordingStart(reason: reason)
+            return
+        }
         guard state == .recording else {
             log.info("Ignoring recording cancellation from \(reason, privacy: .public) — no active recording")
             return
         }
 
+        recordingAttemptID = UUID()
         state = .idle
         recordingTrigger = nil
         liveCaptionGatePressTimestamp = nil
         tapArbiter.reset()
-        _ = audioCapture.stopRecording()
+        audioCapture.stopRecording { _ in }
         hideOverlay()
 
         if AXIsProcessTrusted() {
@@ -1098,6 +1179,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             HushTypeSettingsWindowController.shared.setOnboardingRequired(true)
         }
         log.info("Cancelled and discarded recording from \(reason, privacy: .public)")
+    }
+
+    private func cancelPendingRecordingStart(reason: String) {
+        guard state == .connecting else { return }
+        recordingAttemptID = UUID()
+        state = .idle
+        recordingTrigger = nil
+        liveCaptionGatePressTimestamp = nil
+        tapArbiter.reset()
+        hideOverlay()
+        statusBar.setState(.idle)
+        audioCapture.stopRecording { _ in }
+        log.info("Cancelled microphone connection from \(reason, privacy: .public)")
     }
 
     // MARK: - Translation

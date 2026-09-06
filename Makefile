@@ -5,6 +5,7 @@ SPARKLE_FRAMEWORK = .build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-a
 # overwrites an app bundle that is currently running. The traditional local
 # output remains the default for explicit release packaging.
 BUNDLE_DIR ?= $(APP_NAME).app
+APP_ICON ?= Resources/HushType.icns
 # Optional SHA-1 fingerprint of the fixed local code-signing certificate.
 # Leave unset for ad-hoc development builds; releases use bundle-stable.
 CODE_SIGN_IDENTITY ?=
@@ -54,7 +55,7 @@ bundle: build l10n-verify
 	@cp Resources/Info.plist "$(BUNDLE_DIR)/Contents/"
 	@test -d "$(SPARKLE_FRAMEWORK)"
 	@ditto "$(SPARKLE_FRAMEWORK)" "$(BUNDLE_DIR)/Contents/Frameworks/Sparkle.framework"
-	@cp Resources/HushType.icns "$(BUNDLE_DIR)/Contents/Resources/" 2>/dev/null || true
+	@cp "$(APP_ICON)" "$(BUNDLE_DIR)/Contents/Resources/HushType.icns"
 	@cp scripts/ios_server.py "$(BUNDLE_DIR)/Contents/Resources/" 2>/dev/null || true
 	@# Interface localization: remove ONLY the exact supported + known legacy
 	@# destination locale dirs, then copy the fresh source .lproj dirs. This is

@@ -11,6 +11,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case loading(Double) // progress 0.0–1.0
         case loadingDetailed(ModelLoadProgress)
         case idle
+        case connecting
         case recording
         case transcribing
         case polishing
@@ -1657,6 +1658,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             }
         case .idle:
             symbolName = "mic.fill"
+        case .connecting:
+            symbolName = "antenna.radiowaves.left.and.right"
         case .recording:
             symbolName = "record.circle"
         case .transcribing:
@@ -1681,6 +1684,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private func updateCancelRecordingMenuItem(for state: State) {
         guard let cancelRecordingMenuItem else { return }
         if case .recording = state {
+            cancelRecordingMenuItem.isHidden = false
+            cancelRecordingMenuItem.isEnabled = true
+        } else if case .connecting = state {
             cancelRecordingMenuItem.isHidden = false
             cancelRecordingMenuItem.isEnabled = true
         } else {
@@ -1756,6 +1762,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             }
         case .idle:
             return L10n.string("status.ready", fallback: "Ready")
+        case .connecting:
+            return L10n.string("status.connecting", fallback: "Connecting microphone")
         case .recording:
             return L10n.string("status.recording", fallback: "Recording...")
         case .transcribing:

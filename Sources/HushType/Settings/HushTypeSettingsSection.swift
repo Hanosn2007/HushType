@@ -6,6 +6,7 @@ import Combine
 enum HushTypeSettingsSection: String, CaseIterable, Identifiable {
     case overview
     case dictation
+    case history
     case model
     case dictionary
     case permissions
@@ -17,6 +18,7 @@ enum HushTypeSettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .overview: L10n.string("settings.sidebar.overview", fallback: "Overview")
         case .dictation: L10n.string("settings.sidebar.dictation", fallback: "Dictation")
+        case .history: L10n.string("settings.sidebar.history", fallback: "Recognition History")
         case .model: L10n.string("settings.sidebar.model", fallback: "Model")
         case .dictionary: L10n.string("settings.sidebar.dictionary", fallback: "Dictionary")
         case .permissions: L10n.string("settings.sidebar.permissions", fallback: "Permissions")
@@ -28,6 +30,7 @@ enum HushTypeSettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .overview: "rectangle.3.group"
         case .dictation: "mic.fill"
+        case .history: "clock.arrow.circlepath"
         case .model: "cpu"
         case .dictionary: "text.book.closed"
         case .permissions: "checklist"
@@ -58,6 +61,7 @@ struct HushTypeSettingsActions {
     var requestMicrophone: (@escaping (Bool) -> Void) -> Void = { completion in completion(false) }
     var openMicrophoneSettings: () -> Void = {}
     var checkForUpdates: () -> Void = {}
+    var updateChannelChanged: () -> Void = {}
     var restart: () -> Void = {}
     var quit: () -> Void = {}
 
@@ -74,6 +78,7 @@ struct HushTypeSettingsActions {
         requestMicrophone: @escaping (@escaping (Bool) -> Void) -> Void = { completion in completion(false) },
         openMicrophoneSettings: @escaping () -> Void = {},
         checkForUpdates: @escaping () -> Void = {},
+        updateChannelChanged: @escaping () -> Void = {},
         restart: @escaping () -> Void = {},
         quit: @escaping () -> Void = {}
     ) {
@@ -89,6 +94,7 @@ struct HushTypeSettingsActions {
         self.requestMicrophone = requestMicrophone
         self.openMicrophoneSettings = openMicrophoneSettings
         self.checkForUpdates = checkForUpdates
+        self.updateChannelChanged = updateChannelChanged
         self.restart = restart
         self.quit = quit
     }
@@ -97,6 +103,7 @@ struct HushTypeSettingsActions {
 @MainActor
 final class HushTypeSettingsModel: ObservableObject {
     let modelLibrary = LocalModelLibrary()
+    let recognitionHistory: RecognitionHistoryStore
     @Published var selection: HushTypeSettingsSection = .overview
     @Published private(set) var appState: StatusBarController.State = .setupRequired
     @Published private(set) var accessibilityGranted = AXIsProcessTrusted()
@@ -118,6 +125,20 @@ final class HushTypeSettingsModel: ObservableObject {
     @Published var floatingOverlayEnabled = AppConfig.shared.floatingOverlayEnabled {
         didSet { AppConfig.shared.floatingOverlayEnabled = floatingOverlayEnabled }
     }
+    @Published var audioInputSelection = AppConfig.shared.audioInputSelection {
+        didSet {
+            guard !isRefreshing else { return }
+            AppConfig.shared.audioInputSelection = audioInputSelection
+            if let uid = AudioInputSelection.deviceUID(from: audioInputSelection),
+               let selected = audioInputDevices.first(where: { $0.id == uid }) {
+                currentAudioInputDeviceName = selected.name
+            }
+            refreshAudioInputDevices()
+        }
+    }
+    @Published private(set) var audioInputDevices: [AudioInputDevice] = []
+    @Published private(set) var currentAudioInputDeviceName: String? = nil
+    private var isAudioDeviceRefreshInFlight = false
     @Published var releaseF5WhenModelUnloaded = AppConfig.shared.releaseF5WhenModelUnloaded {
         didSet { AppConfig.shared.releaseF5WhenModelUnloaded = releaseF5WhenModelUnloaded }
     }
@@ -146,6 +167,28 @@ final class HushTypeSettingsModel: ObservableObject {
             AppConfig.shared.interfaceLanguage = language
         }
     }
+    @Published var updateChannelRaw = AppConfig.shared.updateChannel.rawValue {
+        didSet {
+            guard !isRefreshing,
+                  let channel = UpdateChannel(rawValue: updateChannelRaw) else { return }
+            AppConfig.shared.updateChannel = channel
+            actions.updateChannelChanged()
+        }
+    }
+    @Published var historyMaximumEntries = AppConfig.shared.recognitionHistoryMaximumEntries {
+        didSet {
+            guard !isRefreshing else { return }
+            applyHistoryRetentionPolicy(maximumEntries: historyMaximumEntries, retentionDays: historyRetentionDays)
+        }
+    }
+    /// Zero is the settings UI's stable representation of "never expire".
+    @Published var historyRetentionDays = AppConfig.shared.recognitionHistoryRetentionDays ?? 0 {
+        didSet {
+            guard !isRefreshing else { return }
+            applyHistoryRetentionPolicy(maximumEntries: historyMaximumEntries, retentionDays: historyRetentionDays)
+        }
+    }
+    @Published private(set) var historyErrorMessage: String?
 
     private var actions = HushTypeSettingsActions()
     private var isRefreshing = false
@@ -153,6 +196,12 @@ final class HushTypeSettingsModel: ObservableObject {
     private var werePermissionsComplete: Bool
 
     init() {
+        recognitionHistory = RecognitionHistoryStore(
+            retentionPolicy: RecognitionHistoryRetentionPolicy(
+                maximumEntries: AppConfig.shared.recognitionHistoryMaximumEntries,
+                retentionDays: AppConfig.shared.recognitionHistoryRetentionDays
+            )
+        )
         let accessibilityGranted = AXIsProcessTrusted()
         let microphoneStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         let permissionsComplete = accessibilityGranted && microphoneStatus == .authorized
@@ -161,6 +210,7 @@ final class HushTypeSettingsModel: ObservableObject {
         self.microphoneStatus = microphoneStatus
         self.hasObservedMissingPermission = !permissionsComplete
         self.werePermissionsComplete = permissionsComplete
+        refreshAudioInputDevices()
     }
 
     var permissionsComplete: Bool {
@@ -188,7 +238,7 @@ final class HushTypeSettingsModel: ObservableObject {
             return loadedModelID == nil ? .load : .unload
         case .unloaded:
             return .load
-        case .setupRequired, .recording, .transcribing, .polishing:
+        case .setupRequired, .connecting, .recording, .transcribing, .polishing:
             return .none
         }
     }
@@ -219,6 +269,8 @@ final class HushTypeSettingsModel: ObservableObject {
         loadedModelID = actions.loadedModelID()
         modelID = AppConfig.shared.modelId
         floatingOverlayEnabled = AppConfig.shared.floatingOverlayEnabled
+        audioInputSelection = AppConfig.shared.audioInputSelection
+        refreshAudioInputDevices()
         releaseF5WhenModelUnloaded = AppConfig.shared.releaseF5WhenModelUnloaded
         numberConversionEnabled = AppConfig.shared.numberConversionEnabled
         textPolishEnabled = AppConfig.shared.textPolishEnabled
@@ -226,6 +278,9 @@ final class HushTypeSettingsModel: ObservableObject {
         speechLanguage = AppConfig.shared.language ?? "auto"
         chineseConversionEnabled = AppConfig.shared.chineseConversionEnabled
         interfaceLanguageRaw = AppConfig.shared.interfaceLanguage.rawValue
+        updateChannelRaw = AppConfig.shared.updateChannel.rawValue
+        historyMaximumEntries = AppConfig.shared.recognitionHistoryMaximumEntries
+        historyRetentionDays = AppConfig.shared.recognitionHistoryRetentionDays ?? 0
         modelLibrary.updateEngineState(
             appState,
             loadingModelID: actions.loadingModelID(),
@@ -238,6 +293,93 @@ final class HushTypeSettingsModel: ObservableObject {
     func unloadModel() { actions.unloadModel() }
     func stopModelDownload() { actions.stopModelDownload() }
     func openDictionary() { actions.openDictionary() }
+
+    func refreshAudioInputDevices() {
+        guard !isAudioDeviceRefreshInFlight else { return }
+        isAudioDeviceRefreshInFlight = true
+        let requestedSelection = audioInputSelection
+        Task { [weak self] in
+            let snapshot = await Task.detached(priority: .utility) {
+                let devices = AudioInputDeviceManager.availableDevices()
+                let effectiveName = AudioInputDeviceManager.currentDeviceName(
+                    rawValue: requestedSelection,
+                    devices: devices
+                )
+                return (devices, effectiveName)
+            }.value
+            guard let self else { return }
+            self.audioInputDevices = snapshot.0
+            if self.audioInputSelection == requestedSelection {
+                self.currentAudioInputDeviceName = snapshot.1
+            }
+            self.isAudioDeviceRefreshInFlight = false
+            if self.audioInputSelection != requestedSelection {
+                self.refreshAudioInputDevices()
+            }
+        }
+    }
+
+    func appendRecognitionHistory(_ text: String) throws {
+        do {
+            try recognitionHistory.append(text)
+            historyErrorMessage = nil
+        } catch {
+            historyErrorMessage = error.localizedDescription
+            throw error
+        }
+    }
+
+    private func applyHistoryRetentionPolicy(maximumEntries: Int, retentionDays: Int) {
+        do {
+            try recognitionHistory.updateRetentionPolicy(
+                RecognitionHistoryRetentionPolicy(
+                    maximumEntries: maximumEntries,
+                    retentionDays: retentionDays == 0 ? nil : retentionDays
+                )
+            )
+            AppConfig.shared.recognitionHistoryMaximumEntries = maximumEntries
+            AppConfig.shared.recognitionHistoryRetentionDays = retentionDays == 0 ? nil : retentionDays
+            historyErrorMessage = nil
+        } catch {
+            isRefreshing = true
+            historyMaximumEntries = AppConfig.shared.recognitionHistoryMaximumEntries
+            historyRetentionDays = AppConfig.shared.recognitionHistoryRetentionDays ?? 0
+            isRefreshing = false
+            historyErrorMessage = error.localizedDescription
+            print("[HushType] Failed to apply recognition history retention: \(error.localizedDescription)")
+        }
+    }
+
+    func removeRecognitionHistory(id: UUID) {
+        do {
+            try recognitionHistory.remove(id: id)
+            historyErrorMessage = nil
+        } catch {
+            historyErrorMessage = error.localizedDescription
+        }
+    }
+
+    func clearRecognitionHistory() {
+        do {
+            try recognitionHistory.removeAll()
+            historyErrorMessage = nil
+        } catch {
+            historyErrorMessage = error.localizedDescription
+        }
+    }
+
+    func applyRecognitionHistoryCleanup() {
+        do {
+            try recognitionHistory.applyCurrentRetentionPolicy()
+        } catch {
+            historyErrorMessage = error.localizedDescription
+        }
+    }
+
+    func dismissRecognitionHistoryError() {
+        historyErrorMessage = nil
+    }
+
     func switchDictationEngine(to engine: AppConfig.DictationEngine) {
         actions.switchDictationEngine(engine)
         currentDictationEngine = AppConfig.shared.dictationEngine

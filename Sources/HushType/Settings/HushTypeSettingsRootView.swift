@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import SwiftUI
 
 struct HushTypeSettingsRootView: View {
@@ -74,6 +75,7 @@ struct HushTypeSettingsRootView: View {
         switch model.selection {
         case .overview: SettingsOverviewView(model: model)
         case .dictation: SettingsDictationView(model: model)
+        case .history: SettingsHistoryView(model: model)
         case .model: SettingsModelView(model: model)
         case .dictionary: SettingsDictionaryView(model: model)
         case .permissions: SettingsPermissionsView(model: model)
@@ -89,6 +91,244 @@ struct HushTypeSettingsRootView: View {
     private func navigateForward() {
         guard let currentSectionIndex, currentSectionIndex < sections.count - 1 else { return }
         model.selection = sections[currentSectionIndex + 1]
+    }
+}
+
+private enum RecognitionHistoryFilter: String, CaseIterable, Identifiable {
+    case all
+    case today
+    case sevenDays
+    case thirtyDays
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: L10n.string("settings.history.filter.all", fallback: "All")
+        case .today: L10n.string("settings.history.filter.today", fallback: "Today")
+        case .sevenDays: L10n.string("settings.history.filter.seven_days", fallback: "7 Days")
+        case .thirtyDays: L10n.string("settings.history.filter.thirty_days", fallback: "30 Days")
+        }
+    }
+}
+
+private struct RecognitionHistoryDayGroup: Identifiable {
+    let day: Date
+    let entries: [RecognitionHistoryEntry]
+    var id: Date { day }
+}
+
+private struct SettingsHistoryView: View {
+    @ObservedObject var model: HushTypeSettingsModel
+    @ObservedObject private var store: RecognitionHistoryStore
+    @State private var searchText = ""
+    @State private var filter: RecognitionHistoryFilter = .all
+    @State private var entryPendingDeletion: RecognitionHistoryEntry?
+    @State private var isConfirmingClear = false
+
+    init(model: HushTypeSettingsModel) {
+        self.model = model
+        _store = ObservedObject(wrappedValue: model.recognitionHistory)
+    }
+
+    var body: some View {
+        SettingsPage(
+            subtitle: L10n.string(
+                "settings.history.subtitle",
+                fallback: "Find and copy past recognition results, even when insertion into another app failed."
+            )
+        ) {
+            Section {
+                Picker(L10n.string("settings.history.filter", fallback: "Time Range"), selection: $filter) {
+                    ForEach(RecognitionHistoryFilter.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+
+            if let errorMessage = model.historyErrorMessage {
+                Section {
+                    Label(L10n.string("settings.history.error", fallback: "History couldn’t be updated"), systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(errorMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Button(L10n.string("settings.history.error.dismiss", fallback: "Dismiss")) {
+                        model.dismissRecognitionHistoryError()
+                    }
+                }
+            }
+
+            Section {
+                Picker(L10n.string("settings.history.maximum_entries", fallback: "Maximum entries"), selection: $model.historyMaximumEntries) {
+                    Text("100").tag(100)
+                    Text("500").tag(500)
+                    Text("1,000").tag(1000)
+                }
+                Picker(L10n.string("settings.history.retention", fallback: "Keep history"), selection: $model.historyRetentionDays) {
+                    Text(L10n.string("settings.history.retention.seven_days", fallback: "7 days")).tag(7)
+                    Text(L10n.string("settings.history.retention.thirty_days", fallback: "30 days")).tag(30)
+                    Text(L10n.string("settings.history.retention.ninety_days", fallback: "90 days")).tag(90)
+                    Text(L10n.string("settings.history.retention.forever", fallback: "No time limit")).tag(0)
+                }
+                Button(L10n.string("settings.history.clear", fallback: "Clear All History"), role: .destructive) {
+                    isConfirmingClear = true
+                }
+                .disabled(store.entries.isEmpty)
+            } header: {
+                Text(L10n.string("settings.history.storage", fallback: "Storage"))
+            } footer: {
+                Text(L10n.string(
+                    "settings.history.retention_help",
+                    fallback: "Items are permanently removed when either limit is reached. Changing a limit applies immediately."
+                ))
+            }
+
+            if groups.isEmpty {
+                SettingsSection {
+                    ContentUnavailableView {
+                        Label(
+                            searchText.isEmpty
+                                ? L10n.string("settings.history.empty", fallback: "No Recognition History")
+                                : L10n.string("settings.history.no_results", fallback: "No Matching Results"),
+                            systemImage: searchText.isEmpty ? "clock" : "magnifyingglass"
+                        )
+                    } description: {
+                        Text(searchText.isEmpty
+                             ? L10n.string("settings.history.empty_detail", fallback: "New dictation results will appear here before HushType attempts to insert them.")
+                             : L10n.string("settings.history.no_results_detail", fallback: "Try another search or time range."))
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 180)
+                }
+            } else {
+                ForEach(groups) { group in
+                    Section {
+                        ForEach(group.entries) { entry in
+                            historyRow(entry)
+                        }
+                    } header: {
+                        Text(dayTitle(group.day))
+                    }
+                }
+            }
+
+        }
+        .searchable(text: $searchText, prompt: L10n.string("settings.history.search", fallback: "Search recognition text"))
+        .alert(
+            L10n.string("settings.history.delete.confirm_title", fallback: "Delete This Entry?"),
+            isPresented: Binding(
+                get: { entryPendingDeletion != nil },
+                set: { if !$0 { entryPendingDeletion = nil } }
+            )
+        ) {
+            Button(L10n.string("common.button.cancel", fallback: "Cancel"), role: .cancel) {
+                entryPendingDeletion = nil
+            }
+            Button(L10n.string("settings.history.delete", fallback: "Delete"), role: .destructive) {
+                guard let entry = entryPendingDeletion else { return }
+                model.removeRecognitionHistory(id: entry.id)
+                entryPendingDeletion = nil
+            }
+        } message: {
+            Text(L10n.string("settings.history.delete.confirm_message", fallback: "This recognition entry will be permanently deleted."))
+        }
+        .alert(
+            L10n.string("settings.history.clear.confirm_title", fallback: "Clear All History?"),
+            isPresented: $isConfirmingClear
+        ) {
+            Button(L10n.string("common.button.cancel", fallback: "Cancel"), role: .cancel) {}
+            Button(L10n.string("settings.history.clear", fallback: "Clear All History"), role: .destructive) {
+                model.clearRecognitionHistory()
+            }
+        } message: {
+            Text(L10n.string("settings.history.clear.confirm_message", fallback: "All recognition entries will be permanently deleted. This cannot be undone."))
+        }
+    }
+
+    @ViewBuilder
+    private func historyRow(_ entry: RecognitionHistoryEntry) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(String(entryNumber(entry)))
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .frame(width: 34, alignment: .trailing)
+            Text(timeTitle(entry.createdAt))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 58, alignment: .leading)
+            Text(entry.text)
+                .textSelection(.enabled)
+                .lineLimit(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(entry.text, forType: .string)
+            } label: {
+                Label(L10n.string("settings.history.copy", fallback: "Copy"), systemImage: "doc.on.doc")
+            }
+            .labelStyle(.iconOnly)
+            .help(L10n.string("settings.history.copy", fallback: "Copy"))
+            .buttonStyle(.borderless)
+            Button(role: .destructive) {
+                entryPendingDeletion = entry
+            } label: {
+                Label(L10n.string("settings.history.delete", fallback: "Delete"), systemImage: "trash")
+            }
+            .labelStyle(.iconOnly)
+            .help(L10n.string("settings.history.delete", fallback: "Delete"))
+            .buttonStyle(.borderless)
+        }
+        .padding(.vertical, 4)
+    }
+
+    /// Keep an entry's number stable while filtering: the newest item shows
+    /// the current total, then numbers descend through the complete history.
+    private func entryNumber(_ entry: RecognitionHistoryEntry) -> Int {
+        guard let index = store.entries.firstIndex(where: { $0.id == entry.id }) else { return 0 }
+        return store.entries.count - index
+    }
+
+    private var groups: [RecognitionHistoryDayGroup] {
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: Date())
+        let cutoff: Date? = switch filter {
+        case .all: nil
+        case .today: startOfToday
+        case .sevenDays: calendar.date(byAdding: .day, value: -6, to: startOfToday)
+        case .thirtyDays: calendar.date(byAdding: .day, value: -29, to: startOfToday)
+        }
+
+        let filtered = store.entries.filter { entry in
+            let isRecentEnough = cutoff.map { entry.createdAt >= $0 } ?? true
+            let matchesSearch = searchText.isEmpty || entry.text.localizedStandardContains(searchText)
+            return isRecentEnough && matchesSearch
+        }
+        let grouped = Dictionary(grouping: filtered) { calendar.startOfDay(for: $0.createdAt) }
+        return grouped.keys.sorted(by: >).map { day in
+            RecognitionHistoryDayGroup(
+                day: day,
+                entries: grouped[day, default: []].sorted { $0.createdAt > $1.createdAt }
+            )
+        }
+    }
+
+    private func dayTitle(_ date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            return L10n.string("settings.history.day.today", fallback: "Today")
+        }
+        if calendar.isDateInYesterday(date) {
+            return L10n.string("settings.history.day.yesterday", fallback: "Yesterday")
+        }
+        let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: Date())
+        return date.formatted(sameYear
+                              ? .dateTime.month().day().weekday()
+                              : .dateTime.year().month().day().weekday())
+    }
+
+    private func timeTitle(_ date: Date) -> String {
+        date.formatted(date: .omitted, time: .shortened)
     }
 }
 
@@ -679,6 +919,7 @@ private struct SettingsPermissionsView: View {
 
 private struct SettingsGeneralView: View {
     @ObservedObject var model: HushTypeSettingsModel
+    private let deviceRefreshTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     var body: some View {
         SettingsPage(
@@ -695,19 +936,67 @@ private struct SettingsGeneralView: View {
                 )
                 Toggle(L10n.string("settings.general.text_polish", fallback: "Enable text polishing"), isOn: $model.textPolishEnabled)
             }
-            Section {
-                Picker(L10n.string("menu.interface_language", fallback: "Interface Language"), selection: $model.interfaceLanguageRaw) {
+
+            SettingsSection {
+                Picker(selection: $model.interfaceLanguageRaw) {
                     Text(L10n.string("menu.interface_language.follow_system", fallback: "Follow System")).tag(InterfaceLanguage.system.rawValue)
                     Text(L10n.string("menu.interface_language.english", fallback: "English")).tag(InterfaceLanguage.english.rawValue)
                     Text(L10n.string("menu.interface_language.simplified_chinese", fallback: "简体中文")).tag(InterfaceLanguage.simplifiedChinese.rawValue)
                     Text(L10n.string("menu.interface_language.traditional_chinese_taiwan", fallback: "繁體中文（台灣）")).tag(InterfaceLanguage.traditionalChineseTaiwan.rawValue)
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(L10n.string("menu.interface_language", fallback: "Interface Language"))
+                        Text(L10n.string("menu.interface_language.applied_next_launch", fallback: "Changes apply next launch"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-            } header: {
-                Text(L10n.string("menu.interface_language", fallback: "Interface Language"))
-            } footer: {
-                Text(L10n.string("menu.interface_language.applied_next_launch", fallback: "Changes apply the next time HushType launches."))
+
+                Picker(selection: $model.audioInputSelection) {
+                    Text(L10n.string("settings.general.input_device.follow_system", fallback: "Follow System"))
+                        .tag(AudioInputSelection.followSystem)
+                    Text(L10n.string("settings.general.input_device.automatic", fallback: "Automatic"))
+                        .tag(AudioInputSelection.automatic)
+                    Divider()
+                    if let selectedUID = AudioInputSelection.deviceUID(from: model.audioInputSelection),
+                       !model.audioInputDevices.contains(where: { $0.id == selectedUID }) {
+                        Text(L10n.string(
+                            "settings.general.input_device.selected_unavailable",
+                            fallback: "Selected device unavailable"
+                        ))
+                        .tag(model.audioInputSelection)
+                        Divider()
+                    }
+                    ForEach(model.audioInputDevices) { device in
+                        Text(device.name).tag(AudioInputSelection.device(device.id))
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(L10n.string("settings.general.input_device", fallback: "Input Device"))
+                        Text(L10n.format(
+                            "settings.general.input_device.current",
+                            "Current: %1$@",
+                            arguments: [model.currentAudioInputDeviceName ?? L10n.string(
+                                "settings.general.input_device.unavailable",
+                                fallback: "Unavailable"
+                            )]
+                        ))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
             }
+
             SettingsSection {
+                Picker(selection: $model.updateChannelRaw) {
+                    Text(L10n.string("settings.general.update_channel.stable", fallback: "Stable"))
+                        .tag(UpdateChannel.stable.rawValue)
+                    Text(L10n.string("settings.general.update_channel.preview", fallback: "Preview"))
+                        .tag(UpdateChannel.preview.rawValue)
+                } label: {
+                    Text(L10n.string("settings.general.update_channel", fallback: "Updates"))
+                }
+
                 HStack {
                     Button(L10n.string("about.check_updates", fallback: "Check for Updates…")) {
                         model.checkForUpdates()
@@ -719,6 +1008,8 @@ private struct SettingsGeneralView: View {
                 }
             }
         }
+        .onAppear { model.refreshAudioInputDevices() }
+        .onReceive(deviceRefreshTimer) { _ in model.refreshAudioInputDevices() }
     }
 }
 
@@ -767,6 +1058,7 @@ private extension HushTypeSettingsModel {
         case .loading: L10n.string("status.loading", fallback: "Loading model")
         case let .loadingDetailed(progress): statusTitle(for: progress)
         case .idle: L10n.string("status.ready", fallback: "Ready")
+        case .connecting: L10n.string("status.connecting", fallback: "Connecting microphone")
         case .recording: L10n.string("status.recording", fallback: "Listening")
         case .transcribing: L10n.string("status.transcribing", fallback: "Transcribing")
         case .polishing: L10n.string("status.polishing", fallback: "Polishing text")
@@ -785,6 +1077,11 @@ private extension HushTypeSettingsModel {
             statusDetail(for: progress)
         case .idle:
             L10n.string("settings.status.ready_detail", fallback: "Press F5 to start dictation.")
+        case .connecting:
+            L10n.string(
+                "settings.status.connecting_detail",
+                fallback: "Waiting for microphone audio. Press F5 again to cancel."
+            )
         case .recording:
             L10n.string("settings.status.recording_detail", fallback: "Press F5 again when you finish speaking.")
         case .transcribing:
@@ -802,6 +1099,7 @@ private extension HushTypeSettingsModel {
         case .setupRequired: "exclamationmark.triangle.fill"
         case .loading, .loadingDetailed: "arrow.down.circle"
         case .idle: "checkmark.circle.fill"
+        case .connecting: "antenna.radiowaves.left.and.right"
         case .recording: "mic.circle.fill"
         case .transcribing: "waveform"
         case .polishing: "sparkles"

@@ -97,6 +97,7 @@ final class FloatingOverlayWindow: NSPanel {
     private var pendingModelNoticeDismissal: DispatchWorkItem?
     private var isPresentingModelNotice = false
     private var onOpenModels: (() -> Void)?
+    private var onOpenInputSettings: (() -> Void)?
 
     private let modelNoticeDisplayDuration: TimeInterval = 3
 
@@ -127,7 +128,8 @@ final class FloatingOverlayWindow: NSPanel {
         hostingView = PillHitTestingHostingView(
             rootView: FloatingOverlayView(
                 model: stateModel,
-                onOpenModels: { [weak self] in self?.openModels() }
+                onOpenModels: { [weak self] in self?.openModels() },
+                onOpenInputSettings: { [weak self] in self?.openInputSettings() }
             )
         )
         hostingView.onPillHoverChanged = { [weak self] isHovered in
@@ -147,10 +149,32 @@ final class FloatingOverlayWindow: NSPanel {
         let generation = beginPresentation()
         isPresentingModelNotice = false
         onOpenModels = nil
+        onOpenInputSettings = nil
         stateModel.isModelNoticeHovered = false
         configureRecordingWindow()
         positionAtBottomOfActiveScreen()
         fadeIn(for: generation, duration: 0.16)
+        recenterAfterContentLayout(for: generation)
+    }
+
+    /// Keep the recording-level pill visible but make only its action button
+    /// interactive so a failed device can route directly to its settings.
+    func showConnectionFailure(onOpenSettings: @escaping () -> Void) {
+        let generation = beginPresentation()
+        isPresentingModelNotice = false
+        onOpenModels = nil
+        onOpenInputSettings = onOpenSettings
+        stateModel.isModelNoticeHovered = false
+        isFloatingPanel = true
+        level = .screenSaver
+        collectionBehavior.insert(.fullScreenAuxiliary)
+        ignoresMouseEvents = false
+        hostingView.acceptsPillPointerEvents = true
+        positionAtBottomOfActiveScreen()
+        if !isVisible {
+            fadeIn(for: generation, duration: 0.16)
+        }
+        recenterAfterContentLayout(for: generation)
     }
 
     /// Show a short status notice for a model load/unload operation.
@@ -184,6 +208,7 @@ final class FloatingOverlayWindow: NSPanel {
         let wasModelNotice = isPresentingModelNotice
         isPresentingModelNotice = false
         onOpenModels = nil
+        onOpenInputSettings = nil
         stateModel.isModelNoticeHovered = false
         hostingView.acceptsPillPointerEvents = false
         ignoresMouseEvents = true
@@ -240,6 +265,20 @@ final class FloatingOverlayWindow: NSPanel {
             + (shadowInsets.trailing - shadowInsets.leading) / 2
         let y = visible.minY + 80 - shadowInsets.bottom
         setFrame(NSRect(origin: CGPoint(x: x, y: y), size: fittingSize), display: false)
+    }
+
+    /// ObservableObject changes reach NSHostingView on the next main-loop
+    /// layout pass. Re-measure after that pass so a wide connecting pill that
+    /// becomes the shorter listening pill shrinks around the screen center,
+    /// instead of keeping its old left edge and pulling only the right edge in.
+    private func recenterAfterContentLayout(for generation: UInt) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  self.presentationGeneration == generation,
+                  !self.isPresentingModelNotice else { return }
+            self.hostingView.layoutSubtreeIfNeeded()
+            self.positionAtBottomOfActiveScreen()
+        }
     }
 
     @discardableResult
@@ -334,6 +373,12 @@ final class FloatingOverlayWindow: NSPanel {
 
     private func openModels() {
         let action = onOpenModels
+        hideImmediately()
+        action?()
+    }
+
+    private func openInputSettings() {
+        let action = onOpenInputSettings
         hideImmediately()
         action?()
     }

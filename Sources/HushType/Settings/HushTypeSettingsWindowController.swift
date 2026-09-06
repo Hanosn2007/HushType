@@ -74,6 +74,14 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
         model.configure(actions: actions)
     }
 
+    func appendRecognitionHistory(_ text: String) throws {
+        try model.appendRecognitionHistory(text)
+    }
+
+    func applyRecognitionHistoryCleanup() {
+        model.applyRecognitionHistoryCleanup()
+    }
+
     func present(section: HushTypeSettingsSection = .overview) {
         model.selection = section
         model.refresh()

@@ -8,6 +8,8 @@ import AppKit
 /// is ordered out instead of rendering this case.
 enum OverlayState: Equatable {
     case hidden
+    case connecting
+    case connectionFailed
     case recording(level: Float, provider: String?)  // 0.0–1.0 RMS
     case transcribing(provider: String?)
     case polishing
@@ -73,11 +75,13 @@ enum FloatingOverlayAppearance {
 struct FloatingOverlayView: View {
     @ObservedObject var model: OverlayStateModel
     let onOpenModels: () -> Void
+    let onOpenInputSettings: () -> Void
 
     private let pillShape = RoundedRectangle(
         cornerRadius: FloatingOverlayAppearance.cornerRadius,
         style: .continuous
     )
+    private let contentGap: CGFloat = 12
 
     var body: some View {
         pill
@@ -86,13 +90,16 @@ struct FloatingOverlayView: View {
     }
 
     private var pill: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 0) {
             Image(systemName: iconName)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.primary)
                 // SF Symbols have different intrinsic widths. Reserve the
                 // same slot so model notices keep the listening pill's size.
                 .frame(width: 16)
+
+            Color.clear
+                .frame(width: contentGap)
 
             Text(label)
                 .font(.system(size: 13, weight: .medium))
@@ -102,7 +109,37 @@ struct FloatingOverlayView: View {
                 .frame(width: labelWidth, alignment: .leading)
 
             ZStack {
+                if case .connecting = model.state {
+                    ModernLoadingSpinner()
+                        .transition(.opacity)
+                }
+            }
+            // This slot is the actual gap between the text container's right
+            // edge and the waveform's left edge. Its center therefore remains
+            // correct as the surrounding content changes or localizes.
+            .frame(width: contentGap, height: 24)
+            .animation(.easeOut(duration: 0.16), value: stateKey)
+
+            ZStack {
                 switch model.state {
+                case .connecting:
+                    AudioBarsView(level: 0)
+                case .connectionFailed:
+                    Button(action: onOpenInputSettings) {
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .frame(width: 40, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text(L10n.string(
+                        "overlay.open_input_settings",
+                        fallback: "Open input device settings"
+                    )))
+                    .help(Text(L10n.string(
+                        "overlay.open_input_settings",
+                        fallback: "Open input device settings"
+                    )))
                 case .recording(let level, _):
                     AudioBarsView(level: level)
                         .transition(.opacity)
@@ -125,7 +162,7 @@ struct FloatingOverlayView: View {
                     EmptyView()
                 }
             }
-            .frame(width: 40, height: 24)
+            .frame(width: 44, height: 24)
             .animation(.easeInOut(duration: 0.18), value: stateKey)
         }
         .padding(.horizontal, 18)
@@ -174,6 +211,10 @@ struct FloatingOverlayView: View {
 
     private var label: String {
         switch model.state {
+        case .connecting:
+            return L10n.string("overlay.listening", fallback: "Listening")
+        case .connectionFailed:
+            return L10n.string("overlay.connection_failed", fallback: "Connection failed")
         case .recording:
             return L10n.string("overlay.listening", fallback: "Listening")
         case .transcribing(let provider):
@@ -198,6 +239,7 @@ struct FloatingOverlayView: View {
 
     private var iconName: String {
         switch model.state {
+        case .connectionFailed: return "xmark"
         case .polishing: return "wand.and.sparkles"
         case .modelNotice: return "memorychip"
         default:         return "mic.fill"
@@ -209,6 +251,8 @@ struct FloatingOverlayView: View {
         // the later state swap. Cloud recording reserves provider-label width
         // up front; local recording/transcription keeps the original 80 pt.
         switch model.state {
+        case .connecting, .connectionFailed:
+            return 80
         case .recording(_, let provider), .transcribing(let provider):
             return provider == nil ? 80 : 150
         default:
@@ -221,10 +265,12 @@ struct FloatingOverlayView: View {
     private var stateKey: Int {
         switch model.state {
         case .hidden:        return 0
-        case .recording:     return 1
-        case .transcribing:  return 2
-        case .polishing:     return 3
-        case .modelNotice:   return 4
+        case .connecting:    return 1
+        case .connectionFailed: return 2
+        case .recording:     return 3
+        case .transcribing:  return 4
+        case .polishing:     return 5
+        case .modelNotice:   return 6
         }
     }
 
@@ -233,6 +279,36 @@ struct FloatingOverlayView: View {
         case .loaded:   return "checkmark.circle.fill"
         case .unloaded: return "minus.circle"
         }
+    }
+}
+
+// MARK: - Loading spinner
+
+/// Compact modern activity indicator made from thick, round-ended strokes.
+/// It lives in the layout gap rather than being offset by a guessed x value.
+private struct ModernLoadingSpinner: View {
+    private let spokeCount = 8
+    private let revolutionDuration: TimeInterval = 0.8
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+            let progress = timeline.date.timeIntervalSinceReferenceDate
+                .truncatingRemainder(dividingBy: revolutionDuration) / revolutionDuration
+
+            ZStack {
+                ForEach(0..<spokeCount, id: \.self) { index in
+                    Capsule(style: .continuous)
+                        .fill(Color.primary.opacity(0.24 + Double(index) * 0.075))
+                        .frame(width: 3, height: 7)
+                        .offset(y: -5)
+                        .rotationEffect(.degrees(Double(index) * 45))
+                }
+            }
+            .frame(width: 16, height: 16)
+            .rotationEffect(.degrees(progress * 360))
+        }
+        .frame(width: 16, height: 16)
+        .accessibilityHidden(true)
     }
 }
 

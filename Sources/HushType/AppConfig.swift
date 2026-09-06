@@ -3,6 +3,18 @@ import os
 
 private let log = Logger(subsystem: "com.felix.hushtype", category: "config")
 
+enum UpdateChannel: String, CaseIterable, Equatable, Sendable {
+    case stable
+    case preview
+
+    var allowedSparkleChannels: Set<String> {
+        switch self {
+        case .stable: []
+        case .preview: ["preview"]
+        }
+    }
+}
+
 final class AppConfig {
     static let shared = AppConfig()
 
@@ -31,6 +43,32 @@ final class AppConfig {
         static let cloudDictationModelGemini = "hushtype.cloudDictationModelGemini"
         static let interfaceLanguage = "hushtype.interfaceLanguage"
         static let releaseF5WhenModelUnloaded = "hushtype.releaseF5WhenModelUnloaded"
+        static let recognitionHistoryMaximumEntries = "hushtype.recognitionHistoryMaximumEntries"
+        static let recognitionHistoryRetentionDays = "hushtype.recognitionHistoryRetentionDays"
+        static let audioInputSelection = "hushtype.audioInputSelection"
+        static let updateChannel = "hushtype.updateChannel"
+    }
+
+    var updateChannel: UpdateChannel {
+        get {
+            guard let raw = defaults.string(forKey: Keys.updateChannel),
+                  let channel = UpdateChannel(rawValue: raw) else {
+                return .stable
+            }
+            return channel
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: Keys.updateChannel)
+            log.info("Update channel set to: \(newValue.rawValue, privacy: .public)")
+        }
+    }
+
+    var audioInputSelection: String {
+        get { defaults.string(forKey: Keys.audioInputSelection) ?? AudioInputSelection.followSystem }
+        set {
+            defaults.set(newValue, forKey: Keys.audioInputSelection)
+            log.info("Audio input selection changed")
+        }
     }
 
     /// Dictation deliberately persists its engine choice across launches so
@@ -383,6 +421,43 @@ final class AppConfig {
         return appSupport
             .appendingPathComponent("HushType", isDirectory: true)
             .appendingPathComponent("dictionary.txt")
+    }
+
+    /// App-owned persisted recognition history. Unlike the dictionary, this is
+    /// application data rather than a document intended for direct editing.
+    static var recognitionHistoryFileURL: URL {
+        let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        )[0]
+        return appSupport
+            .appendingPathComponent("HushType", isDirectory: true)
+            .appendingPathComponent("recognition-history.json")
+    }
+
+    /// A missing value keeps the product default of 500. Invalid values are
+    /// normalized at the boundary so pruning never receives a negative count.
+    var recognitionHistoryMaximumEntries: Int {
+        get {
+            guard defaults.object(forKey: Keys.recognitionHistoryMaximumEntries) != nil else {
+                return 500
+            }
+            return max(0, defaults.integer(forKey: Keys.recognitionHistoryMaximumEntries))
+        }
+        set { defaults.set(max(0, newValue), forKey: Keys.recognitionHistoryMaximumEntries) }
+    }
+
+    /// `nil` means keep history indefinitely. A missing preference preserves
+    /// the initial 30-day product default; zero is the persisted nil sentinel.
+    var recognitionHistoryRetentionDays: Int? {
+        get {
+            guard defaults.object(forKey: Keys.recognitionHistoryRetentionDays) != nil else {
+                return 30
+            }
+            let days = defaults.integer(forKey: Keys.recognitionHistoryRetentionDays)
+            return days > 0 ? days : nil
+        }
+        set { defaults.set(max(0, newValue ?? 0), forKey: Keys.recognitionHistoryRetentionDays) }
     }
 
     static func promptOverrideURL(filename: String) -> URL {

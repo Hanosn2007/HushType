@@ -93,6 +93,7 @@
 /* Status-menu idle state. */
 
 "status.ready" = "Ready";
+"status.connecting" = "Connecting microphone";
 
 /* Status-menu recording state. */
 
@@ -400,6 +401,9 @@
 /* Starts the explicit-consent GitHub update check. */
 
 "about.check_updates" = "Check for Updates";
+"settings.general.update_channel" = "Updates";
+"settings.general.update_channel.stable" = "Stable";
+"settings.general.update_channel.preview" = "Preview";
 
 /* Consent title shown every time before the app makes a GitHub API request. */
 
@@ -1159,6 +1163,9 @@
 
 /* Floating dictation overlay recording label. */
 
+"overlay.connection_failed" = "Connection failed";
+"overlay.open_input_settings" = "Open input device settings";
+
 "overlay.listening" = "Listening";
 
 /* Floating dictation overlay label for local transcription. */
@@ -1485,10 +1492,41 @@
 "settings.navigation.forward" = "Forward";
 "settings.sidebar.overview" = "Overview";
 "settings.sidebar.dictation" = "Dictation";
+"settings.sidebar.history" = "Recognition History";
 "settings.sidebar.model" = "Model";
 "settings.sidebar.dictionary" = "Dictionary";
 "settings.sidebar.permissions" = "Permissions";
 "settings.sidebar.general" = "General";
+"settings.history.subtitle" = "Find and copy past recognition results, even when insertion into another app failed.";
+"settings.history.filter" = "Time Range";
+"settings.history.filter.all" = "All";
+"settings.history.filter.today" = "Today";
+"settings.history.filter.seven_days" = "7 Days";
+"settings.history.filter.thirty_days" = "30 Days";
+"settings.history.empty" = "No Recognition History";
+"settings.history.empty_detail" = "New dictation results will appear here before HushType attempts to insert them.";
+"settings.history.no_results" = "No Matching Results";
+"settings.history.no_results_detail" = "Try another search or time range.";
+"settings.history.error" = "History couldn’t be updated";
+"settings.history.error.dismiss" = "Dismiss";
+"settings.history.search" = "Search recognition text";
+"settings.history.copy" = "Copy";
+"settings.history.delete" = "Delete";
+"settings.history.delete.confirm_title" = "Delete This Entry?";
+"settings.history.delete.confirm_message" = "This recognition entry will be permanently deleted.";
+"settings.history.clear" = "Clear All History";
+"settings.history.clear.confirm_title" = "Clear All History?";
+"settings.history.clear.confirm_message" = "All recognition entries will be permanently deleted. This cannot be undone.";
+"settings.history.storage" = "Storage";
+"settings.history.maximum_entries" = "Maximum entries";
+"settings.history.retention" = "Keep history";
+"settings.history.retention.seven_days" = "7 days";
+"settings.history.retention.thirty_days" = "30 days";
+"settings.history.retention.ninety_days" = "90 days";
+"settings.history.retention.forever" = "No time limit";
+"settings.history.retention_help" = "Items are permanently removed when either limit is reached. Changing a limit applies immediately.";
+"settings.history.day.today" = "Today";
+"settings.history.day.yesterday" = "Yesterday";
 "settings.overview.title" = "Overview";
 "settings.overview.subtitle" = "A quick view of HushType and its local speech model.";
 "settings.overview.permissions_needed.title" = "Permissions need attention";
@@ -1558,6 +1596,11 @@
 "settings.permissions.restart_required.detail" = "Permissions are now allowed. Restart HushType so macOS can apply Accessibility to this app.";
 "settings.general.title" = "General";
 "settings.general.subtitle" = "Adjust how HushType presents and cleans up dictation.";
+"settings.general.input_device" = "Input Device";
+"settings.general.input_device.follow_system" = "Follow System";
+"settings.general.input_device.automatic" = "Automatic";
+"settings.general.input_device.current" = "Current: %1$@";
+"settings.general.input_device.unavailable" = "Unavailable";
 "settings.general.floating_overlay" = "Show the floating recording overlay";
 "settings.general.release_f5_when_unloaded" = "Return F5 to macOS after unloading the model";
 "settings.general.text_polish" = "Enable text polishing";
@@ -1572,6 +1615,8 @@
 "settings.status.verifying_model" = "Verifying model files before loading them.";
 "settings.status.loading_model" = "Loading the model into memory.";
 "settings.status.ready_detail" = "Press F5 to start dictation.";
+"settings.status.connecting_detail" = "Waiting for microphone audio. Press F5 again to cancel.";
+"settings.general.input_device.selected_unavailable" = "Selected device unavailable";
 "settings.status.recording_detail" = "Press F5 again when you finish speaking.";
 "settings.status.transcribing_detail" = "Turning your voice into text.";
 "settings.status.polishing_detail" = "Applying your text preferences.";

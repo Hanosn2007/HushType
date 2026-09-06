@@ -4,6 +4,34 @@ import XCTest
 
 final class FloatingOverlayWindowTests: XCTestCase {
     @MainActor
+    func testConnectingToListeningKeepsSizeAndHorizontalCenter() async throws {
+        _ = NSApplication.shared
+        let model = OverlayStateModel()
+        let window = FloatingOverlayWindow(stateModel: model)
+        defer { window.hideImmediately() }
+
+        model.state = .connecting
+        window.show()
+        try await Task.sleep(for: .milliseconds(100))
+        let connectingFrame = window.frame
+
+        model.state = .recording(level: 0, provider: nil)
+        window.show()
+        try await Task.sleep(for: .milliseconds(100))
+        let listeningFrame = window.frame
+
+        XCTAssertEqual(listeningFrame.width, connectingFrame.width, accuracy: 1)
+        XCTAssertEqual(listeningFrame.midX, connectingFrame.midX, accuracy: 1)
+
+        model.state = .connectionFailed
+        window.showConnectionFailure(onOpenSettings: {})
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(window.frame.width, listeningFrame.width, accuracy: 1)
+        XCTAssertEqual(window.frame.midX, listeningFrame.midX, accuracy: 1)
+        XCTAssertFalse(window.ignoresMouseEvents)
+    }
+
+    @MainActor
     func testNoticePreservesListeningGeometryWithoutFloatingOrTakingFocus() async throws {
         _ = NSApplication.shared
         let model = OverlayStateModel()
