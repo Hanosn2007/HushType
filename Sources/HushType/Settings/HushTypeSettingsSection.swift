@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import ApplicationServices
 import Combine
+import CoreBluetooth
 
 enum HushTypeSettingsSection: String, CaseIterable, Identifiable {
     case overview
@@ -109,6 +110,9 @@ final class HushTypeSettingsModel: ObservableObject {
     @Published private(set) var accessibilityGranted = AXIsProcessTrusted()
     @Published private(set) var microphoneStatus = AVCaptureDevice.authorizationStatus(for: .audio)
     @Published private(set) var isRequestingMicrophone = false
+    @Published private(set) var bluetoothStatus = CBManager.authorization
+    @Published private(set) var isRequestingBluetooth = false
+    private let bluetoothPermissionRequest = BluetoothPermissionRequest()
     @Published private(set) var accessibilitySettingsOpened = false
     @Published private(set) var didResetAccessibility = false
     /// Becomes true only after this process has observed permissions recover
@@ -272,6 +276,7 @@ final class HushTypeSettingsModel: ObservableObject {
     func refresh() {
         isRefreshing = true
         defer { isRefreshing = false }
+        refreshBluetoothPermission()
         updatePermissionState(
             accessibilityGranted: AXIsProcessTrusted(),
             microphoneStatus: AVCaptureDevice.authorizationStatus(for: .audio)
@@ -425,6 +430,26 @@ final class HushTypeSettingsModel: ObservableObject {
 
     func openMicrophoneSettings() {
         actions.openMicrophoneSettings()
+    }
+
+    func requestBluetooth() {
+        refreshBluetoothPermission()
+        guard bluetoothStatus == .notDetermined, !isRequestingBluetooth else { return }
+        isRequestingBluetooth = true
+        bluetoothPermissionRequest.onAuthorizationChanged = { [weak self] in
+            self?.refreshBluetoothPermission()
+        }
+        bluetoothPermissionRequest.request()
+    }
+
+    private func refreshBluetoothPermission() {
+        bluetoothStatus = CBManager.authorization
+        if bluetoothStatus != .notDetermined { isRequestingBluetooth = false }
+    }
+
+    func openBluetoothSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Bluetooth") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     func checkForUpdates() { actions.checkForUpdates() }

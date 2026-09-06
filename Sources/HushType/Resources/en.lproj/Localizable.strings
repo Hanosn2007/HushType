@@ -800,6 +800,10 @@
 /* Apple permission category name. */
 
 "permission.microphone.title" = "Microphone";
+"permission.bluetooth.title" = "Bluetooth";
+"permission.bluetooth.subtitle" = "Allow in advance to detect disconnections from iPhone and Bluetooth microphones. Not required for the built-in or wired microphone.";
+"permission.bluetooth.allow" = "Allow Bluetooth";
+"permission.bluetooth.open_settings" = "Open Bluetooth Privacy Settings";
 
 /* Explains why Microphone permission is required. */
 

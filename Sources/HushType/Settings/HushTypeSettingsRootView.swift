@@ -1,5 +1,6 @@
 import AVFoundation
 import Combine
+import CoreBluetooth
 import SwiftUI
 
 struct HushTypeSettingsRootView: View {
@@ -847,6 +848,32 @@ private struct SettingsPermissionsView: View {
                 @unknown default:
                     Button(L10n.string("permission.microphone.open_settings", fallback: "Open Microphone Settings")) {
                         model.openMicrophoneSettings()
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+
+            permissionCard(
+                icon: "antenna.radiowaves.left.and.right",
+                title: L10n.string("permission.bluetooth.title", fallback: "Bluetooth"),
+                detail: L10n.string("permission.bluetooth.subtitle", fallback: "Allow in advance to detect disconnections from iPhone and Bluetooth microphones. Not required for the built-in or wired microphone."),
+                isGranted: model.bluetoothStatus == .allowedAlways
+            ) {
+                switch model.bluetoothStatus {
+                case .allowedAlways:
+                    Label(L10n.string("permission.status.allowed", fallback: "Allowed"), systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                case .notDetermined:
+                    Button(model.isRequestingBluetooth
+                           ? L10n.string("permission.status.waiting", fallback: "Waiting…")
+                           : L10n.string("permission.bluetooth.allow", fallback: "Allow Bluetooth")) {
+                        model.requestBluetooth()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.isRequestingBluetooth)
+                default:
+                    Button(L10n.string("permission.bluetooth.open_settings", fallback: "Open Bluetooth Privacy Settings")) {
+                        model.openBluetoothSettings()
                     }
                     .buttonStyle(.bordered)
                 }

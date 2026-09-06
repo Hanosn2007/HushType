@@ -130,13 +130,13 @@ enum AudioInputDeviceManager {
 
     /// A missing host controller is treated as unknown instead of off so a
     /// wired-only Mac or a future platform change cannot falsely interrupt
-    /// capture. The app declares why it reads this public Bluetooth state;
-    /// macOS owns the one-time authorization prompt.
+    /// capture. Authorization is requested explicitly from Permissions;
+    /// recording health checks must never cause a permission prompt.
     static func bluetoothControllerIsPoweredOn() -> Bool? {
         switch CBManager.authorization {
-        case .denied, .restricted:
+        case .denied, .restricted, .notDetermined:
             return nil
-        case .allowedAlways, .notDetermined:
+        case .allowedAlways:
             break
         @unknown default:
             return nil

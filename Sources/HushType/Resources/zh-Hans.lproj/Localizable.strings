@@ -802,6 +802,10 @@
 /* Apple permission category name. */
 
 "permission.microphone.title" = "麦克风";
+"permission.bluetooth.title" = "蓝牙";
+"permission.bluetooth.subtitle" = "提前授权，以便及时提示 iPhone 和蓝牙麦克风断开。内置或有线麦克风无需此权限。";
+"permission.bluetooth.allow" = "允许蓝牙";
+"permission.bluetooth.open_settings" = "打开蓝牙隐私设置";
 
 /* Explains why Microphone permission is required. */
 
