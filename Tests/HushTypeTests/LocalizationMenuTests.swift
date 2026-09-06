@@ -46,6 +46,23 @@ final class LocalizationMenuTests: XCTestCase {
         XCTAssertEqual(alert.alertStyle, .informational)
     }
 
+    func testStatusBarSymbolUsesTemplateRenderingForDarkMenuBars() {
+        let image = StatusBarController.makeStatusImage(symbolName: "mic.fill")
+        XCTAssertNotNil(image)
+        XCTAssertEqual(image?.isTemplate, true)
+    }
+
+    @MainActor
+    func testSettingsVersionDisplayIncludesBuildNumber() {
+        XCTAssertEqual(
+            HushTypeSettingsModel.appVersionDisplay(infoDictionary: [
+                "CFBundleShortVersionString": "0.5.18-preview.5",
+                "CFBundleVersion": "41",
+            ]),
+            "0.5.18-preview.5 (41)"
+        )
+    }
+
     func testCaptionRoleIsSemanticAndLocalized() {
         AppConfig.shared.interfaceLanguage = .english
         L10n.resetLaunchStateForTests()

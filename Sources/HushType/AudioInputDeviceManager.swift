@@ -2,6 +2,7 @@ import AVFoundation
 import AudioToolbox
 import CoreAudio
 import Foundation
+import IOBluetooth
 import os
 
 private let audioDeviceLog = Logger(subsystem: "com.felix.hushtype", category: "audio-device")
@@ -12,11 +13,13 @@ struct AudioInputDevice: Identifiable, Equatable, Sendable {
     let audioObjectID: AudioDeviceID
     let isBuiltIn: Bool
     let isAlive: Bool
+    let transportType: UInt32
 }
 
 struct ResolvedAudioCaptureDevice {
     let captureDevice: AVCaptureDevice
     let audioObjectID: AudioDeviceID
+    let requiresPoweredBluetoothController: Bool
 }
 
 enum AudioInputSelection {
@@ -59,7 +62,10 @@ enum AudioInputDeviceManager {
             audioDeviceLog.info("Resolved capture device: \(captureDevice.localizedName, privacy: .public)")
             return ResolvedAudioCaptureDevice(
                 captureDevice: captureDevice,
-                audioObjectID: chosen.audioObjectID
+                audioObjectID: chosen.audioObjectID,
+                requiresPoweredBluetoothController: requiresPoweredBluetoothController(
+                    transportType: chosen.transportType
+                )
             )
         }
         return nil
@@ -112,6 +118,23 @@ enum AudioInputDeviceManager {
         listedDeviceIDs.contains(audioObjectID) && observedUID == expectedUID && isAlive
     }
 
+    static func requiresPoweredBluetoothController(transportType: UInt32) -> Bool {
+        // Apple requires Bluetooth as well as Wi-Fi for wireless Continuity
+        // Capture. This only treats Bluetooth-off as conclusive; it does not
+        // assume that the media stream itself is carried solely by Bluetooth.
+        transportType == kAudioDeviceTransportTypeBluetooth
+            || transportType == kAudioDeviceTransportTypeBluetoothLE
+            || transportType == kAudioDeviceTransportTypeContinuityCaptureWireless
+    }
+
+    /// A missing host controller is treated as unknown instead of off so a
+    /// wired-only Mac or a future platform change cannot falsely interrupt
+    /// capture. Reading this state does not initiate Bluetooth discovery.
+    static func bluetoothControllerIsPoweredOn() -> Bool? {
+        guard let controller = IOBluetoothHostController.default() else { return nil }
+        return controller.powerState == kBluetoothHCIPowerStateON
+    }
+
     private static func allDeviceIDs() -> [AudioDeviceID] {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDevices,
@@ -145,7 +168,8 @@ enum AudioInputDeviceManager {
             name: name,
             audioObjectID: id,
             isBuiltIn: transportType == kAudioDeviceTransportTypeBuiltIn,
-            isAlive: uint32Property(id, selector: kAudioDevicePropertyDeviceIsAlive) != 0
+            isAlive: uint32Property(id, selector: kAudioDevicePropertyDeviceIsAlive) != 0,
+            transportType: transportType
         )
     }
 

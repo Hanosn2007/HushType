@@ -8,21 +8,24 @@ final class AudioInputDeviceManagerTests: XCTestCase {
         name: "iPhone Microphone",
         audioObjectID: 1,
         isBuiltIn: false,
-        isAlive: true
+        isAlive: true,
+        transportType: kAudioDeviceTransportTypeContinuityCaptureWireless
     )
     private let builtIn = AudioInputDevice(
         id: "built-in",
         name: "MacBook Microphone",
         audioObjectID: 2,
         isBuiltIn: true,
-        isAlive: true
+        isAlive: true,
+        transportType: kAudioDeviceTransportTypeBuiltIn
     )
     private let virtual = AudioInputDevice(
         id: "virtual",
         name: "Virtual Audio Device",
         audioObjectID: 3,
         isBuiltIn: false,
-        isAlive: true
+        isAlive: true,
+        transportType: kAudioDeviceTransportTypeVirtual
     )
 
     func testAutomaticSelectionPrefersSystemDefault() {
@@ -107,6 +110,43 @@ final class AudioInputDeviceManagerTests: XCTestCase {
         XCTAssertTrue(AudioCaptureHealthPolicy.isBufferStreamStalled(
             monitoringEnabled: true,
             secondsSinceLastBuffer: AudioCaptureHealthPolicy.bufferStallThreshold
+        ))
+    }
+
+    func testBluetoothDependentInputTransportsAreClassifiedWithoutUsingDeviceNames() {
+        XCTAssertTrue(AudioInputDeviceManager.requiresPoweredBluetoothController(
+            transportType: kAudioDeviceTransportTypeBluetooth
+        ))
+        XCTAssertTrue(AudioInputDeviceManager.requiresPoweredBluetoothController(
+            transportType: kAudioDeviceTransportTypeBluetoothLE
+        ))
+        XCTAssertTrue(AudioInputDeviceManager.requiresPoweredBluetoothController(
+            transportType: kAudioDeviceTransportTypeContinuityCaptureWireless
+        ))
+        XCTAssertFalse(AudioInputDeviceManager.requiresPoweredBluetoothController(
+            transportType: kAudioDeviceTransportTypeContinuityCaptureWired
+        ))
+        XCTAssertFalse(AudioInputDeviceManager.requiresPoweredBluetoothController(
+            transportType: kAudioDeviceTransportTypeBuiltIn
+        ))
+    }
+
+    func testBluetoothTransportFailsOnlyWhenControllerIsKnownToBeOff() {
+        XCTAssertTrue(AudioCaptureHealthPolicy.isBluetoothTransportUnavailable(
+            requiresPoweredController: true,
+            controllerIsPoweredOn: false
+        ))
+        XCTAssertFalse(AudioCaptureHealthPolicy.isBluetoothTransportUnavailable(
+            requiresPoweredController: true,
+            controllerIsPoweredOn: true
+        ))
+        XCTAssertFalse(AudioCaptureHealthPolicy.isBluetoothTransportUnavailable(
+            requiresPoweredController: true,
+            controllerIsPoweredOn: nil
+        ))
+        XCTAssertFalse(AudioCaptureHealthPolicy.isBluetoothTransportUnavailable(
+            requiresPoweredController: false,
+            controllerIsPoweredOn: false
         ))
     }
 }

@@ -1672,7 +1672,28 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             symbolName = "mic.slash"
         }
 
-        button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "HushType")
+        // Explicit template rendering is required for reliable contrast on a
+        // dark menu bar. Keep the status item visible when activation policy
+        // changes while the regular settings window is open.
+        statusItem.length = NSStatusItem.squareLength
+        statusItem.isVisible = true
+        if let image = Self.makeStatusImage(symbolName: symbolName) {
+            button.image = image
+            button.imagePosition = .imageOnly
+            button.title = ""
+        } else {
+            button.image = nil
+            button.imagePosition = .noImage
+            button.title = "H"
+        }
+    }
+
+    static func makeStatusImage(symbolName: String) -> NSImage? {
+        guard let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "HushType") else {
+            return nil
+        }
+        image.isTemplate = true
+        return image
     }
 
     private func updateStatusText(for state: State) {

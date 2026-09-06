@@ -21,6 +21,13 @@ enum AudioCaptureHealthPolicy {
         guard monitoringEnabled, let secondsSinceLastBuffer else { return false }
         return secondsSinceLastBuffer >= bufferStallThreshold
     }
+
+    static func isBluetoothTransportUnavailable(
+        requiresPoweredController: Bool,
+        controllerIsPoweredOn: Bool?
+    ) -> Bool {
+        requiresPoweredController && controllerIsPoweredOn == false
+    }
 }
 
 final class AudioCaptureService {
@@ -436,6 +443,7 @@ final class AudioCaptureService {
             session: session,
             device: device,
             audioObjectID: resolvedDevice.audioObjectID,
+            requiresPoweredBluetoothController: resolvedDevice.requiresPoweredBluetoothController,
             bufferHeartbeat: bufferHeartbeat,
             shouldMonitorAvailability: shouldMonitorAvailability,
             shouldMonitorBufferFlow: shouldMonitorBufferFlow,
@@ -461,6 +469,7 @@ final class AudioCaptureService {
         session: AVCaptureSession,
         device: AVCaptureDevice,
         audioObjectID: AudioDeviceID,
+        requiresPoweredBluetoothController: Bool,
         bufferHeartbeat: CaptureBufferHeartbeat,
         shouldMonitorAvailability: @escaping () -> Bool,
         shouldMonitorBufferFlow: @escaping () -> Bool,
@@ -529,6 +538,14 @@ final class AudioCaptureService {
                     "Input buffer stream stalled for \(secondsSinceLastBuffer ?? 0, privacy: .public)s"
                 )
                 deliver(self.captureError("The input device stopped providing audio"))
+                return
+            }
+            if AudioCaptureHealthPolicy.isBluetoothTransportUnavailable(
+                requiresPoweredController: requiresPoweredBluetoothController,
+                controllerIsPoweredOn: AudioInputDeviceManager.bluetoothControllerIsPoweredOn()
+            ) {
+                log.error("Bluetooth controller powered off during wireless input capture")
+                deliver(self.captureError("Bluetooth was turned off while using the input device"))
                 return
             }
             if AudioInputDeviceManager.isDeviceAvailable(

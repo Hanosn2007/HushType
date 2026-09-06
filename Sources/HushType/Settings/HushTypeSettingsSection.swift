@@ -217,6 +217,17 @@ final class HushTypeSettingsModel: ObservableObject {
         accessibilityGranted && microphoneStatus == .authorized
     }
 
+    var appVersionDisplay: String {
+        Self.appVersionDisplay(infoDictionary: Bundle.main.infoDictionary)
+    }
+
+    static func appVersionDisplay(infoDictionary: [String: Any]?) -> String {
+        let version = infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        guard let build = infoDictionary?["CFBundleVersion"] as? String,
+              !build.isEmpty else { return version }
+        return "\(version) (\(build))"
+    }
+
     var visibleSections: [HushTypeSettingsSection] {
         onboardingRequired ? [.permissions] : HushTypeSettingsSection.allCases
     }

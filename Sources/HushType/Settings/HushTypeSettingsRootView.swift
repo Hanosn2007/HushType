@@ -998,8 +998,13 @@ private struct SettingsGeneralView: View {
                 }
 
                 HStack {
-                    Button(L10n.string("about.check_updates", fallback: "Check for Updates…")) {
-                        model.checkForUpdates()
+                    HStack(spacing: 8) {
+                        Button(L10n.string("about.check_updates", fallback: "Check for Updates…")) {
+                            model.checkForUpdates()
+                        }
+                        Text(model.appVersionDisplay)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                     Spacer()
                     Link(destination: URL(string: "https://github.com/Hanosn2007/HushType")!) {
