@@ -3,6 +3,18 @@
     <channel>
         <title>HushType</title>
         <item>
+            <title>0.5.18-preview.9</title>
+            <pubDate>Sun, 06 Sep 2026 23:21:57 +0800</pubDate>
+            <link>https://github.com/Hanosn2007/HushType/releases</link>
+            <sparkle:channel>preview</sparkle:channel>
+            <sparkle:version>45</sparkle:version>
+            <sparkle:shortVersionString>0.5.18-preview.9</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <sparkle:releaseNotesLink>https://hanosn2007.github.io/HushType/HushType-0.5.18-preview.9.md</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/Hanosn2007/HushType/releases/download/v0.5.18-preview.9/HushType-0.5.18-preview.9.zip" length="43436240" type="application/octet-stream" sparkle:edSignature="pT3i5EtjipZxHZEg3zm2Ip5F0vf+ZP45PSTvXMKR5+ju40t2VDjImsTmnN8KcIvJyc92hiev87IafDwxx6cyAQ=="/>
+        </item>
+        <item>
             <title>0.5.18-preview.8</title>
             <pubDate>Sun, 06 Sep 2026 22:06:47 +0800</pubDate>
             <link>https://github.com/Hanosn2007/HushType/releases</link>
