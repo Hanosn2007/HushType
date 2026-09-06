@@ -11,6 +11,16 @@ enum OverlayState: Equatable {
     case recording(level: Float, provider: String?)  // 0.0–1.0 RMS
     case transcribing(provider: String?)
     case polishing
+    case modelNotice(ModelNoticeKind)
+}
+
+/// The short-lived status shown after a local model operation completes.
+///
+/// The notice has its own overlay window, so this state never replaces an
+/// active recording indicator.
+enum ModelNoticeKind: Equatable {
+    case loaded
+    case unloaded
 }
 
 /// Observable model so SwiftUI can react to RMS updates.
@@ -21,6 +31,10 @@ enum OverlayState: Equatable {
 /// to keep AppDelegate construction synchronous.
 final class OverlayStateModel: ObservableObject {
     @Published var state: OverlayState = .hidden
+
+    /// Owned by `FloatingOverlayWindow`. Keeping this in the observed model
+    /// lets the right-hand accessory swap without changing the pill geometry.
+    @Published var isModelNoticeHovered = false
 }
 
 // MARK: - Overlay appearance and host geometry
@@ -58,6 +72,7 @@ enum FloatingOverlayAppearance {
 
 struct FloatingOverlayView: View {
     @ObservedObject var model: OverlayStateModel
+    let onOpenModels: () -> Void
 
     private let pillShape = RoundedRectangle(
         cornerRadius: FloatingOverlayAppearance.cornerRadius,
@@ -79,6 +94,8 @@ struct FloatingOverlayView: View {
             Text(label)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
                 .frame(width: labelWidth, alignment: .leading)
 
             ZStack {
@@ -99,6 +116,8 @@ struct FloatingOverlayView: View {
                 case .polishing:
                     ProgressView()
                         .controlSize(.small)
+                case .modelNotice(let kind):
+                    modelNoticeAccessory(for: kind)
                 case .hidden:
                     EmptyView()
                 }
@@ -120,6 +139,34 @@ struct FloatingOverlayView: View {
             x: FloatingOverlayAppearance.shadow.x,
             y: FloatingOverlayAppearance.shadow.y
         )
+        .accessibilityLabel(Text(label))
+    }
+
+    @ViewBuilder
+    private func modelNoticeAccessory(for kind: ModelNoticeKind) -> some View {
+        if model.isModelNoticeHovered {
+            Button(action: onOpenModels) {
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 40, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(L10n.string(
+                "overlay.open_models",
+                fallback: "Open model settings"
+            )))
+            .help(Text(L10n.string(
+                "overlay.open_models",
+                fallback: "Open model settings"
+            )))
+        } else {
+            Image(systemName: modelNoticeIconName(for: kind))
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.primary.opacity(0.85))
+                .accessibilityHidden(true)
+        }
     }
 
     private var label: String {
@@ -137,6 +184,10 @@ struct FloatingOverlayView: View {
             return L10n.string("overlay.transcribing", fallback: "Transcribing")
         case .polishing:
             return L10n.string("overlay.polishing", fallback: "Polishing…")
+        case .modelNotice(.unloaded):
+            return L10n.string("overlay.model_unloaded", fallback: "Model unloaded")
+        case .modelNotice(.loaded):
+            return L10n.string("overlay.model_loaded", fallback: "Model ready")
         case .hidden:
             return ""
         }
@@ -145,6 +196,7 @@ struct FloatingOverlayView: View {
     private var iconName: String {
         switch model.state {
         case .polishing: return "wand.and.sparkles"
+        case .modelNotice: return "memorychip"
         default:         return "mic.fill"
         }
     }
@@ -169,6 +221,14 @@ struct FloatingOverlayView: View {
         case .recording:     return 1
         case .transcribing:  return 2
         case .polishing:     return 3
+        case .modelNotice:   return 4
+        }
+    }
+
+    private func modelNoticeIconName(for kind: ModelNoticeKind) -> String {
+        switch kind {
+        case .loaded:   return "checkmark.circle.fill"
+        case .unloaded: return "minus.circle"
         }
     }
 }

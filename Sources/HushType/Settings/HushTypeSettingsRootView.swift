@@ -708,8 +708,14 @@ private struct SettingsGeneralView: View {
                 Text(L10n.string("menu.interface_language.applied_next_launch", fallback: "Changes apply the next time HushType launches."))
             }
             SettingsSection {
-                Button(L10n.string("about.check_updates", fallback: "Check for Updates…")) {
-                    model.checkForUpdates()
+                HStack {
+                    Button(L10n.string("about.check_updates", fallback: "Check for Updates…")) {
+                        model.checkForUpdates()
+                    }
+                    Spacer()
+                    Link(destination: URL(string: "https://github.com/Hanosn2007/HushType")!) {
+                        Label("GitHub", systemImage: "arrow.up.right.square")
+                    }
                 }
             }
         }

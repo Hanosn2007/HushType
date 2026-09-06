@@ -137,6 +137,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Floating overlay (created lazily on first use)
     private let overlayState = OverlayStateModel()
     private lazy var overlayWindow = FloatingOverlayWindow(stateModel: overlayState)
+    private let modelNoticeState = OverlayStateModel()
+    private lazy var modelNoticeWindow = FloatingOverlayWindow(stateModel: modelNoticeState)
 
     // Translation card (created lazily on first use)
     private lazy var translationCardWindow = TranslationCardWindow()
@@ -239,7 +241,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         statusBar.onReloadModel = { [weak self] in
-            self?.reloadModel()
+            self?.reloadModel(showCompletionNotice: true)
         }
         statusBar.onStopModelDownload = { [weak self] in
             self?.stopModelDownload()
@@ -260,7 +262,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.localEngine.loadingModelID
             },
             reloadModel: { [weak self] in
-                self?.reloadModel()
+                self?.reloadModel(showCompletionNotice: true)
             },
             unloadModel: { [weak self] in
                 Task { @MainActor in
@@ -449,6 +451,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tapArbiter.reset()
         hotkeyManager.stop()
         hideOverlay()
+        modelNoticeWindow.hideImmediately()
         log.info("HushType terminated")
     }
 
@@ -569,6 +572,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Overlay helpers
 
     private func showOverlayRecording() {
+        modelNoticeWindow.hideImmediately()
         guard AppConfig.shared.floatingOverlayEnabled else { return }
         let provider: String?
         switch AppConfig.shared.dictationEngine {
@@ -593,6 +597,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showOverlayPolishing() {
+        modelNoticeWindow.hideImmediately()
         guard AppConfig.shared.floatingOverlayEnabled else { return }
         overlayState.state = .polishing
         overlayWindow.show()
@@ -601,6 +606,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func hideOverlay() {
         overlayWindow.hide()
         overlayState.state = .hidden
+    }
+
+    private func showModelNotice(_ kind: ModelNoticeKind) {
+        // Recording/polishing owns the pill position while active. Model
+        // notices use a separate ordinary-level window and never steal focus.
+        guard overlayState.state == .hidden else { return }
+        modelNoticeWindow.showModelNotice(kind) {
+            HushTypeSettingsWindowController.shared.present(section: .model)
+        }
     }
 
     // MARK: - Hotkey Handlers
@@ -1531,6 +1545,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             print("[HushType] Cannot unload — state is \(state)")
             return
         }
+        modelNoticeWindow.hideImmediately()
         // Block dictation while a local-caption backend drains. The status
         // row stays unchanged until the final unloaded/idle transition.
         state = .loading
@@ -1550,7 +1565,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Release only the manager's local-model handle. A local caption
         // backend is stopped because it strongly owns Qwen; a cloud-translate
         // backend has no Qwen reference and must survive this operation.
-        let wasLocalCaptionActive = await liveCaptionManager?.releaseLocalModel() ?? false
+        _ = await liveCaptionManager?.releaseLocalModel()
         snapshot("1_manager_release")
 
         localEngine.unload()
@@ -1581,44 +1596,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         print("[HushType] Model unloaded — memory freed")
 
-        // Show confirmation alert with cold-start warning. If live caption
-        // was active, the message changes to direct the user accordingly.
-        let alert = NSAlert()
-        if wasLocalCaptionActive {
-            alert.messageText = L10n.string(
-                "alert.model_unloaded.live_caption.title",
-                fallback: "Live Caption Stopped"
-            )
-            alert.informativeText = L10n.string(
-                "alert.model_unloaded.live_caption.message",
-                fallback: "The speech-to-text model was unloaded. Re-enable Live Caption from the menu after reloading the model."
-            )
-        } else if AppConfig.shared.dictationEngine != .local {
-            alert.messageText = L10n.string(
-                "alert.model_unloaded.cloud.title",
-                fallback: "Local Model Unloaded"
-            )
-            alert.informativeText = L10n.string(
-                "alert.model_unloaded.cloud.message",
-                fallback: "The local speech recognition model has been removed from memory. Cloud dictation remains ready."
-            )
-        } else {
-            alert.messageText = L10n.string(
-                "alert.model_unloaded.local.title",
-                fallback: "Model Unloaded"
-            )
-            alert.informativeText = L10n.string(
-                "alert.model_unloaded.local.message",
-                fallback: "The speech recognition model has been removed from memory.\n\nVoice input will require a cold start (~3 seconds) the next time you press Right ⌥."
-            )
-        }
-        alert.alertStyle = .informational
-        alert.icon = NSImage(systemSymbolName: "memorychip", accessibilityDescription: nil)
-        alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
-        alert.runModal()
+        // A completed background operation must not enter an app-modal loop.
+        // Keep the menu usable and offer a nonactivating route to model settings.
+        showModelNotice(.unloaded)
     }
 
-    private func reloadModel() {
+    private func reloadModel(showCompletionNotice: Bool = false) {
         guard AXIsProcessTrusted() else {
             statusBar.setState(.setupRequired)
             let settingsWindow = HushTypeSettingsWindowController.shared
@@ -1631,6 +1614,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        modelNoticeWindow.hideImmediately()
         state = .loading
         let loadAttemptID = UUID()
         modelLoadAttemptID = loadAttemptID
@@ -1656,6 +1640,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.statusBar.setState(.idle)
                     self.statusBar.setModelLoaded()
                     log.info("Model reloaded")
+                    if showCompletionNotice {
+                        self.showModelNotice(.loaded)
+                    }
                 }
                 await self.scheduleTextPolishPrewarmIfNeeded(reason: "model reload")
             } catch is CancellationError {

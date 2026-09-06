@@ -1596,3 +1596,8 @@
 "app_menu.minimize" = "縮到最小";
 "app_menu.zoom" = "縮放";
 "app_menu.bring_all_to_front" = "將所有視窗移到最前方";
+
+/* Nonblocking model operation notice. */
+"overlay.model_unloaded" = "模型已卸載";
+"overlay.model_loaded" = "模型已就緒";
+"overlay.open_models" = "開啟模型設定";

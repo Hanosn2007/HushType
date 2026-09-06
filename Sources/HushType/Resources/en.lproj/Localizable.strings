@@ -1594,3 +1594,8 @@
 "app_menu.minimize" = "Minimize";
 "app_menu.zoom" = "Zoom";
 "app_menu.bring_all_to_front" = "Bring All to Front";
+
+/* Nonblocking model operation notice. */
+"overlay.model_unloaded" = "Model unloaded";
+"overlay.model_loaded" = "Model ready";
+"overlay.open_models" = "Open Model Settings";
