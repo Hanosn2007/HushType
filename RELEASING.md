@@ -4,7 +4,7 @@ Repository: `Hanosn2007/HushType`. Always pass `--repo` to `gh`: this checkout a
 
 ## Build and freeze
 
-1. Increment both versions in `Resources/Info.plist`. Build numbers must strictly increase; 0.5.16 = 34, 0.5.17-rc.1 = 35, 0.5.17 = 36.
+1. Increment both versions in `Resources/Info.plist`. Build numbers must strictly increase; 0.5.16 = 34, 0.5.17-rc.1 = 35 (local only, unpublished), 0.5.17 = 36.
 2. Install the test dependency (`brew install opencc`), run `swift test -c release --disable-sandbox`, then `make bundle-stable BUNDLE_DIR=/path/to/fresh/HushType.app`. Never build over a running app. `bundle-stable` requires the fixed local certificate and never falls back to ad-hoc signing. The **Build release candidate** workflow also requires this identity; hosted runners currently lack it and stop before building. Use the local release path until secure CI provisioning is explicitly arranged.
 3. Archive once with `ditto -c -k --sequesterRsrc --keepParent /path/to/HushType.app HushType-VERSION.zip`. Independently extract and run `codesign --verify --deep --strict`. Confirm `mlx.metallib`, Sparkle and the expected version are present. Record SHA-256.
 4. Test this exact ZIP. Do not rebuild or overwrite it after acceptance. Release archives are locally built with the pinned identity. Do not replace a tested archive with another build.
@@ -61,6 +61,10 @@ swift scripts/verify_update.swift /path/to/appcast.xml "/path/to/HushType-${rele
 The verifier uses the **installed old app's public key**, checks the archive signature, byte count, newer build, repository URL and minimum system. Verify an intentionally corrupted archive is rejected too. Preserve the old app's Info.plist for later checks after upgrading.
 
 Publish the immutable ZIP to its GitHub Release before publishing the appcast. Download it back and compare SHA-256. Enable Pages once on `main` / `docs`. Publish `docs/appcast.xml` last and confirm HTTP 200 and exact contents. For the first end-to-end update, mark the Release prerelease until installation/relaunch checks complete; publishing its appcast nevertheless makes it available to existing clients.
+
+## Current release acceptance plan (2026-09-06)
+
+The maintainer authorized publishing 0.5.17 now and will update the installed 0.5.16 themselves, granting permissions again for this first certificate migration. The next normal feature release must keep this certificate and designated requirement; that later update is where actual HushType permission retention will be checked. Do not publish a second empty version just to test continuity. The local 0.5.17-rc.1 build is unpublished evidence only. Do not mark either user acceptance step complete before the maintainer reports the result.
 
 ## Acceptance and recovery
 
