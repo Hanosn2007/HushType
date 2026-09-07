@@ -47,6 +47,12 @@ final class AppConfig {
         static let recognitionHistoryRetentionDays = "hushtype.recognitionHistoryRetentionDays"
         static let audioInputSelection = "hushtype.audioInputSelection"
         static let updateChannel = "hushtype.updateChannel"
+        static let silentUpdateRelaunch = "hushtype.silentUpdateRelaunch"
+    }
+
+    var silentUpdateRelaunch: Bool {
+        get { defaults.bool(forKey: Keys.silentUpdateRelaunch) }
+        set { defaults.set(newValue, forKey: Keys.silentUpdateRelaunch) }
     }
 
     var updateChannel: UpdateChannel {

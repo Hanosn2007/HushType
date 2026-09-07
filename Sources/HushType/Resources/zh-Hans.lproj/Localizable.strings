@@ -404,6 +404,7 @@
 
 "about.check_updates" = "检查更新";
 "settings.general.update_channel" = "更新版本";
+"settings.general.silent_update_relaunch" = "更新后静默启动";
 "settings.general.update_channel.stable" = "正式版";
 "settings.general.update_channel.preview" = "预览版";
 

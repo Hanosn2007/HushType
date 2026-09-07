@@ -26,7 +26,8 @@ struct HushTypeSettingsRootView: View {
         SettingsWindowShell(
             toggleLabel: L10n.string("settings.sidebar.toggle", fallback: "Toggle Sidebar"),
             expandedLabel: L10n.string("settings.sidebar.expanded", fallback: "Expanded"),
-            collapsedLabel: L10n.string("settings.sidebar.collapsed", fallback: "Collapsed")
+            collapsedLabel: L10n.string("settings.sidebar.collapsed", fallback: "Collapsed"),
+            stabilizesDetailWidth: model.selection == .history
         ) {
             detail
                 .id(model.selection)
@@ -1145,6 +1146,10 @@ private struct SettingsGeneralView: View {
                         .tag(UpdateChannel.preview.rawValue)
                 } label: {
                     Text(L10n.string("settings.general.update_channel", fallback: "Updates"))
+                }
+
+                Toggle(isOn: $model.silentUpdateRelaunch) {
+                    Text(L10n.string("settings.general.silent_update_relaunch", fallback: "Start Silently After Updating"))
                 }
 
                 HStack {

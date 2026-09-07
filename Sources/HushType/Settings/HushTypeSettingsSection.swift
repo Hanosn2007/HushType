@@ -179,6 +179,12 @@ final class HushTypeSettingsModel: ObservableObject {
             actions.updateChannelChanged()
         }
     }
+    @Published var silentUpdateRelaunch = AppConfig.shared.silentUpdateRelaunch {
+        didSet {
+            guard !isRefreshing else { return }
+            AppConfig.shared.silentUpdateRelaunch = silentUpdateRelaunch
+        }
+    }
     @Published var historyMaximumEntries = AppConfig.shared.recognitionHistoryMaximumEntries {
         didSet {
             guard !isRefreshing else { return }
@@ -295,6 +301,7 @@ final class HushTypeSettingsModel: ObservableObject {
         chineseConversionEnabled = AppConfig.shared.chineseConversionEnabled
         interfaceLanguageRaw = AppConfig.shared.interfaceLanguage.rawValue
         updateChannelRaw = AppConfig.shared.updateChannel.rawValue
+        silentUpdateRelaunch = AppConfig.shared.silentUpdateRelaunch
         historyMaximumEntries = AppConfig.shared.recognitionHistoryMaximumEntries
         historyRetentionDays = AppConfig.shared.recognitionHistoryRetentionDays ?? 0
         modelLibrary.updateEngineState(

@@ -21,8 +21,26 @@ private final class CloudDictationPlaceholderEngine: TranscriptionEngine {
 }
 
 private final class UpdateChannelDelegate: NSObject, SPUUpdaterDelegate {
+    private var pendingRelaunchBuild: String?
+
     func allowedChannels(for updater: SPUUpdater) -> Set<String> {
         AppConfig.shared.updateChannel.allowedSparkleChannels
+    }
+
+    /// Sparkle documents this item as the update immediately about to install.
+    /// Hold its build only until the subsequent pre-relaunch callback so a
+    /// cancelled or non-relaunching install cannot alter a future launch.
+    func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
+        pendingRelaunchBuild = item.versionString
+    }
+
+    /// Public Sparkle API: called immediately before the application is
+    /// relaunched. Store a build-bound, one-shot marker before this process is
+    /// terminated; the replacement process validates and consumes it.
+    func updaterWillRelaunchApplication(_ updater: SPUUpdater) {
+        guard let pendingRelaunchBuild else { return }
+        UpdateRelaunchIntent.markForRelaunch(targetBuild: pendingRelaunchBuild)
+        self.pendingRelaunchBuild = nil
     }
 }
 
@@ -158,6 +176,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("[HushType] Starting...")
+
+        // macOS exposes Login Item launch intent as a parameter on its
+        // initial open-application AppleEvent. Read it without replacing
+        // AppKit's own handler, then consume the update marker exactly once.
+        let launchWasAsLoginItem = AppLaunchReason.isLoginItemLaunch(
+            NSAppleEventManager.shared().currentAppleEvent
+        )
+        let shouldOpenSettingsAfterUpdate = UpdateRelaunchIntent.consumeIfMatching(
+            currentBuild: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+            isLoginItemLaunch: launchWasAsLoginItem,
+            silentRelaunch: AppConfig.shared.silentUpdateRelaunch
+        )
 
         updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
@@ -389,6 +419,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if OnboardingManager.runIfNeeded() {
             return
+        }
+
+        if shouldOpenSettingsAfterUpdate {
+            settingsWindow.present(section: .overview)
         }
 
         // A session event tap must not survive across lock-screen secure input

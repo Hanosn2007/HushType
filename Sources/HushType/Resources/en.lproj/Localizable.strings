@@ -402,6 +402,7 @@
 
 "about.check_updates" = "Check for Updates";
 "settings.general.update_channel" = "Updates";
+"settings.general.silent_update_relaunch" = "Start Silently After Updating";
 "settings.general.update_channel.stable" = "Stable";
 "settings.general.update_channel.preview" = "Preview";
 

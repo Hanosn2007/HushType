@@ -59,6 +59,7 @@ struct SettingsWindowShell<Detail: View, Sidebar: View, Header: View>: View {
     let toggleLabel: String
     let expandedLabel: String
     let collapsedLabel: String
+    var stabilizesDetailWidth = false
     @ViewBuilder var detail: () -> Detail
     @ViewBuilder var sidebar: () -> Sidebar
     @ViewBuilder var header: () -> Header
@@ -69,8 +70,12 @@ struct SettingsWindowShell<Detail: View, Sidebar: View, Header: View>: View {
     var body: some View {
         SettingsChromeLayout(progress: sidebarExpanded ? 1 : 0,
                              minimumToggleX: chrome.minimumToggleX,
-                             titlebarCenterY: chrome.titlebarCenterY) {
+                             titlebarCenterY: chrome.titlebarCenterY,
+                             detailLayoutProgress: stabilizesDetailWidth ? (sidebarExpanded ? 1 : 0) : nil) {
             detail().clipped()
+                .transaction { transaction in
+                    if stabilizesDetailWidth { transaction.animation = nil }
+                }
             sidebar()
                 .padding(.top, max(48, chrome.titlebarCenterY + 22))
                 .modifier(SettingsSidebarSurface())
@@ -110,16 +115,20 @@ struct SettingsChromeFrames {
     let header: CGRect
 
     init(size: CGSize, progress: CGFloat, sidebarWidth: CGFloat = 180,
-         minimumToggleX: CGFloat = 100, titlebarCenterY: CGFloat = 28) {
+         minimumToggleX: CGFloat = 100, titlebarCenterY: CGFloat = 28,
+         detailLayoutProgress: CGFloat? = nil) {
         let progress = min(1, max(0, progress))
         let sidebarRight = (sidebarWidth + 8) * progress
         let toggleX = max(minimumToggleX, sidebarRight - 44)
         let headerX = max(toggleX + 52, sidebarRight + 18)
         let headerBottom = max(64, titlebarCenterY + 28)
+        // Lazy variable-height rows must not reflow at every animation frame.
+        // Their target width changes once; the container origin still animates.
+        let detailInset = (sidebarWidth + 8) * min(1, max(0, detailLayoutProgress ?? progress))
         sidebar = CGRect(x: sidebarRight - sidebarWidth, y: 8,
                          width: sidebarWidth, height: max(0, size.height - 16))
         detail = CGRect(x: sidebarRight, y: headerBottom,
-                        width: max(0, size.width - sidebarRight), height: max(0, size.height - headerBottom))
+                        width: max(0, size.width - detailInset), height: max(0, size.height - headerBottom))
         toggle = CGRect(x: toggleX, y: titlebarCenterY - 18, width: 36, height: 36)
         header = CGRect(x: headerX, y: titlebarCenterY - 18,
                         width: max(0, size.width - headerX - 20), height: 36)
@@ -130,6 +139,7 @@ struct SettingsChromeLayout: Layout {
     var progress: CGFloat
     var minimumToggleX: CGFloat
     var titlebarCenterY: CGFloat
+    var detailLayoutProgress: CGFloat? = nil
 
     var animatableData: CGFloat {
         get { progress }
@@ -143,7 +153,8 @@ struct SettingsChromeLayout: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         guard subviews.count == 4 else { return }
         let frames = SettingsChromeFrames(size: bounds.size, progress: progress,
-                                          minimumToggleX: minimumToggleX, titlebarCenterY: titlebarCenterY)
+                                          minimumToggleX: minimumToggleX, titlebarCenterY: titlebarCenterY,
+                                          detailLayoutProgress: detailLayoutProgress)
         for (view, frame) in zip(subviews, [frames.detail, frames.sidebar, frames.toggle, frames.header]) {
             view.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
                        anchor: .topLeading, proposal: ProposedViewSize(frame.size))

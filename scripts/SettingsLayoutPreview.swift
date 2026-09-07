@@ -22,7 +22,8 @@ private struct PreviewContent: View {
     private let symbols = ["square.grid.2x2", "mic", "clock.arrow.circlepath", "cpu", "book", "checklist", "gear"]
     var body: some View {
         SettingsWindowShell(toggleLabel: "展开或收起侧边栏",
-                            expandedLabel: "已展开", collapsedLabel: "已收起") {
+                            expandedLabel: "已展开", collapsedLabel: "已收起",
+                            stabilizesDetailWidth: selection == "识别历史") {
             Form {
                 Section {
                     Text("快速查看 HushType 和本地语音模型的状态。").foregroundStyle(.secondary)
@@ -32,7 +33,7 @@ private struct PreviewContent: View {
                         HStack {
                             Text("\(100 - index)").font(.caption).foregroundStyle(.secondary).frame(width: 24)
                             Text("下午 6:19").foregroundStyle(.secondary)
-                            Text("用于验证历史列表展开收起的示例记录，不读取真实历史。")
+                            Text(sampleText(index)).lineLimit(3)
                             Spacer()
                             Image(systemName: "doc.on.doc")
                         }
@@ -86,9 +87,15 @@ private struct PreviewContent: View {
     private var filteredIndices: [Int] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
         return (0..<100).filter {
-            query.isEmpty || "\(100 - $0) 用于验证历史列表展开收起的示例记录，不读取真实历史。"
+            query.isEmpty || "\(100 - $0) \(sampleText($0))"
                 .localizedCaseInsensitiveContains(query)
         }
+    }
+
+    private func sampleText(_ index: Int) -> String {
+        index.isMultiple(of: 3)
+            ? "这是一条用于验证侧栏动画的长记录。展开和收起时，文字只按目标宽度排版一次，避免长句反复换行导致后续条目上下跳动。这个窗口使用模拟数据，不读取真实历史，也不加载语音模型。"
+            : "用于验证历史列表展开收起的示例记录，不读取真实历史。"
     }
 
     private func navigate(_ offset: Int) {

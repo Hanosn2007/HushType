@@ -2,6 +2,25 @@ import XCTest
 @testable import HushType
 
 final class SettingsChromeLayoutTests: XCTestCase {
+    func testHistoryWidthRemainsAtTargetThroughoutSidebarAnimation() {
+        for target: CGFloat in [0, 1] {
+            for frame in 0...60 {
+                let progress = CGFloat(frame) / 60
+                let layout = SettingsChromeFrames(size: size, progress: progress, detailLayoutProgress: target)
+                XCTAssertEqual(layout.detail.width, size.width - 188 * target, accuracy: 0.001)
+                XCTAssertEqual(layout.detail.minX, 188 * progress, accuracy: 0.001)
+            }
+        }
+    }
+
+    func testHistoryAndOrdinaryPagesHaveIdenticalSettledGeometry() {
+        for target: CGFloat in [0, 1] {
+            let ordinary = SettingsChromeFrames(size: size, progress: target)
+            let history = SettingsChromeFrames(size: size, progress: target, detailLayoutProgress: target)
+            XCTAssertEqual(history.detail, ordinary.detail)
+            XCTAssertEqual(history.toggle, ordinary.toggle)
+        }
+    }
     private let size = CGSize(width: 950, height: 650)
     private let sidebarWidth: CGFloat = 180
 
