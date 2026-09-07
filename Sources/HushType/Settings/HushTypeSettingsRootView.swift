@@ -27,19 +27,11 @@ struct HushTypeSettingsRootView: View {
             toggleLabel: L10n.string("settings.sidebar.toggle", fallback: "Toggle Sidebar"),
             expandedLabel: L10n.string("settings.sidebar.expanded", fallback: "Expanded"),
             collapsedLabel: L10n.string("settings.sidebar.collapsed", fallback: "Collapsed"),
-            stabilizesDetailWidth: model.selection == .history
+            stabilizesDetailWidth: model.selection == .history,
+            showsSearch: model.selection == .history
         ) {
             detail
                 .id(model.selection)
-                .background {
-                    if model.selection == .history {
-                        Color.clear.searchable(
-                            text: $historySearchText,
-                            placement: .toolbar,
-                            prompt: L10n.string("settings.history.search", fallback: "Search recognition text")
-                        )
-                    }
-                }
         } sidebar: {
             sidebar
         } header: {
@@ -65,21 +57,15 @@ struct HushTypeSettingsRootView: View {
                 .font(.headline)
                 .lineLimit(1)
             Spacer(minLength: 12)
+            if model.selection == .history {
+                SettingsHistorySearch(text: $historySearchText,
+                    prompt: L10n.string("settings.history.search", fallback: "Search recognition text"))
+            }
         }
-        .padding(.trailing, 2)
     }
 
     private var sidebar: some View {
-        List(selection: $model.selection) {
-            Section {
-                ForEach(sections) { section in
-                    Label(section.title, systemImage: section.symbolName)
-                        .tag(section)
-                }
-            }
-        }
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
+        SettingsDrawnSidebar(sections: sections, selection: $model.selection)
     }
 
     @ViewBuilder
@@ -373,6 +359,7 @@ private struct SettingsHistoryView: View {
 /// of the shared Form host so resizing the settings chrome does not ask Form to
 /// lay out every history row. Other settings pages intentionally retain Form.
 private struct SettingsHistoryPage<Content: View>: View {
+    @Environment(\.settingsTopBarHeight) private var topBarHeight
     let subtitle: String
     @ViewBuilder var content: Content
 
@@ -391,7 +378,8 @@ private struct SettingsHistoryPage<Content: View>: View {
                 .frame(maxWidth: 736, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.horizontal, max(16, (geometry.size.width - 736) / 2))
-                .padding(.vertical, 18)
+                .padding(.top, topBarHeight + 18)
+                .padding(.bottom, 18)
             }
             .focusSection()
             .accessibilityElement(children: .contain)
@@ -467,6 +455,7 @@ private struct SettingsHistoryEntriesCard<Rows: View>: View {
 }
 
 private struct SettingsPage<Content: View>: View {
+    @Environment(\.settingsTopBarHeight) private var topBarHeight
     let subtitle: String
     @ViewBuilder var content: Content
 
@@ -474,7 +463,7 @@ private struct SettingsPage<Content: View>: View {
     var body: some View {
         if #available(macOS 26.0, *) {
             settingsForm
-                .scrollEdgeEffectStyle(.soft, for: .top)
+                .scrollEdgeEffectHidden(true, for: .top)
         } else {
             settingsForm
         }
@@ -493,6 +482,7 @@ private struct SettingsPage<Content: View>: View {
                 content
             }
             .formStyle(.grouped)
+            .contentMargins(.top, topBarHeight, for: .scrollContent)
             .scrollContentBackground(.hidden)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             // Derive margins directly; avoid feeding each animated width

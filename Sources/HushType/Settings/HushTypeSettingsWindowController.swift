@@ -40,7 +40,7 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
         window.title = L10n.string("window.settings.title", fallback: "HushType Settings")
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        window.isMovableByWindowBackground = true
+        window.isMovableByWindowBackground = false
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
         window.setFrameAutosaveName("hushtype.settings.main")
@@ -134,7 +134,7 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
         sceneWindowObservers.forEach(NotificationCenter.default.removeObserver)
         sceneWindowObservers.removeAll()
         sceneWindow = window
-        window.isMovableByWindowBackground = true
+        window.isMovableByWindowBackground = false
         // Do not replace SwiftUI's window delegate or content controller.
         // Observe the same lifecycle events that the legacy delegate handles.
         let center = NotificationCenter.default
