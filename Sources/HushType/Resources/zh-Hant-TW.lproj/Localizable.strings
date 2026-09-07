@@ -803,7 +803,6 @@
 
 "permission.microphone.title" = "麥克風";
 "permission.bluetooth.title" = "藍牙";
-"settings.sidebar.toggle" = "展開或收起側邊欄";
 "permission.bluetooth.subtitle" = "提前授權，以便及時提示 iPhone 和藍牙麥克風中斷連線。內建或有線麥克風無需此權限。";
 "permission.bluetooth.allow" = "允許藍牙";
 "permission.bluetooth.open_settings" = "打開藍牙隱私設定";
@@ -1652,3 +1651,6 @@
 "overlay.model_unloaded" = "模型已卸載";
 "overlay.model_loaded" = "模型已就緒";
 "overlay.open_models" = "開啟模型設定";
+"settings.sidebar.toggle" = "展開或收起側邊欄";
+"settings.sidebar.expanded" = "已展開";
+"settings.sidebar.collapsed" = "已收起";

@@ -5,7 +5,7 @@ import SwiftUI
 
 struct HushTypeSettingsRootView: View {
     @ObservedObject var model: HushTypeSettingsModel
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var historySearchText = ""
 
     private var sections: [HushTypeSettingsSection] {
         model.visibleSections
@@ -22,55 +22,60 @@ struct HushTypeSettingsRootView: View {
     private var isLastSection: Bool {
         currentSectionIndex == sections.count - 1
     }
-
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            sidebar
-        } detail: {
+        SettingsWindowShell(
+            toggleLabel: L10n.string("settings.sidebar.toggle", fallback: "Toggle Sidebar"),
+            expandedLabel: L10n.string("settings.sidebar.expanded", fallback: "Expanded"),
+            collapsedLabel: L10n.string("settings.sidebar.collapsed", fallback: "Collapsed")
+        ) {
             detail
                 .id(model.selection)
-        }
-        .navigationSplitViewStyle(.prominentDetail)
-        .navigationTitle(model.selection.title)
-        // Keep one toolbar-owned button alive in both layouts. The default
-        // toggle's lifetime can otherwise follow the collapsing sidebar.
-        .toolbar(removing: .sidebarToggle)
-        .toolbar {
-            ToolbarItem(id: "hushtype.sidebar-toggle", placement: .navigation) {
-                Button {
-                    withAnimation(.snappy(duration: 0.25)) {
-                        columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
-                    }
-                } label: {
-                    Label(L10n.string("settings.sidebar.toggle", fallback: "Toggle Sidebar"), systemImage: "sidebar.left")
-                }
-                .help(L10n.string("settings.sidebar.toggle", fallback: "Toggle Sidebar"))
-            }
-            ToolbarItem(placement: .navigation) {
-                ControlGroup {
-                    Button(action: navigateBack) {
-                        Label(
-                            L10n.string("settings.navigation.back", fallback: "Back"),
-                            systemImage: "chevron.left"
-                        )
-                    }
-                    .disabled(isFirstSection)
-
-                    Button(action: navigateForward) {
-                        Label(
-                            L10n.string("settings.navigation.forward", fallback: "Forward"),
-                            systemImage: "chevron.right"
-                        )
-                    }
-                    .disabled(isLastSection)
-                }
-                .controlGroupStyle(.navigation)
-            }
+        } sidebar: {
+            sidebar
+        } header: {
+            header
         }
         .onAppear { model.refresh() }
+        .onChange(of: model.selection) { _, _ in historySearchText = "" }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.refresh()
         }
+    }
+
+    private var header: some View {
+        HStack(spacing: 16) {
+            ControlGroup {
+                Button(action: navigateBack) {
+                    Image(systemName: "chevron.left")
+                        .accessibilityLabel(L10n.string("settings.navigation.back", fallback: "Back"))
+                }
+                .disabled(isFirstSection)
+                Button(action: navigateForward) {
+                    Image(systemName: "chevron.right")
+                        .accessibilityLabel(L10n.string("settings.navigation.forward", fallback: "Forward"))
+                }
+                .disabled(isLastSection)
+            }
+            .controlGroupStyle(.navigation)
+            .fixedSize()
+            Text(model.selection.title)
+                .font(.headline)
+                .lineLimit(1)
+            Spacer(minLength: 12)
+            if model.selection == .history {
+                HStack(spacing: 7) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField(L10n.string("settings.history.search", fallback: "Search recognition text"),
+                              text: $historySearchText)
+                        .textFieldStyle(.plain)
+                        .accessibilityIdentifier("hushtype.settings.history-search")
+                }
+                .padding(.horizontal, 11)
+                .frame(width: 220, height: 32)
+                .background(.quaternary, in: Capsule())
+            }
+        }
+        .padding(.trailing, 2)
     }
 
     private var sidebar: some View {
@@ -83,7 +88,7 @@ struct HushTypeSettingsRootView: View {
             }
         }
         .listStyle(.sidebar)
-        .navigationSplitViewColumnWidth(ideal: 180, max: 220)
+        .scrollContentBackground(.hidden)
     }
 
     @ViewBuilder
@@ -91,7 +96,7 @@ struct HushTypeSettingsRootView: View {
         switch model.selection {
         case .overview: SettingsOverviewView(model: model)
         case .dictation: SettingsDictationView(model: model)
-        case .history: SettingsHistoryView(model: model)
+        case .history: SettingsHistoryView(model: model, searchText: $historySearchText)
         case .model: SettingsModelView(model: model)
         case .dictionary: SettingsDictionaryView(model: model)
         case .permissions: SettingsPermissionsView(model: model)
@@ -137,15 +142,16 @@ private struct RecognitionHistoryDayGroup: Identifiable {
 private struct SettingsHistoryView: View {
     @ObservedObject var model: HushTypeSettingsModel
     @ObservedObject private var store: RecognitionHistoryStore
-    @State private var searchText = ""
+    @Binding var searchText: String
     @State private var filter: RecognitionHistoryFilter = .all
     @State private var entryPendingDeletion: RecognitionHistoryEntry?
     @State private var isConfirmingClear = false
     @State private var displayedGroups: [RecognitionHistoryDayGroup] = []
     @State private var entryNumbers: [UUID: Int] = [:]
 
-    init(model: HushTypeSettingsModel) {
+    init(model: HushTypeSettingsModel, searchText: Binding<String>) {
         self.model = model
+        _searchText = searchText
         _store = ObservedObject(wrappedValue: model.recognitionHistory)
     }
 
@@ -244,7 +250,6 @@ private struct SettingsHistoryView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             rebuildHistoryPresentation(store.entries)
         }
-        .searchable(text: $searchText, prompt: L10n.string("settings.history.search", fallback: "Search recognition text"))
         .alert(
             L10n.string("settings.history.delete.confirm_title", fallback: "Delete This Entry?"),
             isPresented: Binding(

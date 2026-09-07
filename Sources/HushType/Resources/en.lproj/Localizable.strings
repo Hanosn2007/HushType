@@ -801,7 +801,6 @@
 
 "permission.microphone.title" = "Microphone";
 "permission.bluetooth.title" = "Bluetooth";
-"settings.sidebar.toggle" = "Toggle Sidebar";
 "permission.bluetooth.subtitle" = "Allow in advance to detect disconnections from iPhone and Bluetooth microphones. Not required for the built-in or wired microphone.";
 "permission.bluetooth.allow" = "Allow Bluetooth";
 "permission.bluetooth.open_settings" = "Open Bluetooth Privacy Settings";
@@ -1650,3 +1649,6 @@
 "overlay.model_unloaded" = "Model unloaded";
 "overlay.model_loaded" = "Model ready";
 "overlay.open_models" = "Open Model Settings";
+"settings.sidebar.toggle" = "Toggle Sidebar";
+"settings.sidebar.expanded" = "Expanded";
+"settings.sidebar.collapsed" = "Collapsed";

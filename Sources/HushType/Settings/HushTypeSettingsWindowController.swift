@@ -18,8 +18,8 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
     fileprivate static let minimumContentSize = NSSize(width: 850, height: 600)
 
     fileprivate let model = HushTypeSettingsModel()
-    // macOS 26's scene host owns the entire native window, including the
-    // container geometry used by the floating NavigationSplitView sidebar.
+    // macOS 26's scene host owns the native window; SettingsWindowShell owns
+    // the shared sidebar, toggle and detail animation geometry.
     // Keep the legacy NSWindow path for macOS 15.
     @Published fileprivate var presentationRequest: UInt = 0
     private weak var sceneWindow: NSWindow?
@@ -38,8 +38,9 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
             defer: false
         )
         window.title = L10n.string("window.settings.title", fallback: "HushType Settings")
-        window.titleVisibility = .visible
-        window.titlebarAppearsTransparent = false
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
         window.setFrameAutosaveName("hushtype.settings.main")
@@ -133,6 +134,7 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
         sceneWindowObservers.forEach(NotificationCenter.default.removeObserver)
         sceneWindowObservers.removeAll()
         sceneWindow = window
+        window.isMovableByWindowBackground = true
         // Do not replace SwiftUI's window delegate or content controller.
         // Observe the same lifecycle events that the legacy delegate handles.
         let center = NotificationCenter.default
@@ -202,8 +204,7 @@ struct HushTypeSettingsScene: Scene {
             height: HushTypeSettingsWindowController.defaultContentSize.height
         )
         .windowResizability(.contentSize)
-        .windowStyle(.titleBar)
-        .windowToolbarStyle(.unified)
+        .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .appSettings) {
                 Button(L10n.string("common.button.settings", fallback: "Settings…")) {
