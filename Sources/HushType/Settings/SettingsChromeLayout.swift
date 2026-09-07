@@ -1,6 +1,59 @@
 import AppKit
 import SwiftUI
 
+/// Shared chrome keeps the isolated preview and the shipping window identical.
+struct SettingsToolbarChrome: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .toolbar {
+                if #available(macOS 26.0, *) {
+                    ToolbarItem(placement: .principal) {
+                        Color.clear.frame(width: 1, height: 40).accessibilityHidden(true)
+                    }
+                    .sharedBackgroundVisibility(.hidden)
+                } else {
+                    ToolbarItem(placement: .principal) {
+                        Color.clear.frame(width: 1, height: 40).accessibilityHidden(true)
+                    }
+                }
+            }
+            .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+            .toolbar(removing: .title)
+    }
+}
+
+struct SettingsNavigationButtons: View {
+    let backDisabled: Bool
+    let forwardDisabled: Bool
+    let backLabel: String
+    let forwardLabel: String
+    let back: () -> Void
+    let forward: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button(action: back) {
+                Image(systemName: "chevron.left")
+                    .frame(width: 35, height: 36).contentShape(Rectangle())
+            }
+            .disabled(backDisabled)
+            .accessibilityLabel(backLabel)
+            Rectangle().fill(.primary.opacity(0.12)).frame(width: 1, height: 18)
+            Button(action: forward) {
+                Image(systemName: "chevron.right")
+                    .frame(width: 35, height: 36).contentShape(Rectangle())
+            }
+            .disabled(forwardDisabled)
+            .accessibilityLabel(forwardLabel)
+        }
+        .font(.system(size: 18))
+        .buttonStyle(.plain)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(.primary.opacity(0.12), lineWidth: 1))
+        .fixedSize()
+    }
+}
+
 /// Shared by the real settings window and the isolated visual test harness.
 struct SettingsWindowShell<Detail: View, Sidebar: View, Header: View>: View {
     let toggleLabel: String

@@ -30,11 +30,21 @@ struct HushTypeSettingsRootView: View {
         ) {
             detail
                 .id(model.selection)
+                .background {
+                    if model.selection == .history {
+                        Color.clear.searchable(
+                            text: $historySearchText,
+                            placement: .toolbar,
+                            prompt: L10n.string("settings.history.search", fallback: "Search recognition text")
+                        )
+                    }
+                }
         } sidebar: {
             sidebar
         } header: {
             header
         }
+        .modifier(SettingsToolbarChrome())
         .onAppear { model.refresh() }
         .onChange(of: model.selection) { _, _ in historySearchText = "" }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -44,36 +54,16 @@ struct HushTypeSettingsRootView: View {
 
     private var header: some View {
         HStack(spacing: 16) {
-            ControlGroup {
-                Button(action: navigateBack) {
-                    Image(systemName: "chevron.left")
-                        .accessibilityLabel(L10n.string("settings.navigation.back", fallback: "Back"))
-                }
-                .disabled(isFirstSection)
-                Button(action: navigateForward) {
-                    Image(systemName: "chevron.right")
-                        .accessibilityLabel(L10n.string("settings.navigation.forward", fallback: "Forward"))
-                }
-                .disabled(isLastSection)
-            }
-            .controlGroupStyle(.navigation)
-            .fixedSize()
+            SettingsNavigationButtons(
+                backDisabled: isFirstSection, forwardDisabled: isLastSection,
+                backLabel: L10n.string("settings.navigation.back", fallback: "Back"),
+                forwardLabel: L10n.string("settings.navigation.forward", fallback: "Forward"),
+                back: navigateBack, forward: navigateForward
+            )
             Text(model.selection.title)
                 .font(.headline)
                 .lineLimit(1)
             Spacer(minLength: 12)
-            if model.selection == .history {
-                HStack(spacing: 7) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField(L10n.string("settings.history.search", fallback: "Search recognition text"),
-                              text: $historySearchText)
-                        .textFieldStyle(.plain)
-                        .accessibilityIdentifier("hushtype.settings.history-search")
-                }
-                .padding(.horizontal, 11)
-                .frame(width: 220, height: 32)
-                .background(.quaternary, in: Capsule())
-            }
         }
         .padding(.trailing, 2)
     }
@@ -156,13 +146,13 @@ private struct SettingsHistoryView: View {
     }
 
     var body: some View {
-        SettingsPage(
+        SettingsHistoryPage(
             subtitle: L10n.string(
                 "settings.history.subtitle",
                 fallback: "Find and copy past recognition results, even when insertion into another app failed."
             )
         ) {
-            Section {
+            SettingsHistoryCard {
                 Picker(L10n.string("settings.history.filter", fallback: "Time Range"), selection: $filter) {
                     ForEach(RecognitionHistoryFilter.allCases) { option in
                         Text(option.title).tag(option)
@@ -172,7 +162,7 @@ private struct SettingsHistoryView: View {
             }
 
             if let errorMessage = model.historyErrorMessage {
-                Section {
+                SettingsHistoryCard {
                     Label(L10n.string("settings.history.error", fallback: "History couldn’t be updated"), systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                     Text(errorMessage)
@@ -184,33 +174,34 @@ private struct SettingsHistoryView: View {
                 }
             }
 
-            Section {
-                Picker(L10n.string("settings.history.maximum_entries", fallback: "Maximum entries"), selection: $model.historyMaximumEntries) {
-                    Text("100").tag(100)
-                    Text("500").tag(500)
-                    Text("1,000").tag(1000)
-                }
-                Picker(L10n.string("settings.history.retention", fallback: "Keep history"), selection: $model.historyRetentionDays) {
-                    Text(L10n.string("settings.history.retention.seven_days", fallback: "7 days")).tag(7)
-                    Text(L10n.string("settings.history.retention.thirty_days", fallback: "30 days")).tag(30)
-                    Text(L10n.string("settings.history.retention.ninety_days", fallback: "90 days")).tag(90)
-                    Text(L10n.string("settings.history.retention.forever", fallback: "No time limit")).tag(0)
-                }
-                Button(L10n.string("settings.history.clear", fallback: "Clear All History"), role: .destructive) {
-                    isConfirmingClear = true
-                }
-                .disabled(store.entries.isEmpty)
-            } header: {
-                Text(L10n.string("settings.history.storage", fallback: "Storage"))
-            } footer: {
-                Text(L10n.string(
+            SettingsHistoryCard(
+                title: L10n.string("settings.history.storage", fallback: "Storage"),
+                footer: L10n.string(
                     "settings.history.retention_help",
                     fallback: "Items are permanently removed when either limit is reached. Changing a limit applies immediately."
-                ))
+                )
+            ) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Picker(L10n.string("settings.history.maximum_entries", fallback: "Maximum entries"), selection: $model.historyMaximumEntries) {
+                        Text("100").tag(100)
+                        Text("500").tag(500)
+                        Text("1,000").tag(1000)
+                    }
+                    Picker(L10n.string("settings.history.retention", fallback: "Keep history"), selection: $model.historyRetentionDays) {
+                        Text(L10n.string("settings.history.retention.seven_days", fallback: "7 days")).tag(7)
+                        Text(L10n.string("settings.history.retention.thirty_days", fallback: "30 days")).tag(30)
+                        Text(L10n.string("settings.history.retention.ninety_days", fallback: "90 days")).tag(90)
+                        Text(L10n.string("settings.history.retention.forever", fallback: "No time limit")).tag(0)
+                    }
+                    Button(L10n.string("settings.history.clear", fallback: "Clear All History"), role: .destructive) {
+                        isConfirmingClear = true
+                    }
+                    .disabled(store.entries.isEmpty)
+                }
             }
 
             if displayedGroups.isEmpty {
-                SettingsSection {
+                SettingsHistoryCard {
                     ContentUnavailableView {
                         Label(
                             searchText.isEmpty
@@ -227,12 +218,17 @@ private struct SettingsHistoryView: View {
                 }
             } else {
                 ForEach(displayedGroups) { group in
-                    Section {
-                        ForEach(group.entries) { entry in
+                    SettingsHistoryEntriesCard(title: dayTitle(group.day)) {
+                        // Keep each entry directly below a lazy layout boundary.
+                        // Unlike Form, rows outside the visible scroll region are
+                        // not eagerly created while the settings shell is resizing.
+                        ForEach(Array(group.entries.enumerated()), id: \.element.id) { index, entry in
                             historyRow(entry)
+                            if index != group.entries.indices.last {
+                                Divider()
+                                    .padding(.leading, 14)
+                            }
                         }
-                    } header: {
-                        Text(dayTitle(group.day))
                     }
                 }
             }
@@ -314,7 +310,8 @@ private struct SettingsHistoryView: View {
             .help(L10n.string("settings.history.delete", fallback: "Delete"))
             .buttonStyle(.borderless)
         }
-        .padding(.vertical, 4)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
     }
 
     /// Keep an entry's number stable while filtering: the newest item shows
@@ -368,6 +365,103 @@ private struct SettingsHistoryView: View {
 
     private func timeTitle(_ date: Date) -> String {
         date.formatted(date: .omitted, time: .shortened)
+    }
+}
+
+/// The history page may contain hundreds of variable-height rows. Keep it out
+/// of the shared Form host so resizing the settings chrome does not ask Form to
+/// lay out every history row. Other settings pages intentionally retain Form.
+private struct SettingsHistoryPage<Content: View>: View {
+    let subtitle: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        GeometryReader { geometry in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    SettingsHistoryCard {
+                        Text(subtitle)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    content
+                }
+                .frame(maxWidth: 736, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.horizontal, max(16, (geometry.size.width - 736) / 2))
+                .padding(.vertical, 18)
+            }
+            .focusSection()
+            .accessibilityElement(children: .contain)
+        }
+    }
+}
+
+/// Matches the grouped-settings card treatment while allowing the history page
+/// to use ScrollView/LazyVStack rather than Form's eager row layout.
+private struct SettingsHistoryCard<Content: View>: View {
+    let title: String?
+    let footer: String?
+    @ViewBuilder var content: Content
+
+    init(
+        title: String? = nil,
+        footer: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.footer = footer
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let title {
+                Text(title)
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 12)
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                content
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            if let footer {
+                Text(footer)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 12)
+            }
+        }
+    }
+}
+
+/// Each day remains a grouped card, but its rows are a LazyVStack in the
+/// enclosing ScrollView's coordinate space. This is the actual row-level
+/// virtualization boundary; do not replace it with a VStack.
+private struct SettingsHistoryEntriesCard<Rows: View>: View {
+    let title: String
+    @ViewBuilder var rows: Rows
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 12)
+
+            LazyVStack(alignment: .leading, spacing: 0) {
+                rows
+            }
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

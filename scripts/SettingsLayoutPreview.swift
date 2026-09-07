@@ -7,8 +7,10 @@ struct SettingsLayoutPreview: App {
     var body: some Scene {
         Window("HushType 布局预览", id: "preview") {
             PreviewContent().frame(minWidth: 850, minHeight: 600)
+                .modifier(SettingsToolbarChrome())
         }
-        .windowStyle(.hiddenTitleBar)
+        .windowStyle(.titleBar)
+        .windowToolbarStyle(.unified)
         .defaultSize(width: 950, height: 650)
     }
 }
@@ -26,7 +28,7 @@ private struct PreviewContent: View {
                     Text("快速查看 HushType 和本地语音模型的状态。").foregroundStyle(.secondary)
                 }
                 if selection == "识别历史" {
-                    ForEach(0..<100) { index in
+                    ForEach(filteredIndices, id: \.self) { index in
                         HStack {
                             Text("\(100 - index)").font(.caption).foregroundStyle(.secondary).frame(width: 24)
                             Text("下午 6:19").foregroundStyle(.secondary)
@@ -54,6 +56,11 @@ private struct PreviewContent: View {
                     }
                 }
             }.formStyle(.grouped).scrollContentBackground(.hidden)
+                .background {
+                    if selection == "识别历史" {
+                        Color.clear.searchable(text: $search, placement: .toolbar, prompt: "搜索识别文字")
+                    }
+                }
         } sidebar: {
             List(selection: $selection) {
                 Section {
@@ -64,16 +71,29 @@ private struct PreviewContent: View {
             }.listStyle(.sidebar).scrollContentBackground(.hidden)
         } header: {
             HStack(spacing: 16) {
-                ControlGroup {
-                    Button {} label: { Image(systemName: "chevron.left") }.disabled(true)
-                    Button {} label: { Image(systemName: "chevron.right") }
-                }.controlGroupStyle(.navigation).fixedSize()
+                SettingsNavigationButtons(
+                    backDisabled: selection == sections.first,
+                    forwardDisabled: selection == sections.last,
+                    backLabel: "上一页", forwardLabel: "下一页",
+                    back: { navigate(-1) }, forward: { navigate(1) }
+                )
                 Text(selection).font(.headline)
                 Spacer(minLength: 12)
-                if selection == "识别历史" {
-                    TextField("搜索识别文字", text: $search).frame(width: 220)
-                }
             }
         }
+    }
+
+    private var filteredIndices: [Int] {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (0..<100).filter {
+            query.isEmpty || "\(100 - $0) 用于验证历史列表展开收起的示例记录，不读取真实历史。"
+                .localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private func navigate(_ offset: Int) {
+        guard let current = sections.firstIndex(of: selection),
+              sections.indices.contains(current + offset) else { return }
+        selection = sections[current + offset]
     }
 }

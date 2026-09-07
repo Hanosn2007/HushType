@@ -204,7 +204,8 @@ struct HushTypeSettingsScene: Scene {
             height: HushTypeSettingsWindowController.defaultContentSize.height
         )
         .windowResizability(.contentSize)
-        .windowStyle(.hiddenTitleBar)
+        .windowStyle(.titleBar)
+        .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .appSettings) {
                 Button(L10n.string("common.button.settings", fallback: "Settings…")) {
