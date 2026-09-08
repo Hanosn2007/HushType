@@ -1655,3 +1655,22 @@
 "settings.sidebar.toggle" = "展开或收起侧边栏";
 "settings.sidebar.expanded" = "已展开";
 "settings.sidebar.collapsed" = "已收起";
+
+/* 仅 Preview 显示的调试设置。 */
+"settings.sidebar.debug" = "调试";
+"settings.debug.subtitle" = "查看仅在 Preview 中提供的设置和诊断信息。";
+"settings.debug.status" = "当前状态";
+"settings.debug.version" = "当前版本";
+"settings.debug.scroll_blur_status" = "滚动模糊";
+"settings.debug.scroll_blur_enabled" = "已启用";
+"settings.debug.scroll_blur_disabled" = "已关闭";
+"settings.debug.scroll_blur" = "启用滚动渐变模糊";
+"settings.debug.scroll_blur.description" = "调整设置页滚动时顶部的模糊效果。";
+"settings.debug.scroll_blur.minimum_radius" = "最小半径";
+"settings.debug.scroll_blur.maximum_radius" = "最大半径";
+"settings.debug.scroll_blur.effective_range" = "实际半径";
+"settings.debug.scroll_blur.apply_immediately" = "更改立即生效";
+"settings.debug.restore_defaults" = "恢复默认设置";
+"settings.debug.logs" = "系统日志";
+"settings.debug.logs.description" = "HushType 会将诊断信息写入统一日志，子系统为 com.felix.hushtype。";
+"settings.debug.open_console" = "打开“控制台”";

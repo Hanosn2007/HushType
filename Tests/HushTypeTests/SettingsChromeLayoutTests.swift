@@ -3,6 +3,76 @@ import XCTest
 @testable import HushType
 
 final class SettingsChromeLayoutTests: XCTestCase {
+    @MainActor
+    func testClickOnlyButtonConsumesADragThatReturnsToItsStart() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 80, height: 60),
+            styleMask: [.titled], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+
+        let button = SettingsClickOnlyIconButton.ClickOnlyButton(
+            frame: NSRect(x: 0, y: 0, width: 40, height: 36)
+        )
+        var actionCount = 0
+        button.configure(symbolName: "chevron.left", label: "Back") {
+            actionCount += 1
+        }
+        window.contentView = button
+        // Give synthetic events a real window number; an unordered window's
+        // -1 number is interpreted as screen coordinates by nextEvent.
+        window.orderFront(nil)
+
+        let start = NSPoint(x: 20, y: 18)
+        try postMouseEvent(.leftMouseDragged, location: NSPoint(x: 28, y: 18), to: window)
+        try postMouseEvent(.leftMouseUp, location: start, to: window)
+        let mouseDown = try makeMouseEvent(.leftMouseDown, location: start, in: window)
+        button.mouseDown(with: mouseDown)
+
+        XCTAssertEqual(actionCount, 0)
+    }
+
+    @MainActor
+    func testClickOnlyButtonActivatesAStationaryMouseSequence() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 80, height: 60),
+            styleMask: [.titled], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+
+        let button = SettingsClickOnlyIconButton.ClickOnlyButton(
+            frame: NSRect(x: 0, y: 0, width: 40, height: 36)
+        )
+        var actionCount = 0
+        button.configure(symbolName: "sidebar.left", label: "Toggle Sidebar") {
+            actionCount += 1
+        }
+        window.contentView = button
+        // Give synthetic events a real window number; an unordered window's
+        // -1 number is interpreted as screen coordinates by nextEvent.
+        window.orderFront(nil)
+
+        let point = NSPoint(x: 20, y: 18)
+        try postMouseEvent(.leftMouseUp, location: point, to: window)
+        button.mouseDown(with: try makeMouseEvent(.leftMouseDown, location: point, in: window))
+
+        XCTAssertEqual(actionCount, 1)
+    }
+
+    func testClickOnlyControlsRejectDragsAndMouseUpsOutsideTheirBounds() {
+        let start = NSPoint(x: 20, y: 18)
+
+        XCTAssertTrue(settingsClickOnlyActionAllowed(start: start, end: start, endsInside: true))
+        XCTAssertFalse(settingsClickOnlyActionAllowed(
+            start: start, end: NSPoint(x: 23, y: 18), endsInside: true
+        ))
+        XCTAssertFalse(settingsClickOnlyActionAllowed(
+            start: start, end: start, endsInside: false
+        ))
+    }
+
     func testHistoryWidthRemainsAtTargetThroughoutSidebarAnimation() {
         for target: CGFloat in [0, 1] {
             for frame in 0...60 {
@@ -264,5 +334,19 @@ final class SettingsChromeLayoutTests: XCTestCase {
             sidebarWidth: sidebarWidth,
             minimumToggleX: minimumToggleX
         )
+    }
+
+    @MainActor
+    private func postMouseEvent(_ type: NSEvent.EventType, location: NSPoint, to window: NSWindow) throws {
+        NSApp.postEvent(try makeMouseEvent(type, location: location, in: window), atStart: false)
+    }
+
+    @MainActor
+    private func makeMouseEvent(_ type: NSEvent.EventType, location: NSPoint, in window: NSWindow) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.mouseEvent(
+            with: type, location: location, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+            clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1
+        ))
     }
 }

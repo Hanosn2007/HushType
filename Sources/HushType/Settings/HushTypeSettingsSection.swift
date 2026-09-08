@@ -12,6 +12,7 @@ enum HushTypeSettingsSection: String, CaseIterable, Identifiable {
     case dictionary
     case permissions
     case general
+    case debug
 
     var id: String { rawValue }
 
@@ -24,6 +25,7 @@ enum HushTypeSettingsSection: String, CaseIterable, Identifiable {
         case .dictionary: L10n.string("settings.sidebar.dictionary", fallback: "Dictionary")
         case .permissions: L10n.string("settings.sidebar.permissions", fallback: "Permissions")
         case .general: L10n.string("settings.sidebar.general", fallback: "General")
+        case .debug: L10n.string("settings.sidebar.debug", fallback: "Debug")
         }
     }
 
@@ -36,7 +38,13 @@ enum HushTypeSettingsSection: String, CaseIterable, Identifiable {
         case .dictionary: "text.book.closed"
         case .permissions: "checklist"
         case .general: "gearshape"
+        case .debug: "wrench.and.screwdriver"
         }
+    }
+
+    static func visibleSections(onboardingRequired: Bool, isPreview: Bool) -> [Self] {
+        guard !onboardingRequired else { return [.permissions] }
+        return isPreview ? allCases : allCases.filter { $0 != .debug }
     }
 }
 
@@ -239,7 +247,10 @@ final class HushTypeSettingsModel: ObservableObject {
     }
 
     var visibleSections: [HushTypeSettingsSection] {
-        onboardingRequired ? [.permissions] : HushTypeSettingsSection.allCases
+        HushTypeSettingsSection.visibleSections(
+            onboardingRequired: onboardingRequired,
+            isPreview: SettingsScrollBlurConfiguration.defaultIsPreview
+        )
     }
 
     var modelControl: HushTypeModelControl {

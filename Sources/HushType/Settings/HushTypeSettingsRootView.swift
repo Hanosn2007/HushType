@@ -27,7 +27,6 @@ struct HushTypeSettingsRootView: View {
             toggleLabel: L10n.string("settings.sidebar.toggle", fallback: "Toggle Sidebar"),
             expandedLabel: L10n.string("settings.sidebar.expanded", fallback: "Expanded"),
             collapsedLabel: L10n.string("settings.sidebar.collapsed", fallback: "Collapsed"),
-            stabilizesDetailWidth: model.selection == .history,
             showsSearch: model.selection == .history
         ) {
             detail
@@ -78,6 +77,7 @@ struct HushTypeSettingsRootView: View {
         case .dictionary: SettingsDictionaryView(model: model)
         case .permissions: SettingsPermissionsView(model: model)
         case .general: SettingsGeneralView(model: model)
+        case .debug: SettingsDebugView(model: model)
         }
     }
 
@@ -119,6 +119,8 @@ private struct RecognitionHistoryDayGroup: Identifiable {
 private struct SettingsHistoryView: View {
     @ObservedObject var model: HushTypeSettingsModel
     @ObservedObject private var store: RecognitionHistoryStore
+    @Environment(\.settingsTopBarHeight) private var topBarHeight
+    @Environment(\.settingsSidebarIsResizing) private var sidebarIsResizing
     @Binding var searchText: String
     @State private var filter: RecognitionHistoryFilter = .all
     @State private var entryPendingDeletion: RecognitionHistoryEntry?
@@ -133,12 +135,71 @@ private struct SettingsHistoryView: View {
     }
 
     var body: some View {
-        SettingsHistoryPage(
-            subtitle: L10n.string(
-                "settings.history.subtitle",
-                fallback: "Find and copy past recognition results, even when insertion into another app failed."
+        SettingsNativeHistoryList(
+            header: AnyView(historyControls),
+            rows: nativeRows,
+            topInset: topBarHeight,
+            sidebarIsResizing: sidebarIsResizing,
+            onDelete: { entryPendingDeletion = $0 }
+        )
+        .focusSection()
+        .accessibilityElement(children: .contain)
+        .onReceive(store.$entries) { entries in rebuildHistoryPresentation(entries) }
+        .onChange(of: searchText) { _, _ in rebuildHistoryPresentation(store.entries) }
+        .onChange(of: filter) { _, _ in rebuildHistoryPresentation(store.entries) }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
+            rebuildHistoryPresentation(store.entries)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in
+            rebuildHistoryPresentation(store.entries)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            rebuildHistoryPresentation(store.entries)
+        }
+        .alert(
+            L10n.string("settings.history.delete.confirm_title", fallback: "Delete This Entry?"),
+            isPresented: Binding(
+                get: { entryPendingDeletion != nil },
+                set: { if !$0 { entryPendingDeletion = nil } }
             )
         ) {
+            Button(L10n.string("common.button.cancel", fallback: "Cancel"), role: .cancel) {
+                entryPendingDeletion = nil
+            }
+            Button(L10n.string("settings.history.delete", fallback: "Delete"), role: .destructive) {
+                guard let entry = entryPendingDeletion else { return }
+                model.removeRecognitionHistory(id: entry.id)
+                entryPendingDeletion = nil
+            }
+        } message: {
+            Text(L10n.string("settings.history.delete.confirm_message", fallback: "This recognition entry will be permanently deleted."))
+        }
+        .alert(
+            L10n.string("settings.history.clear.confirm_title", fallback: "Clear All History?"),
+            isPresented: $isConfirmingClear
+        ) {
+            Button(L10n.string("common.button.cancel", fallback: "Cancel"), role: .cancel) {}
+            Button(L10n.string("settings.history.clear", fallback: "Clear All History"), role: .destructive) {
+                model.clearRecognitionHistory()
+            }
+        } message: {
+            Text(L10n.string("settings.history.clear.confirm_message", fallback: "All recognition entries will be permanently deleted. This cannot be undone."))
+        }
+    }
+
+    /// Keep an entry's number stable while filtering: the newest item shows
+    /// the current total, then numbers descend through the complete history.
+    private var historyControls: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            SettingsHistoryCard {
+                Text(L10n.string(
+                    "settings.history.subtitle",
+                    fallback: "Find and copy past recognition results, even when insertion into another app failed."
+                ))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
             SettingsHistoryCard {
                 Picker(L10n.string("settings.history.filter", fallback: "Time Range"), selection: $filter) {
                     ForEach(RecognitionHistoryFilter.allCases) { option in
@@ -203,108 +264,28 @@ private struct SettingsHistoryView: View {
                     }
                     .frame(maxWidth: .infinity, minHeight: 180)
                 }
-            } else {
-                ForEach(displayedGroups) { group in
-                    SettingsHistoryEntriesCard(title: dayTitle(group.day)) {
-                        // Keep each entry directly below a lazy layout boundary.
-                        // Unlike Form, rows outside the visible scroll region are
-                        // not eagerly created while the settings shell is resizing.
-                        ForEach(Array(group.entries.enumerated()), id: \.element.id) { index, entry in
-                            historyRow(entry)
-                            if index != group.entries.indices.last {
-                                Divider()
-                                    .padding(.leading, 14)
-                            }
-                        }
-                    }
+            }
+        }
+        .frame(maxWidth: 736, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.horizontal, 16)
+        .padding(.bottom, nativeRows.isEmpty ? 18 : 12)
+    }
+
+    private var nativeRows: [SettingsNativeHistoryList.Row] {
+        displayedGroups.flatMap { group in
+            let groupID = String(group.day.timeIntervalSinceReferenceDate)
+            return [SettingsNativeHistoryList.Row.dayHeader(id: groupID, title: dayTitle(group.day))]
+                + group.entries.enumerated().map { index, entry in
+                    SettingsNativeHistoryList.Row.entry(
+                        entry,
+                        number: entryNumbers[entry.id, default: 0],
+                        time: timeTitle(entry.createdAt),
+                        isFirstInDay: index == 0,
+                        isLastInDay: index == group.entries.count - 1
+                    )
                 }
-            }
-
         }
-        .onReceive(store.$entries) { entries in rebuildHistoryPresentation(entries) }
-        .onChange(of: searchText) { _, _ in rebuildHistoryPresentation(store.entries) }
-        .onChange(of: filter) { _, _ in rebuildHistoryPresentation(store.entries) }
-        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
-            rebuildHistoryPresentation(store.entries)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in
-            rebuildHistoryPresentation(store.entries)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            rebuildHistoryPresentation(store.entries)
-        }
-        .alert(
-            L10n.string("settings.history.delete.confirm_title", fallback: "Delete This Entry?"),
-            isPresented: Binding(
-                get: { entryPendingDeletion != nil },
-                set: { if !$0 { entryPendingDeletion = nil } }
-            )
-        ) {
-            Button(L10n.string("common.button.cancel", fallback: "Cancel"), role: .cancel) {
-                entryPendingDeletion = nil
-            }
-            Button(L10n.string("settings.history.delete", fallback: "Delete"), role: .destructive) {
-                guard let entry = entryPendingDeletion else { return }
-                model.removeRecognitionHistory(id: entry.id)
-                entryPendingDeletion = nil
-            }
-        } message: {
-            Text(L10n.string("settings.history.delete.confirm_message", fallback: "This recognition entry will be permanently deleted."))
-        }
-        .alert(
-            L10n.string("settings.history.clear.confirm_title", fallback: "Clear All History?"),
-            isPresented: $isConfirmingClear
-        ) {
-            Button(L10n.string("common.button.cancel", fallback: "Cancel"), role: .cancel) {}
-            Button(L10n.string("settings.history.clear", fallback: "Clear All History"), role: .destructive) {
-                model.clearRecognitionHistory()
-            }
-        } message: {
-            Text(L10n.string("settings.history.clear.confirm_message", fallback: "All recognition entries will be permanently deleted. This cannot be undone."))
-        }
-    }
-
-    @ViewBuilder
-    private func historyRow(_ entry: RecognitionHistoryEntry) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text(String(entryNumber(entry)))
-                .font(.caption2.monospacedDigit().weight(.semibold))
-                .foregroundStyle(.tertiary)
-                .frame(width: 24, alignment: .center)
-            Text(timeTitle(entry.createdAt))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(width: 58, alignment: .leading)
-            Text(entry.text)
-                .textSelection(.enabled)
-                .lineLimit(3)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(entry.text, forType: .string)
-            } label: {
-                Label(L10n.string("settings.history.copy", fallback: "Copy"), systemImage: "doc.on.doc")
-            }
-            .labelStyle(.iconOnly)
-            .help(L10n.string("settings.history.copy", fallback: "Copy"))
-            .buttonStyle(.borderless)
-            Button(role: .destructive) {
-                entryPendingDeletion = entry
-            } label: {
-                Label(L10n.string("settings.history.delete", fallback: "Delete"), systemImage: "trash")
-            }
-            .labelStyle(.iconOnly)
-            .help(L10n.string("settings.history.delete", fallback: "Delete"))
-            .buttonStyle(.borderless)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-    }
-
-    /// Keep an entry's number stable while filtering: the newest item shows
-    /// the current total, then numbers descend through the complete history.
-    private func entryNumber(_ entry: RecognitionHistoryEntry) -> Int {
-        entryNumbers[entry.id, default: 0]
     }
 
     // Search, grouping and numbering depend on data, not on the animated
@@ -360,11 +341,15 @@ private struct SettingsHistoryView: View {
 /// lay out every history row. Other settings pages intentionally retain Form.
 private struct SettingsHistoryPage<Content: View>: View {
     @Environment(\.settingsTopBarHeight) private var topBarHeight
+    @Environment(\.settingsSidebarIsResizing) private var sidebarIsResizing
+    @State private var resize = SettingsHistoryResizeState()
+    @State private var visibleEntry: UUID?
     let subtitle: String
     @ViewBuilder var content: Content
 
     var body: some View {
         GeometryReader { geometry in
+            let layoutWidth = resize.layoutWidth(available: geometry.size.width)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
                     SettingsHistoryCard {
@@ -377,9 +362,19 @@ private struct SettingsHistoryPage<Content: View>: View {
                 }
                 .frame(maxWidth: 736, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.horizontal, max(16, (geometry.size.width - 736) / 2))
+                .padding(.horizontal, max(16, (layoutWidth - 736) / 2))
                 .padding(.top, topBarHeight + 18)
                 .padding(.bottom, 18)
+                .frame(width: layoutWidth, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .scrollPosition(id: $visibleEntry)
+            .transaction { $0.animation = nil }
+            .background(SettingsHistoryLiveResizeObserver { isResizing in
+                resize.setWindowResizing(isResizing, width: geometry.size.width)
+            })
+            .onChange(of: sidebarIsResizing) { _, active in
+                resize.setSidebarResizing(active, width: geometry.size.width)
             }
             .focusSection()
             .accessibilityElement(children: .contain)
@@ -448,6 +443,7 @@ private struct SettingsHistoryEntriesCard<Rows: View>: View {
             LazyVStack(alignment: .leading, spacing: 0) {
                 rows
             }
+            .scrollTargetLayout()
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .frame(maxWidth: .infinity, alignment: .leading)

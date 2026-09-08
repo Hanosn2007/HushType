@@ -1655,3 +1655,22 @@
 "settings.sidebar.toggle" = "展開或收起側邊欄";
 "settings.sidebar.expanded" = "已展開";
 "settings.sidebar.collapsed" = "已收起";
+
+/* 僅 Preview 顯示的偵錯設定。 */
+"settings.sidebar.debug" = "偵錯";
+"settings.debug.subtitle" = "查看僅在 Preview 中提供的設定和診斷資訊。";
+"settings.debug.status" = "目前狀態";
+"settings.debug.version" = "目前版本";
+"settings.debug.scroll_blur_status" = "捲動模糊";
+"settings.debug.scroll_blur_enabled" = "已啟用";
+"settings.debug.scroll_blur_disabled" = "已關閉";
+"settings.debug.scroll_blur" = "啟用捲動漸變模糊";
+"settings.debug.scroll_blur.description" = "調整設定頁捲動時頂部的模糊效果。";
+"settings.debug.scroll_blur.minimum_radius" = "最小半徑";
+"settings.debug.scroll_blur.maximum_radius" = "最大半徑";
+"settings.debug.scroll_blur.effective_range" = "實際半徑";
+"settings.debug.scroll_blur.apply_immediately" = "變更立即生效";
+"settings.debug.restore_defaults" = "恢復預設設定";
+"settings.debug.logs" = "系統日誌";
+"settings.debug.logs.description" = "HushType 會將診斷資訊寫入統一日誌，子系統為 com.felix.hushtype。";
+"settings.debug.open_console" = "開啟「主控台」";

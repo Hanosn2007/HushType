@@ -1653,3 +1653,22 @@
 "settings.sidebar.toggle" = "Toggle Sidebar";
 "settings.sidebar.expanded" = "Expanded";
 "settings.sidebar.collapsed" = "Collapsed";
+
+/* Preview-only debugging settings. */
+"settings.sidebar.debug" = "Debug";
+"settings.debug.subtitle" = "Inspect Preview-only settings and diagnostics.";
+"settings.debug.status" = "Current Status";
+"settings.debug.version" = "Current version";
+"settings.debug.scroll_blur_status" = "Scroll blur";
+"settings.debug.scroll_blur_enabled" = "Enabled";
+"settings.debug.scroll_blur_disabled" = "Disabled";
+"settings.debug.scroll_blur" = "Enable scroll-driven blur";
+"settings.debug.scroll_blur.description" = "Adjust the settings-page top blur while scrolling.";
+"settings.debug.scroll_blur.minimum_radius" = "Minimum radius";
+"settings.debug.scroll_blur.maximum_radius" = "Maximum radius";
+"settings.debug.scroll_blur.effective_range" = "Effective radius";
+"settings.debug.scroll_blur.apply_immediately" = "Changes apply immediately";
+"settings.debug.restore_defaults" = "Restore Defaults";
+"settings.debug.logs" = "System Logs";
+"settings.debug.logs.description" = "HushType writes diagnostics to the unified log under subsystem com.felix.hushtype.";
+"settings.debug.open_console" = "Open Console";

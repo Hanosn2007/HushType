@@ -32,25 +32,197 @@ struct SettingsNavigationButtons: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Button(action: back) {
-                Image(systemName: "chevron.left")
-                    .frame(width: 35, height: 36).contentShape(Rectangle())
-            }
-            .disabled(backDisabled)
-            .accessibilityLabel(backLabel)
+            SettingsClickOnlyIconButton(
+                symbolName: "chevron.left", label: backLabel,
+                isEnabled: !backDisabled, action: back
+            )
+            .frame(width: 35, height: 36)
             Rectangle().fill(.primary.opacity(0.12)).frame(width: 1, height: 18)
-            Button(action: forward) {
-                Image(systemName: "chevron.right")
-                    .frame(width: 35, height: 36).contentShape(Rectangle())
-            }
-            .disabled(forwardDisabled)
-            .accessibilityLabel(forwardLabel)
+            SettingsClickOnlyIconButton(
+                symbolName: "chevron.right", label: forwardLabel,
+                isEnabled: !forwardDisabled, action: forward
+            )
+            .frame(width: 35, height: 36)
         }
         .font(.system(size: 18))
         .buttonStyle(.plain)
         .modifier(SettingsLiquidGlass())
         .fixedSize()
+        // This AppKit view registers the rendered capsule. The titlebar drag
+        // responder reads its live frame on mouse-down, so the separator and
+        // glass surrounding both buttons stay non-draggable as the header
+        // moves or the window is resized.
+        .background(SettingsTitlebarDragExclusionReporter())
     }
+}
+
+private struct SettingsTitlebarDragExclusionRegistryKey: EnvironmentKey {
+    static let defaultValue: SettingsTitlebarDragExclusionRegistry? = nil
+}
+
+private extension EnvironmentValues {
+    var settingsTitlebarDragExclusionRegistry: SettingsTitlebarDragExclusionRegistry? {
+        get { self[SettingsTitlebarDragExclusionRegistryKey.self] }
+        set { self[SettingsTitlebarDragExclusionRegistryKey.self] = newValue }
+    }
+}
+
+/// A window-local, weak registry of rendered controls that titlebar dragging
+/// must avoid. Frames are resolved only for the mouse-down event, so layout
+/// animation does not feed state changes back through the whole SwiftUI shell.
+final class SettingsTitlebarDragExclusionRegistry {
+    private final class WeakView {
+        weak var value: NSView?
+
+        init(_ value: NSView) {
+            self.value = value
+        }
+    }
+
+    private var registeredViews: [WeakView] = []
+
+    func register(_ view: NSView) {
+        registeredViews.removeAll { $0.value == nil }
+        guard !registeredViews.contains(where: { $0.value === view }) else { return }
+        registeredViews.append(WeakView(view))
+    }
+
+    func contains(_ location: NSPoint, in window: NSWindow) -> Bool {
+        registeredViews.removeAll { $0.value == nil }
+        return registeredViews.contains { entry in
+            guard let view = entry.value, view.window === window else { return false }
+            return view.convert(view.bounds, to: nil).contains(location)
+        }
+    }
+}
+
+/// Registers the rendered navigation capsule without participating in hit
+/// testing. The drag responder resolves its actual bounds when needed.
+private struct SettingsTitlebarDragExclusionReporter: NSViewRepresentable {
+    @Environment(\.settingsTitlebarDragExclusionRegistry) private var registry
+
+    func makeNSView(context: Context) -> ReporterView {
+        let view = ReporterView()
+        view.registry = registry
+        view.register()
+        return view
+    }
+
+    func updateNSView(_ view: ReporterView, context: Context) {
+        view.registry = registry
+        view.register()
+    }
+
+    final class ReporterView: NSView {
+        weak var registry: SettingsTitlebarDragExclusionRegistry?
+
+        override var isOpaque: Bool { false }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            register()
+        }
+
+        func register() {
+            registry?.register(self)
+        }
+    }
+}
+
+/// A small AppKit button that consumes its entire mouse sequence. It sends its
+/// action only when the pointer has not moved beyond the drag tolerance and
+/// ends within the button, so a titlebar drag can never become an accidental
+/// navigation or sidebar toggle on mouse-up.
+struct SettingsClickOnlyIconButton: NSViewRepresentable {
+    let symbolName: String
+    let label: String
+    let isEnabled: Bool
+    let action: () -> Void
+
+    func makeNSView(context: Context) -> ClickOnlyButton {
+        let button = ClickOnlyButton()
+        button.configure(symbolName: symbolName, label: label, action: action)
+        button.isEnabled = isEnabled
+        return button
+    }
+
+    func updateNSView(_ button: ClickOnlyButton, context: Context) {
+        button.configure(symbolName: symbolName, label: label, action: action)
+        button.isEnabled = isEnabled
+    }
+
+    final class ClickOnlyButton: NSButton {
+        private var actionHandler: (() -> Void)?
+
+        override init(frame frameRect: NSRect) {
+            super.init(frame: frameRect)
+            isBordered = false
+            imagePosition = .imageOnly
+            focusRingType = .none
+            setButtonType(.momentaryChange)
+            target = self
+            action = #selector(performConfiguredAction(_:))
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) is not supported")
+        }
+
+        func configure(symbolName: String, label: String, action: @escaping () -> Void) {
+            image = NSImage(
+                systemSymbolName: symbolName,
+                accessibilityDescription: label
+            )?.withSymbolConfiguration(.init(pointSize: 18, weight: .regular))
+            toolTip = label
+            setAccessibilityLabel(label)
+            actionHandler = action
+        }
+
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override var mouseDownCanMoveWindow: Bool { false }
+
+        override func mouseDown(with event: NSEvent) {
+            guard isEnabled, let window else { return }
+            let start = event.locationInWindow
+            isHighlighted = true
+            defer { isHighlighted = false }
+            var didDrag = false
+
+            while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+                if next.type == .leftMouseUp {
+                    let end = next.locationInWindow
+                    let endsInside = bounds.contains(convert(end, from: nil))
+                    if !didDrag && settingsClickOnlyActionAllowed(
+                        start: start, end: end, endsInside: endsInside
+                    ) {
+                        sendAction(action, to: target)
+                    }
+                    return
+                }
+                if !settingsClickOnlyActionAllowed(
+                    start: start, end: next.locationInWindow, endsInside: true
+                ) {
+                    didDrag = true
+                    isHighlighted = false
+                }
+            }
+        }
+
+        @objc private func performConfiguredAction(_ sender: Any?) {
+            actionHandler?()
+        }
+    }
+}
+
+func settingsClickOnlyActionAllowed(
+    start: NSPoint, end: NSPoint, endsInside: Bool, minimumDragDistance: CGFloat = 3
+) -> Bool {
+    guard endsInside else { return false }
+    let deltaX = end.x - start.x
+    let deltaY = end.y - start.y
+    return deltaX * deltaX + deltaY * deltaY < minimumDragDistance * minimumDragDistance
 }
 
 private struct SettingsTopBarHeightKey: EnvironmentKey {
@@ -111,6 +283,7 @@ struct SettingsWindowShell<Detail: View, Sidebar: View, Header: View>: View {
     @State private var sidebarWidth: CGFloat = 180
     @State private var sidebarDragOrigin: CGFloat?
     @State private var chrome = SettingsWindowChromeMetrics()
+    @State private var titlebarDragExclusionRegistry = SettingsTitlebarDragExclusionRegistry()
 
     // Scroll content extends behind the B8 opacity cover and native glass controls.
     private var extendsScrollUnderHeader: Bool { true }
@@ -126,6 +299,7 @@ struct SettingsWindowShell<Detail: View, Sidebar: View, Header: View>: View {
                                  detailLayoutProgress: stabilizesDetailWidth ? (sidebarExpanded ? 1 : 0) : nil) {
                 detail()
                     .environment(\.settingsTopBarHeight, max(64, chrome.titlebarCenterY + 28))
+                    .environment(\.settingsSidebarIsResizing, sidebarDragOrigin != nil)
                     .clipped()
                     .transaction { transaction in
                         if stabilizesDetailWidth { transaction.animation = nil }
@@ -166,22 +340,19 @@ struct SettingsWindowShell<Detail: View, Sidebar: View, Header: View>: View {
                         }
                     }
                     .allowsHitTesting(false)
-                    SettingsTitlebarDragRegion()
+                    SettingsTitlebarDragRegion(registry: titlebarDragExclusionRegistry)
                         .frame(height: chrome.titlebarBottomY)
                         .frame(maxHeight: .infinity, alignment: .top)
                 }
                 .accessibilityHidden(true)
-                Button {
+                SettingsClickOnlyIconButton(
+                    symbolName: "sidebar.left", label: toggleLabel, isEnabled: true
+                ) {
                     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.32)) {
                         sidebarExpanded.toggle()
                     }
-                } label: {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: 18))
-                        .frame(width: 36, height: 36)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .frame(width: 36, height: 36)
                 .help(toggleLabel)
                 .accessibilityLabel(toggleLabel)
                 .accessibilityValue(sidebarExpanded ? expandedLabel : collapsedLabel)
@@ -189,7 +360,9 @@ struct SettingsWindowShell<Detail: View, Sidebar: View, Header: View>: View {
                 .modifier(SettingsToggleGlassBackdrop(progress: sidebarExpanded ? 1 : 0,
                                                       sidebarWidth: resolvedSidebarWidth,
                                                       minimumToggleX: chrome.minimumToggleX))
-                header().frame(maxWidth: .infinity, maxHeight: .infinity)
+                header()
+                    .environment(\.settingsTitlebarDragExclusionRegistry, titlebarDragExclusionRegistry)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .onChange(of: geometry.size.width) { _, width in
                 sidebarWidth = settingsSidebarWidth(sidebarWidth, windowWidth: width)
@@ -366,17 +539,7 @@ private struct SettingsSidebarResizeHandle: View {
         GeometryReader { geometry in
             let top = max(0, titlebarBottomY - 8)
             let height = max(0, geometry.size.height - top)
-            ZStack {
-                SettingsSidebarResizeCursorRegion()
-                    .frame(width: 8, height: height)
-                Color.clear
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 0, coordinateSpace: .global)
-                            .onChanged { onChanged($0.translation.width) }
-                            .onEnded { _ in onEnded() }
-                    )
-            }
+            SettingsSidebarResizeHandleView(onChanged: onChanged, onEnded: onEnded)
             .frame(width: 8, height: height)
             .position(x: geometry.size.width, y: top + height / 2)
         }
@@ -384,15 +547,58 @@ private struct SettingsSidebarResizeHandle: View {
     }
 }
 
-/// AppKit owns cursor-rect lifetime. Unlike SwiftUI's `onHover`, it restores
-/// the cursor as soon as the pointer leaves this narrow resize target.
-private struct SettingsSidebarResizeCursorRegion: NSViewRepresentable {
-    func makeNSView(context: Context) -> CursorView { CursorView() }
-    func updateNSView(_ view: CursorView, context: Context) {}
+/// The real hit view also owns the cursor rect. The former cursor-only view
+/// returned `nil` from hit testing while a separate SwiftUI gesture consumed
+/// mouse input, making cursor updates unreliable at the panel edge.
+private struct SettingsSidebarResizeHandleView: NSViewRepresentable {
+    let onChanged: (CGFloat) -> Void
+    let onEnded: () -> Void
 
-    final class CursorView: NSView {
+    func makeNSView(context: Context) -> ResizeHandleView {
+        let view = ResizeHandleView()
+        view.onChanged = onChanged
+        view.onEnded = onEnded
+        return view
+    }
+
+    func updateNSView(_ view: ResizeHandleView, context: Context) {
+        view.onChanged = onChanged
+        view.onEnded = onEnded
+        view.window?.invalidateCursorRects(for: view)
+    }
+
+    final class ResizeHandleView: NSView {
+        var onChanged: ((CGFloat) -> Void)?
+        var onEnded: (() -> Void)?
+        private var mouseMonitor: Any?
+        private var ownsCursor = false
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
+            mouseMonitor = nil
+            guard let window else { return }
+            window.acceptsMouseMovedEvents = true
+            mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved]) { [weak self] event in
+                guard let self else { return event }
+                let inside = event.window === self.window
+                    && self.bounds.contains(self.convert(event.locationInWindow, from: nil))
+                if inside {
+                    NSCursor.resizeLeftRight.set()
+                } else if self.ownsCursor {
+                    NSCursor.arrow.set()
+                }
+                self.ownsCursor = inside
+                return event
+            }
+        }
+
+        deinit {
+            if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
+        }
+
         override var isOpaque: Bool { false }
-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override var mouseDownCanMoveWindow: Bool { false }
 
         override func layout() {
             super.layout()
@@ -402,6 +608,19 @@ private struct SettingsSidebarResizeCursorRegion: NSViewRepresentable {
         override func resetCursorRects() {
             discardCursorRects()
             addCursorRect(bounds, cursor: .resizeLeftRight)
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            guard let window else { return }
+            let startX = event.locationInWindow.x
+            while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+                if next.type == .leftMouseUp {
+                    onEnded?()
+                    return
+                }
+                onChanged?(next.locationInWindow.x - startX)
+            }
+            onEnded?()
         }
     }
 }
@@ -548,6 +767,44 @@ func settingsTopTintOpacity(_ normalizedY: CGFloat) -> CGFloat {
     return 0.35 * t * t * (3 - 2 * t)
 }
 
+/// Maps real scroll velocity to the temporary top-blur radius. Keeping this
+/// independent from the AppKit host makes the continuous response testable.
+enum SettingsScrollBlurDynamics {
+    /// At this many points per second the radius reaches its configured lower bound.
+    static let speedForMinimumRadius: CGFloat = 1_800
+    /// Low-pass filtering removes noisy per-event velocity changes.
+    static let speedSmoothingTime: CFTimeInterval = 0.10
+    /// The radius follows new input gently enough to avoid a triggered feel.
+    static let liveRadiusResponseTime: CFTimeInterval = 0.16
+    /// Once input stops, speed and radius decay more gradually back to rest.
+    static let idleSpeedDecayTime: CFTimeInterval = 0.25
+    static let idleRadiusResponseTime: CFTimeInterval = 0.24
+    static let idleDelay: CFTimeInterval = 0.10
+    static let settlingTimerInterval: TimeInterval = 1.0 / 30.0
+    static let settleRadiusTolerance: CGFloat = 0.02
+    static let settleSpeedTolerance: CGFloat = 1
+
+    static func targetRadius(speed: CGFloat, minimumRadius: CGFloat, maximumRadius: CGFloat) -> CGFloat {
+        let lower = min(minimumRadius, maximumRadius)
+        let upper = max(minimumRadius, maximumRadius)
+        let normalized = min(1, max(0, abs(speed) / speedForMinimumRadius))
+        // Smoothstep avoids a visible corner at rest and at the configured limit.
+        let eased = normalized * normalized * (3 - 2 * normalized)
+        return upper - (upper - lower) * eased
+    }
+
+    static func exponentiallyApproached(
+        current: CGFloat,
+        target: CGFloat,
+        elapsed: CFTimeInterval,
+        timeConstant: CFTimeInterval
+    ) -> CGFloat {
+        guard elapsed > 0, timeConstant > 0 else { return current }
+        let progress = 1 - CGFloat(exp(-elapsed / timeConstant))
+        return current + (target - current) * min(1, max(0, progress))
+    }
+}
+
 /// Experimental Core Animation backdrop path. These two runtime types are
 /// non-public API; keep this limitation explicit in preview delivery notes.
 /// The original native Form and controls remain live and are never snapshotted.
@@ -563,6 +820,21 @@ private struct SettingsNativeTopBackdrop: NSViewRepresentable {
         private let cover = CALayer()
         private let coverMask = CALayer()
         private var scrollerRects: [CGRect] = []
+        private let observedClips = NSHashTable<NSClipView>.weakObjects()
+        private let scrollSamples = NSMapTable<NSClipView, ScrollSample>(keyOptions: .weakMemory, valueOptions: .strongMemory)
+        // Preview-only defaults and hidden overrides are centralized; see
+        // SettingsScrollBlurConfiguration.swift / SCROLL_BLUR_CONFIGURATION.md.
+        private var blurConfiguration: SettingsScrollBlurConfiguration = .current
+        private var currentBlurRadius: CGFloat = SettingsScrollBlurConfiguration.current.maximumRadius
+        private var filteredScrollSpeed: CGFloat = 0
+        private var radiusMask: CGImage?
+        private var settlingLastTime: CFTimeInterval = 0
+        private var settlingTimer: Timer?
+        private final class ScrollSample: NSObject {
+            var y: CGFloat
+            var time: CFTimeInterval
+            init(y: CGFloat, time: CFTimeInterval) { self.y = y; self.time = time }
+        }
 
         override init(frame: NSRect) {
             super.init(frame: frame)
@@ -577,12 +849,162 @@ private struct SettingsNativeTopBackdrop: NSViewRepresentable {
             layer?.addSublayer(cover)
             NotificationCenter.default.addObserver(self, selector: #selector(scrollBoundsChanged(_:)),
                 name: NSView.boundsDidChangeNotification, object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(scrollViewDidLiveScroll(_:)),
+                name: NSScrollView.didLiveScrollNotification, object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(blurDefaultsChanged),
+                name: UserDefaults.didChangeNotification, object: UserDefaults.standard)
+            currentBlurRadius = blurConfiguration.maximumRadius
         }
         required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
-        deinit { NotificationCenter.default.removeObserver(self) }
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+            settlingTimer?.invalidate()
+        }
         @objc private func scrollBoundsChanged(_ notification: Notification) {
             guard let clip = notification.object as? NSClipView, clip.window === window else { return }
-            updateFrames()
+            // A scroll offset cannot move its scroller's frame. Discover new
+            // scroll hosts once; normal scrolling does not scan the view tree.
+            if !observedClips.contains(clip) {
+                observedClips.add(clip)
+                updateFrames()
+            }
+        }
+        @objc private func scrollViewDidLiveScroll(_ notification: Notification) {
+            guard let scrollView = notification.object as? NSScrollView,
+                  scrollView.window === window,
+                  blurConfiguration.enabled,
+                  window?.inLiveResize != true else { return }
+
+            let clip = scrollView.contentView
+            if !observedClips.contains(clip) {
+                observedClips.add(clip)
+                updateFrames()
+            }
+            let now = CACurrentMediaTime()
+            let y = clip.bounds.origin.y
+            guard let previous = scrollSamples.object(forKey: clip) else {
+                scrollSamples.setObject(ScrollSample(y: y, time: now), forKey: clip)
+                return
+            }
+            let elapsed = now - previous.time
+            let distance = abs(y - previous.y)
+            defer { previous.y = y; previous.time = now }
+            guard distance > 0.2, elapsed > 0, elapsed < 0.35 else { return }
+
+            let measuredSpeed = distance / elapsed
+            filteredScrollSpeed = SettingsScrollBlurDynamics.exponentiallyApproached(
+                current: filteredScrollSpeed,
+                target: measuredSpeed,
+                elapsed: elapsed,
+                timeConstant: SettingsScrollBlurDynamics.speedSmoothingTime
+            )
+            let target = SettingsScrollBlurDynamics.targetRadius(
+                speed: filteredScrollSpeed,
+                minimumRadius: blurConfiguration.minimumRadius,
+                maximumRadius: blurConfiguration.maximumRadius
+            )
+            approachBlurRadius(
+                target,
+                elapsed: elapsed,
+                timeConstant: SettingsScrollBlurDynamics.liveRadiusResponseTime
+            )
+            settlingLastTime = now
+            scheduleSettlingTimer()
+        }
+        private func scheduleSettlingTimer() {
+            let fireDate = Date(timeIntervalSinceNow: SettingsScrollBlurDynamics.idleDelay)
+            if let settlingTimer {
+                // Continuous input keeps moving the fire date, so the timer does
+                // no periodic work while the user is still scrolling.
+                settlingTimer.fireDate = fireDate
+                return
+            }
+            let timer = Timer(timeInterval: SettingsScrollBlurDynamics.settlingTimerInterval, repeats: true) { [weak self] timer in
+                self?.settleAfterScroll(timer)
+            }
+            timer.fireDate = fireDate
+            settlingTimer = timer
+            RunLoop.main.add(timer, forMode: .common)
+        }
+        private func settleAfterScroll(_ timer: Timer) {
+            guard blurConfiguration.enabled else {
+                stopSettling(timer)
+                return
+            }
+            let now = CACurrentMediaTime()
+            let elapsed = max(0, now - settlingLastTime)
+            settlingLastTime = now
+            filteredScrollSpeed = SettingsScrollBlurDynamics.exponentiallyApproached(
+                current: filteredScrollSpeed,
+                target: 0,
+                elapsed: elapsed,
+                timeConstant: SettingsScrollBlurDynamics.idleSpeedDecayTime
+            )
+            let target = SettingsScrollBlurDynamics.targetRadius(
+                speed: filteredScrollSpeed,
+                minimumRadius: blurConfiguration.minimumRadius,
+                maximumRadius: blurConfiguration.maximumRadius
+            )
+            approachBlurRadius(
+                target,
+                elapsed: elapsed,
+                timeConstant: SettingsScrollBlurDynamics.idleRadiusResponseTime
+            )
+            if filteredScrollSpeed <= SettingsScrollBlurDynamics.settleSpeedTolerance,
+               abs(currentBlurRadius - blurConfiguration.maximumRadius) <= SettingsScrollBlurDynamics.settleRadiusTolerance {
+                filteredScrollSpeed = 0
+                setBlurRadius(blurConfiguration.maximumRadius)
+                stopSettling(timer)
+            }
+        }
+        private func stopSettling(_ timer: Timer? = nil) {
+            (timer ?? settlingTimer)?.invalidate()
+            settlingTimer = nil
+        }
+        private func approachBlurRadius(_ target: CGFloat, elapsed: CFTimeInterval, timeConstant: CFTimeInterval) {
+            setBlurRadius(SettingsScrollBlurDynamics.exponentiallyApproached(
+                current: currentBlurRadius,
+                target: target,
+                elapsed: elapsed,
+                timeConstant: timeConstant
+            ))
+        }
+        private func setBlurRadius(_ radius: CGFloat) {
+            let clamped = min(
+                max(radius, blurConfiguration.minimumRadius),
+                blurConfiguration.maximumRadius
+            )
+            guard abs(clamped - currentBlurRadius) > 0.001 else { return }
+            currentBlurRadius = clamped
+            applyBlurRadius()
+        }
+        @objc private func blurDefaultsChanged() {
+            guard Thread.isMainThread else {
+                DispatchQueue.main.async { [weak self] in self?.blurDefaultsChanged() }
+                return
+            }
+            let next = SettingsScrollBlurConfiguration.current
+            guard next != blurConfiguration else { return }
+            blurConfiguration = next
+            if !next.enabled {
+                filteredScrollSpeed = 0
+                stopSettling()
+                currentBlurRadius = next.maximumRadius
+            } else if settlingTimer == nil {
+                currentBlurRadius = next.maximumRadius
+            } else {
+                currentBlurRadius = min(max(currentBlurRadius, next.minimumRadius), next.maximumRadius)
+            }
+            applyBlurRadius()
+        }
+        private func applyBlurRadius() {
+            guard let radiusMask, let backdrop, let filter = Self.makeFilter() else { return }
+            filter.setValue(currentBlurRadius, forKey: "inputRadius")
+            filter.setValue(radiusMask, forKey: "inputMaskImage")
+            filter.setValue(true, forKey: "inputNormalizeEdges")
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            backdrop.filters = [filter]
+            CATransaction.commit()
         }
         override var isOpaque: Bool { false }
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -604,7 +1026,8 @@ private struct SettingsNativeTopBackdrop: NSViewRepresentable {
                let colorImage = mask.image()?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
                 // Configure before attachment: mutating a filter already installed
                 // on a CALayer does not reliably invalidate the render server.
-                filter.setValue(30, forKey: "inputRadius")
+                radiusMask = radiusImage
+                filter.setValue(currentBlurRadius, forKey: "inputRadius")
                 filter.setValue(radiusImage, forKey: "inputMaskImage")
                 filter.setValue(true, forKey: "inputNormalizeEdges")
                 backdrop.filters = [filter]
