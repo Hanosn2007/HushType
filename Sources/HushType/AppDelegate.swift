@@ -1147,7 +1147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = await restoreInsertionFocus(insertionFocus)
         print("[HushType] Inserting text...")
         state = .inserting
-        let insertionFailure = TextInserter.insert(text)
+        let insertionFailure = await TextInserter.insert(text)
         state = .idle
         if let insertionFailure {
             statusBar.setState(.error(insertionFailure.message))
@@ -1156,7 +1156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusBar.setState(.idle)
         }
         hideOverlay()
-        print(insertionFailure == nil ? "[HushType] Done" : "[HushType] Text left on clipboard")
+        print(insertionFailure == nil ? "[HushType] Input dispatched" : "[HushType] Automatic input failed; check recognition history")
     }
 
     @objc private func cleanupRecognitionHistory() {
@@ -1357,7 +1357,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if changed {
                     // The source application must retain focus through the
                     // complete simulated paste before any result window appears.
-                    insertionFailure = TextInserter.insert(polished)
+                    insertionFailure = await TextInserter.insert(polished)
                 }
 
                 self.finishPolishing()

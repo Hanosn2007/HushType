@@ -48,6 +48,7 @@ struct SettingsNavigationButtons: View {
         .buttonStyle(.plain)
         .modifier(SettingsLiquidGlass())
         .fixedSize()
+        .settingsBackdropCutout(id: "navigation")
         // This AppKit view registers the rendered capsule. The titlebar drag
         // responder reads its live frame on mouse-down, so the separator and
         // glass surrounding both buttons stay non-draggable as the header
@@ -64,6 +65,233 @@ private extension EnvironmentValues {
     var settingsTitlebarDragExclusionRegistry: SettingsTitlebarDragExclusionRegistry? {
         get { self[SettingsTitlebarDragExclusionRegistryKey.self] }
         set { self[SettingsTitlebarDragExclusionRegistryKey.self] = newValue }
+    }
+}
+
+private struct SettingsAdaptiveCutoutRegistryKey: EnvironmentKey {
+    static let defaultValue: SettingsAdaptiveCutoutRegistry? = nil
+}
+
+private extension EnvironmentValues {
+    var settingsAdaptiveCutoutRegistry: SettingsAdaptiveCutoutRegistry? {
+        get { self[SettingsAdaptiveCutoutRegistryKey.self] }
+        set { self[SettingsAdaptiveCutoutRegistryKey.self] = newValue }
+    }
+}
+
+/// Runtime evidence for the adaptive top-backdrop openings. Coordinates are in
+/// window space except `appliedLocalRect`, which is in the mask image's
+/// top-leading coordinate system.
+struct SettingsAdaptiveCutoutDiagnosticEntry: Equatable {
+    let id: String
+    let sourceWindowRect: CGRect
+    let presentationWindowRect: CGRect
+    let appliedWindowRect: CGRect
+    let appliedLocalRect: CGRect
+    let opacity: Double
+}
+
+struct SettingsAdaptiveCutoutDiagnosticsSnapshot: Equatable {
+    let entries: [SettingsAdaptiveCutoutDiagnosticEntry]
+    let registeredCount: Int
+    let maskUpdateCount: Int
+    let trackingActive: Bool
+}
+
+enum SettingsAdaptiveCutoutDiagnostics {
+    static func snapshot(in window: NSWindow) -> SettingsAdaptiveCutoutDiagnosticsSnapshot {
+        SettingsAdaptiveCutoutRegistry.snapshot(in: window)
+    }
+}
+
+/// Window-local registration for controls which must be cut out of the top
+/// backdrop. It only retains the small reporter views weakly; the registry is
+/// retained by the SettingsWindowShell that owns that window.
+final class SettingsAdaptiveCutoutRegistry {
+    private final class Registration {
+        weak var view: NSView?
+        let id: String
+        var fallbackOpacity: Double
+
+        init(view: NSView, id: String, fallbackOpacity: Double) {
+            self.view = view
+            self.id = id
+            self.fallbackOpacity = fallbackOpacity
+        }
+    }
+
+    private static let registries = NSMapTable<NSWindow, SettingsAdaptiveCutoutRegistry>(
+        keyOptions: .weakMemory, valueOptions: .weakMemory
+    )
+    private var registrations: [String: Registration] = [:]
+    private var observers: [UUID: () -> Void] = [:]
+    private var diagnosticSampler: ((NSWindow) -> [SettingsAdaptiveCutoutDiagnosticEntry])?
+    private var updateCount = 0
+    private var isTracking = false
+
+    func register(_ view: NSView, id: String, fallbackOpacity: Double) {
+        purgeDeadRegistrations()
+        let clampedOpacity = min(1, max(0, fallbackOpacity))
+        if let existing = registrations[id], existing.view === view {
+            guard existing.fallbackOpacity != clampedOpacity else { return }
+            existing.fallbackOpacity = clampedOpacity
+        } else {
+            registrations[id] = Registration(view: view, id: id, fallbackOpacity: clampedOpacity)
+        }
+        if let window = view.window { Self.registries.setObject(self, forKey: window) }
+        changed()
+    }
+
+    func unregister(_ view: NSView, id: String) {
+        guard registrations[id]?.view === view else { return }
+        registrations[id] = nil
+        changed()
+    }
+
+    func geometryDidChange(for view: NSView) {
+        guard registrations.values.contains(where: { $0.view === view }) else { return }
+        changed()
+    }
+
+    func registrations(in window: NSWindow) -> [(id: String, view: NSView, fallbackOpacity: Double)] {
+        purgeDeadRegistrations()
+        return registrations.values.compactMap { entry in
+            guard let view = entry.view, view.window === window else { return nil }
+            return (entry.id, view, entry.fallbackOpacity)
+        }.sorted { $0.id < $1.id }
+    }
+
+    func observe(_ handler: @escaping () -> Void) -> UUID {
+        let token = UUID()
+        observers[token] = handler
+        return token
+    }
+
+    func removeObserver(_ token: UUID?) {
+        guard let token else { return }
+        observers[token] = nil
+    }
+
+    func record(maskDidUpdate: Bool, trackingActive: Bool) {
+        if maskDidUpdate { updateCount += 1 }
+        isTracking = trackingActive
+    }
+
+    func setTrackingActive(_ active: Bool) {
+        isTracking = active
+    }
+
+    func setDiagnosticSampler(_ sampler: ((NSWindow) -> [SettingsAdaptiveCutoutDiagnosticEntry])?) {
+        diagnosticSampler = sampler
+    }
+
+    private func changed() {
+        for observer in observers.values { observer() }
+    }
+
+    private func purgeDeadRegistrations() {
+        let dead = registrations.compactMap { $0.value.view == nil ? $0.key : nil }
+        for id in dead {
+            registrations[id] = nil
+        }
+    }
+
+    private func diagnosticSnapshot(in window: NSWindow) -> SettingsAdaptiveCutoutDiagnosticsSnapshot {
+        guard let diagnosticSampler else {
+            return SettingsAdaptiveCutoutDiagnosticsSnapshot(
+                entries: [], registeredCount: 0, maskUpdateCount: 0, trackingActive: false
+            )
+        }
+        let registered = registrations(in: window)
+        let entries = diagnosticSampler(window)
+        return SettingsAdaptiveCutoutDiagnosticsSnapshot(
+            entries: entries,
+            registeredCount: registered.count,
+            maskUpdateCount: updateCount,
+            trackingActive: isTracking
+        )
+    }
+
+    static func snapshot(in window: NSWindow) -> SettingsAdaptiveCutoutDiagnosticsSnapshot {
+        registries.object(forKey: window)?.diagnosticSnapshot(in: window)
+            ?? SettingsAdaptiveCutoutDiagnosticsSnapshot(
+                entries: [], registeredCount: 0, maskUpdateCount: 0, trackingActive: false
+            )
+    }
+}
+
+/// Registers the bounds SwiftUI actually rendered. The reporter is transparent
+/// and never joins hit testing, layout state or the SwiftUI animation graph.
+private struct SettingsAdaptiveCutoutReporter: NSViewRepresentable {
+    let id: String
+    let opacity: Double
+    @Environment(\.settingsAdaptiveCutoutRegistry) private var registry
+
+    func makeNSView(context: Context) -> ReporterView {
+        let view = ReporterView()
+        view.configure(id: id, opacity: opacity, registry: registry)
+        return view
+    }
+
+    func updateNSView(_ view: ReporterView, context: Context) {
+        view.configure(id: id, opacity: opacity, registry: registry)
+    }
+
+    final class ReporterView: NSView {
+        private var id = ""
+        private var opacity = 1.0
+        private weak var registry: SettingsAdaptiveCutoutRegistry?
+
+        override var isOpaque: Bool { false }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override init(frame frameRect: NSRect) {
+            super.init(frame: frameRect)
+            wantsLayer = true
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
+
+        func configure(id: String, opacity: Double, registry: SettingsAdaptiveCutoutRegistry?) {
+            if self.id != id || self.registry !== registry {
+                self.registry?.unregister(self, id: self.id)
+                self.id = id
+                self.registry = registry
+            }
+            self.opacity = opacity
+            refreshRegistration()
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            refreshRegistration()
+        }
+
+        override func layout() {
+            super.layout()
+            refreshRegistration()
+            registry?.geometryDidChange(for: self)
+        }
+
+        private func refreshRegistration() {
+            guard !id.isEmpty else { return }
+            guard window != nil else {
+                registry?.unregister(self, id: id)
+                return
+            }
+            registry?.register(self, id: id, fallbackOpacity: opacity)
+        }
+
+        deinit { registry?.unregister(self, id: id) }
+    }
+}
+
+extension View {
+    /// Attach this to any capsule (including test-only controls) to give the
+    /// top backdrop its rendered bounds instead of a guessed frame.
+    func settingsBackdropCutout(id: String, opacity: Double = 1) -> some View {
+        background(SettingsAdaptiveCutoutReporter(id: id, opacity: opacity))
     }
 }
 
@@ -250,6 +478,10 @@ struct SettingsLiquidGlass: ViewModifier {
 struct SettingsHistorySearch: View {
     @Binding var text: String
     let prompt: String
+    /// A parent which hides this control through a SwiftUI-only compositing
+    /// opacity can pass that value here. The native reporter also samples an
+    /// AppKit presentation opacity whenever one exists.
+    var cutoutOpacity: Double = 1
     @FocusState private var focused: Bool
     var body: some View {
         HStack(spacing: 8) {
@@ -265,6 +497,7 @@ struct SettingsHistorySearch: View {
                 .keyboardShortcut("f", modifiers: .command)
                 .hidden().accessibilityHidden(true)
         }
+        .settingsBackdropCutout(id: "search", opacity: cutoutOpacity)
     }
 }
 
@@ -284,6 +517,7 @@ struct SettingsWindowShell<Detail: View, Sidebar: View, Header: View>: View {
     @State private var sidebarDragOrigin: CGFloat?
     @State private var chrome = SettingsWindowChromeMetrics()
     @State private var titlebarDragExclusionRegistry = SettingsTitlebarDragExclusionRegistry()
+    @State private var adaptiveCutoutRegistry = SettingsAdaptiveCutoutRegistry()
 
     // Scroll content extends behind the B8 opacity cover and native glass controls.
     private var extendsScrollUnderHeader: Bool { true }
@@ -334,7 +568,7 @@ struct SettingsWindowShell<Detail: View, Sidebar: View, Header: View>: View {
                                 minimumToggleX: chrome.minimumToggleX,
                                 titlebarCenterY: chrome.titlebarCenterY,
                                 detailLayoutProgress: stabilizesDetailWidth ? (sidebarExpanded ? 1 : 0) : nil,
-                                hasSearch: showsSearch, titlebarBottomY: chrome.titlebarBottomY)
+                                titlebarBottomY: chrome.titlebarBottomY)
                         } else {
                             Color.clear
                         }
@@ -364,6 +598,7 @@ struct SettingsWindowShell<Detail: View, Sidebar: View, Header: View>: View {
                     .environment(\.settingsTitlebarDragExclusionRegistry, titlebarDragExclusionRegistry)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .environment(\.settingsAdaptiveCutoutRegistry, adaptiveCutoutRegistry)
             .onChange(of: geometry.size.width) { _, width in
                 sidebarWidth = settingsSidebarWidth(sidebarWidth, windowWidth: width)
             }
@@ -510,10 +745,22 @@ struct SettingsSidebarSurface: ViewModifier {
     func body(content: Content) -> some View {
         if #available(macOS 26.0, *) {
             content.background {
-                Color.clear.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20))
+                SettingsSidebarGlass()
             }
         } else {
             content.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+        }
+    }
+}
+
+/// Preserve a single native glass surface. The blur host clips its captured
+/// input before applying the separate variable-blur stage.
+private struct SettingsSidebarGlass: View {
+    @ViewBuilder var body: some View {
+        if #available(macOS 26.0, *) {
+            Color.clear.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20))
+        } else {
+            RoundedRectangle(cornerRadius: 20).fill(.regularMaterial)
         }
     }
 }
@@ -635,7 +882,9 @@ private struct SettingsToggleGlassBackdrop: ViewModifier, Animatable {
         content.background {
             Color.clear.frame(width: 44, height: 36)
                 .modifier(SettingsLiquidGlass())
-                .opacity(glassOpacity).allowsHitTesting(false)
+                .settingsBackdropCutout(id: "toggle", opacity: glassOpacity)
+                .opacity(glassOpacity)
+                .allowsHitTesting(false)
         }
     }
 }
@@ -656,29 +905,37 @@ private struct SettingsChromeFadeLayer: View, Animatable {
     let sidebarWidth: CGFloat
     let minimumToggleX, titlebarCenterY: CGFloat
     let detailLayoutProgress: CGFloat?
-    let hasSearch: Bool
+    @Environment(\.settingsAdaptiveCutoutRegistry) private var cutoutRegistry
     let titlebarBottomY: CGFloat
     @Environment(\.displayScale) private var displayScale
     var animatableData: CGFloat { get { progress } set { progress = newValue } }
+    private var usesPublicSidebarEffect: Bool {
+        if #available(macOS 26.0, *) {
+            return SettingsScrollBlurConfiguration.defaultIsPreview
+        }
+        return false
+    }
     var body: some View {
         GeometryReader { geometry in
             let f = SettingsChromeFrames(size: geometry.size, progress: progress,
                 sidebarWidth: sidebarWidth,
                 minimumToggleX: minimumToggleX, titlebarCenterY: titlebarCenterY,
                 extendsDetailUnderHeader: true, detailLayoutProgress: detailLayoutProgress)
-            let navigation = CGRect(x: f.header.minX, y: f.header.minY, width: 71, height: 36)
-            let search = CGRect(x: f.header.maxX - 190, y: f.header.minY, width: 190, height: 36)
-            let toggle = f.toggle.insetBy(dx: -4, dy: 0)
             ZStack(alignment: .topLeading) {
                 fade(in: f.detail, height: max(0, titlebarBottomY - f.detail.minY), sidebar: false,
-                     navigation: navigation, search: search, toggle: toggle)
-                fade(in: f.sidebar, height: max(0, titlebarBottomY - f.sidebar.minY), sidebar: true,
-                     navigation: navigation, search: search, toggle: toggle)
+                     hostWidth: geometry.size.width, cutoutRegistry: cutoutRegistry)
+                // Preview on macOS 26 uses the public scroll-edge host.
+                // All other configurations retain the original sidebar effect.
+                if !usesPublicSidebarEffect {
+                    fade(in: f.sidebar, height: max(0, titlebarBottomY - f.sidebar.minY), sidebar: true,
+                         hostWidth: geometry.size.width, cutoutRegistry: cutoutRegistry)
+                }
             }.frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
         }
     }
     private func fade(in frame: CGRect, height: CGFloat, sidebar: Bool,
-                      navigation: CGRect, search: CGRect, toggle: CGRect) -> some View {
+                      hostWidth: CGFloat,
+                      cutoutRegistry: SettingsAdaptiveCutoutRegistry?) -> some View {
         // Apply the mask inside AppKit, rather than flattening the backdrop
         // through a SwiftUI compositing group. Glass controls sample through
         // the same openings, independently of the fading top material.
@@ -689,13 +946,13 @@ private struct SettingsChromeFadeLayer: View, Animatable {
                 openingInset: 1.5 / max(1, displayScale),
                 panelHeight: frame.height,
                 sidebar: sidebar,
-                holes: [navigation] + (hasSearch ? [search] : []),
-                toggle: toggle,
-                toggleOpacity: settingsToggleGlassOpacity(progress, sidebarWidth, minimumToggleX),
-                origin: frame.origin))
-        .frame(width: frame.width, height: height)
-        .frame(width: frame.width, height: frame.height, alignment: .top)
-        .offset(x: frame.minX, y: frame.minY)
+                cutouts: [],
+                origin: frame.origin),
+            cutoutRegistry: cutoutRegistry)
+        // Keep the sampling host fixed in window coordinates. The right-panel
+        // region and its mask move together inside one Core Animation commit.
+        .frame(width: hostWidth, height: titlebarBottomY)
+        .frame(width: hostWidth, height: frame.height, alignment: .top)
     }
 }
 
@@ -706,12 +963,20 @@ struct SettingsTopBackdropMask: Equatable {
     var colorHeight: CGFloat? = nil
     var openingInset: CGFloat = 0
     var excludedRects: [CGRect] = []
+    var blurInset: CGFloat = 1.5
     let panelHeight: CGFloat
     let sidebar: Bool
-    let holes: [CGRect]
-    let toggle: CGRect
-    let toggleOpacity: Double
+    var cutouts: [SettingsTopBackdropCutout]
     let origin: CGPoint
+
+    /// Only inputs read by the image renderer belong in its cache key.
+    /// The panel's placement still updates every frame, independently of pixels.
+    var rasterIdentity: Self {
+        Self(size: size, colorHeight: colorHeight, openingInset: openingInset,
+             excludedRects: excludedRects, blurInset: sidebar ? blurInset : 0,
+             panelHeight: sidebar ? panelHeight : 0, sidebar: sidebar,
+             cutouts: cutouts, origin: .zero)
+    }
 
     func image(blur: Bool = false) -> NSImage? {
         guard size.width > 0, size.height > 0 else { return nil }
@@ -719,37 +984,38 @@ struct SettingsTopBackdropMask: Equatable {
         return NSImage(size: size, flipped: true) { bounds in
             NSGraphicsContext.saveGraphicsState()
             defer { NSGraphicsContext.restoreGraphicsState() }
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
             if sidebar {
+                let inset = blur ? blurInset : 1.5
+                if size.width <= 2 * inset || (blur && size.height <= 2 * inset) { return true }
                 NSBezierPath(roundedRect: CGRect(x: 0, y: 0, width: size.width, height: panelHeight)
-                    .insetBy(dx: 1.5, dy: 1.5), xRadius: 18.5, yRadius: 18.5).addClip()
+                    .insetBy(dx: inset, dy: inset), xRadius: max(0, 20 - inset), yRadius: max(0, 20 - inset)).addClip()
             }
-            if blur {
-                // The backdrop filter consumes a radius mask, not view opacity.
-                // Linear radius reaches zero at the clear edge.
-                for row in 0..<Int(ceil(bounds.height)) {
-                    let y = CGFloat(row)
-                    NSColor.black.withAlphaComponent(settingsTopBlurStrength(y / max(1, ceil(bounds.height) - 1))).setFill()
-                    NSBezierPath(rect: CGRect(x: 0, y: y, width: bounds.width, height: 1)).fill()
-                }
-            } else {
-                // Independent translucent tint: never fully hides the content.
-                for row in 0..<Int(ceil(bounds.height)) {
-                    let y = CGFloat(row)
-                    NSColor.white.withAlphaComponent(settingsTopTintOpacity(y / max(1, ceil(colorHeight ?? bounds.height) - 1))).setFill()
-                    NSBezierPath(rect: CGRect(x: 0, y: y, width: bounds.width, height: 1)).fill()
-                }
+            // Preserve the exact one-point rows and alpha curves. Filling the
+            // existing CGContext avoids creating an NSColor and NSBezierPath
+            // for every row of both images on each animation frame.
+            let denominator = max(1, ceil(blur ? bounds.height : (colorHeight ?? bounds.height)) - 1)
+            let component: CGFloat = blur ? 0 : 1
+            for row in 0..<Int(ceil(bounds.height)) {
+                let y = CGFloat(row)
+                let alpha = blur ? settingsTopBlurStrength(y / denominator)
+                                 : settingsTopTintOpacity(y / denominator)
+                context.setFillColor(gray: component, alpha: alpha)
+                context.fill(CGRect(x: 0, y: y, width: bounds.width, height: 1))
             }
             NSGraphicsContext.current?.compositingOperation = .destinationOut
             func cutout(_ rect: CGRect, opacity: Double) {
                 NSColor.white.withAlphaComponent(opacity).setFill()
-                let local = rect.offsetBy(dx: -origin.x, dy: -origin.y)
-                    .insetBy(dx: openingInset, dy: openingInset)
+                // Adaptive reporter geometry is already local to this mask's
+                // top-leading image coordinate system.
+                let local = rect.insetBy(dx: openingInset, dy: openingInset)
                 guard local.width > 0, local.height > 0 else { return }
                 NSBezierPath(roundedRect: local, xRadius: local.height / 2,
                              yRadius: local.height / 2).fill()
             }
-            for hole in holes { cutout(hole, opacity: 1) }
-            cutout(toggle, opacity: toggleOpacity)
+            for cutoutEntry in cutouts {
+                cutout(cutoutEntry.rect, opacity: cutoutEntry.opacity)
+            }
             NSColor.white.setFill()
             for rect in excludedRects { NSBezierPath(rect: rect).fill() }
             return true
@@ -757,9 +1023,21 @@ struct SettingsTopBackdropMask: Equatable {
     }
 }
 
+struct SettingsTopBackdropCutout: Equatable {
+    let rect: CGRect
+    let opacity: Double
+}
+
+private extension CGRect {
+    var hasFiniteCoordinates: Bool {
+        minX.isFinite && minY.isFinite && width.isFinite && height.isFinite
+    }
+}
+
 func settingsTopBlurStrength(_ normalizedY: CGFloat) -> CGFloat {
     return 0.1 * (1 - min(1, max(0, normalizedY)))
 }
+
 
 // Smoothstep gives both ends a flat tangent; peak tint remains translucent.
 func settingsTopTintOpacity(_ normalizedY: CGFloat) -> CGFloat {
@@ -805,17 +1083,41 @@ enum SettingsScrollBlurDynamics {
     }
 }
 
+/// Viewport coordinates are converted into this backdrop's local space. The
+/// complete panel participates, so nested editors below the top bar still count.
+func settingsScrollViewportBelongsToPanel(_ viewport: CGRect, panel: CGRect) -> Bool {
+    guard !viewport.isEmpty, !panel.isEmpty,
+          viewport.midX >= panel.minX, viewport.midX < panel.maxX else { return false }
+    let overlap = viewport.intersection(panel)
+    return !overlap.isNull && overlap.width >= min(viewport.width, panel.width) * 0.5 && overlap.height > 0
+}
+
 /// Experimental Core Animation backdrop path. These two runtime types are
 /// non-public API; keep this limitation explicit in preview delivery notes.
 /// The original native Form and controls remain live and are never snapshotted.
 private struct SettingsNativeTopBackdrop: NSViewRepresentable {
     let mask: SettingsTopBackdropMask
+    let cutoutRegistry: SettingsAdaptiveCutoutRegistry?
     func makeNSView(context: Context) -> BackdropView { BackdropView() }
-    func updateNSView(_ view: BackdropView, context: Context) { view.update(mask) }
+    func updateNSView(_ view: BackdropView, context: Context) { view.update(mask, cutoutRegistry: cutoutRegistry) }
 
     final class BackdropView: NSView {
+        private var baseConfiguration: SettingsTopBackdropMask?
         private var configuration: SettingsTopBackdropMask?
+        private var lastRasterIdentity: SettingsTopBackdropMask?
+        private var lastRasterScale: CGFloat?
+        private var cutoutRegistry: SettingsAdaptiveCutoutRegistry?
+        private var cutoutObserver: UUID?
+        @available(macOS 14.0, *) private var cutoutDisplayLink: CADisplayLink?
+        private var cutoutTrackingStopTimer: Timer?
+        private var cutoutTrackingDeadline: CFTimeInterval = 0
+        private var lastAppliedCutoutRects: [String: CGRect] = [:]
+        private var lastAppliedMaskOrigin: CGPoint = .zero
+        @available(macOS 14.0, *) private let cutoutDisplayLinkProxy = CutoutDisplayLinkProxy()
         private var backdrop: CALayer?
+        private let blurStage = CALayer()
+        private let sourceClip = CAShapeLayer()
+        private let outputClip = CAShapeLayer()
         private var reportedUnavailable = false
         private let cover = CALayer()
         private let coverMask = CALayer()
@@ -835,14 +1137,23 @@ private struct SettingsNativeTopBackdrop: NSViewRepresentable {
             var time: CFTimeInterval
             init(y: CGFloat, time: CFTimeInterval) { self.y = y; self.time = time }
         }
+        @available(macOS 14.0, *)
+        private final class CutoutDisplayLinkProxy: NSObject {
+            weak var owner: BackdropView?
+
+            @objc func didFire(_ displayLink: CADisplayLink) {
+                owner?.cutoutDisplayLinkDidFire(displayLink)
+            }
+        }
 
         override init(frame: NSRect) {
             super.init(frame: frame)
             wantsLayer = true
             layer?.masksToBounds = true
+            layer?.addSublayer(blurStage)
             if let backdropType = NSClassFromString("CABackdropLayer") as? CALayer.Type {
                 let backdrop = backdropType.init()
-                layer?.addSublayer(backdrop)
+                blurStage.addSublayer(backdrop)
                 self.backdrop = backdrop
             }
             cover.mask = coverMask
@@ -854,14 +1165,17 @@ private struct SettingsNativeTopBackdrop: NSViewRepresentable {
             NotificationCenter.default.addObserver(self, selector: #selector(blurDefaultsChanged),
                 name: UserDefaults.didChangeNotification, object: UserDefaults.standard)
             currentBlurRadius = blurConfiguration.maximumRadius
+            if #available(macOS 14.0, *) { cutoutDisplayLinkProxy.owner = self }
         }
         required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
         deinit {
             NotificationCenter.default.removeObserver(self)
             settlingTimer?.invalidate()
+            cutoutRegistry?.removeObserver(cutoutObserver)
+            stopCutoutTracking()
         }
         @objc private func scrollBoundsChanged(_ notification: Notification) {
-            guard let clip = notification.object as? NSClipView, clip.window === window else { return }
+            guard let clip = notification.object as? NSClipView, ownsScrollViewport(clip) else { return }
             // A scroll offset cannot move its scroller's frame. Discover new
             // scroll hosts once; normal scrolling does not scan the view tree.
             if !observedClips.contains(clip) {
@@ -871,7 +1185,7 @@ private struct SettingsNativeTopBackdrop: NSViewRepresentable {
         }
         @objc private func scrollViewDidLiveScroll(_ notification: Notification) {
             guard let scrollView = notification.object as? NSScrollView,
-                  scrollView.window === window,
+                  ownsScrollViewport(scrollView.contentView),
                   blurConfiguration.enabled,
                   window?.inLiveResize != true else { return }
 
@@ -910,6 +1224,17 @@ private struct SettingsNativeTopBackdrop: NSViewRepresentable {
             )
             settlingLastTime = now
             scheduleSettlingTimer()
+        }
+        private func ownsScrollViewport(_ clip: NSClipView) -> Bool {
+            guard let window, clip.window === window,
+                  !clip.isHiddenOrHasHiddenAncestor,
+                  let configuration else { return false }
+            // NSView is bottom-left based here; the panel extends downward from
+            // the top backdrop. Never use the moving document's bounds as area.
+            let panel = CGRect(x: configuration.origin.x,
+                               y: bounds.height - configuration.origin.y - configuration.panelHeight,
+                               width: configuration.size.width, height: configuration.panelHeight)
+            return settingsScrollViewportBelongsToPanel(convert(clip.bounds, from: clip), panel: panel)
         }
         private func scheduleSettlingTimer() {
             let fireDate = Date(timeIntervalSinceNow: SettingsScrollBlurDynamics.idleDelay)
@@ -996,6 +1321,8 @@ private struct SettingsNativeTopBackdrop: NSViewRepresentable {
                 currentBlurRadius = min(max(currentBlurRadius, next.minimumRadius), next.maximumRadius)
             }
             applyBlurRadius()
+            if let baseConfiguration { update(baseConfiguration, cutoutRegistry: cutoutRegistry) }
+            updateFrames()
         }
         private func applyBlurRadius() {
             guard let radiusMask, let backdrop, let filter = Self.makeFilter() else { return }
@@ -1003,24 +1330,296 @@ private struct SettingsNativeTopBackdrop: NSViewRepresentable {
             filter.setValue(radiusMask, forKey: "inputMaskImage")
             filter.setValue(true, forKey: "inputNormalizeEdges")
             CATransaction.begin(); CATransaction.setDisableActions(true)
-            backdrop.filters = [filter]
+            install(filter, on: backdrop)
             CATransaction.commit()
+        }
+        private func install(_ filter: NSObject, on backdrop: CALayer) {
+            if configuration?.sidebar == true {
+                guard let capture = Self.makeFilter(typeName: "gaussianBlur") else {
+                    backdrop.isHidden = true
+                    blurStage.filters = nil
+                    return
+                }
+                capture.setValue(0, forKey: "inputRadius")
+                backdrop.filters = [capture]
+                blurStage.filters = [filter]
+            } else {
+                blurStage.filters = nil
+                backdrop.filters = [filter]
+            }
         }
         override var isOpaque: Bool { false }
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
-        override func layout() { super.layout(); updateFrames() }
-        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); updateFrames() }
-        override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); updateFrames() }
+        override func layout() {
+            super.layout()
+            updateFrames()
+            adaptiveCutoutGeometryDidChange()
+        }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            updateFrames()
+            if window == nil {
+                stopCutoutTracking()
+            } else {
+                adaptiveCutoutGeometryDidChange()
+            }
+        }
+        override func viewDidChangeBackingProperties() {
+            super.viewDidChangeBackingProperties()
+            updateFrames()
+            adaptiveCutoutGeometryDidChange()
+        }
         override func viewDidChangeEffectiveAppearance() {
             super.viewDidChangeEffectiveAppearance()
             updateFrames()
         }
-        func update(_ input: SettingsTopBackdropMask) {
+        func update(_ input: SettingsTopBackdropMask, cutoutRegistry nextRegistry: SettingsAdaptiveCutoutRegistry?) {
+            installCutoutRegistry(nextRegistry)
             var mask = input
             mask.excludedRects = scrollerRects
-            guard configuration != mask else { return }
+            mask.blurInset = blurConfiguration.edgeInsetPixels / max(1, window?.backingScaleFactor ?? 2)
+            baseConfiguration = mask
+            if refreshAdaptiveCutouts(preferPresentation: true) { startCutoutTracking() }
+            updateFrames()
+        }
+
+        private func installCutoutRegistry(_ nextRegistry: SettingsAdaptiveCutoutRegistry?) {
+            guard cutoutRegistry !== nextRegistry else { return }
+            cutoutRegistry?.removeObserver(cutoutObserver)
+            cutoutRegistry?.setDiagnosticSampler(nil)
+            cutoutRegistry = nextRegistry
+            cutoutObserver = nextRegistry?.observe { [weak self] in
+                self?.adaptiveCutoutGeometryDidChange()
+            }
+            nextRegistry?.setDiagnosticSampler { [weak self] window in
+                self?.diagnosticEntries(for: window) ?? []
+            }
+        }
+
+        private func adaptiveCutoutGeometryDidChange() {
+            // Update directly from the current layer tree. Deferring this work
+            // by one main-queue turn visibly leaves the old opening behind.
+            refreshAdaptiveCutouts(preferPresentation: true)
+            startCutoutTracking()
+        }
+
+        @discardableResult
+        private func refreshAdaptiveCutouts(preferPresentation: Bool) -> Bool {
+            guard var mask = baseConfiguration else { return false }
+            let resolved = resolvedAdaptiveCutouts(preferPresentation: preferPresentation)
+            mask.cutouts = resolved.map {
+                SettingsTopBackdropCutout(rect: $0.expectedLocalRect, opacity: $0.opacity)
+            }.filter { $0.opacity > 0.0001 }
+            let didUpdate = apply(mask)
+            if didUpdate {
+                lastAppliedMaskOrigin = mask.origin
+                lastAppliedCutoutRects = Dictionary(uniqueKeysWithValues: resolved.compactMap {
+                    $0.opacity > 0.0001 ? ($0.id, $0.expectedLocalRect) : nil
+                })
+            }
+            cutoutRegistry?.record(maskDidUpdate: didUpdate,
+                                   trackingActive: cutoutTrackingIsActive)
+            return didUpdate
+        }
+
+        private struct ResolvedAdaptiveCutout {
+            let id: String
+            let sourceWindowRect: CGRect
+            let presentationWindowRect: CGRect
+            let expectedLocalRect: CGRect
+            let opacity: Double
+        }
+
+        private func resolvedAdaptiveCutouts(preferPresentation: Bool) -> [ResolvedAdaptiveCutout] {
+            guard let window, let cutoutRegistry else { return [] }
+            return cutoutRegistry.registrations(in: window).compactMap { registration in
+                guard !registration.view.isHiddenOrHasHiddenAncestor else { return nil }
+                let source = registration.view.convert(registration.view.bounds, to: nil)
+                guard !source.isNull, !source.isEmpty else { return nil }
+                let presentation = preferPresentation
+                    ? coherentPresentationGeometry(for: registration.view, modelWindowRect: source)
+                    : nil
+                let localAppKit = presentation?.localRect ?? convert(source, from: nil)
+                guard localAppKit.hasFiniteCoordinates, !localAppKit.isNull, !localAppKit.isEmpty else { return nil }
+                let panelOrigin = baseConfiguration?.origin ?? .zero
+                let localImage = CGRect(x: localAppKit.minX - panelOrigin.x,
+                                        y: bounds.height - localAppKit.maxY - panelOrigin.y,
+                                        width: localAppKit.width, height: localAppKit.height)
+                let presentationWindow = presentation?.windowRect ?? source
+                // The explicit opacity is a fallback for SwiftUI compositing
+                // groups whose alpha is not materialized as an AppKit ancestor.
+                let opacity = min(registration.fallbackOpacity, presentation?.opacity ?? 1)
+                return ResolvedAdaptiveCutout(
+                    id: registration.id,
+                    sourceWindowRect: source,
+                    presentationWindowRect: presentationWindow,
+                    expectedLocalRect: localImage,
+                    opacity: opacity
+                )
+            }
+        }
+
+        private struct PresentationGeometry {
+            let localRect: CGRect
+            let windowRect: CGRect
+            let opacity: Double
+        }
+
+        /// A presentation rectangle is accepted only when both layers are in a
+        /// common live tree and have a plausible size. That keeps a model-space
+        /// fallback coherent instead of mixing an orphaned presentation layer
+        /// with a current AppKit conversion.
+        private func coherentPresentationGeometry(for view: NSView, modelWindowRect: CGRect) -> PresentationGeometry? {
+            guard let sourceLayer = view.layer,
+                  let sourcePresentation = sourceLayer.presentation(),
+                  let destinationLayer = layer,
+                  let destinationPresentation = destinationLayer.presentation(),
+                  let contentView = window?.contentView,
+                  let contentPresentation = contentView.layer?.presentation()
+            else { return nil }
+            let candidate = sourcePresentation.convert(sourcePresentation.bounds, to: destinationPresentation)
+            guard candidate.hasFiniteCoordinates, !candidate.isNull, !candidate.isEmpty,
+                  candidate.intersects(bounds.insetBy(dx: -max(bounds.width, 1), dy: -max(bounds.height, 1)))
+            else { return nil }
+            guard let opacity = presentationOpacity(from: sourcePresentation, to: destinationPresentation) else { return nil }
+            let contentRect = sourcePresentation.convert(sourcePresentation.bounds, to: contentPresentation)
+            guard contentRect.hasFiniteCoordinates, !contentRect.isNull, !contentRect.isEmpty else { return nil }
+            let windowRect = contentView.convert(contentRect, to: nil)
+            return PresentationGeometry(localRect: candidate, windowRect: windowRect, opacity: opacity)
+        }
+
+        private func presentationOpacity(from source: CALayer, to destination: CALayer) -> Double? {
+            var destinationAncestors = Set<ObjectIdentifier>()
+            var cursor: CALayer? = destination
+            while let layer = cursor {
+                destinationAncestors.insert(ObjectIdentifier(layer))
+                cursor = layer.superlayer
+            }
+            var opacity: Float = 1
+            cursor = source
+            while let layer = cursor {
+                if destinationAncestors.contains(ObjectIdentifier(layer)) { return Double(opacity) }
+                opacity *= layer.opacity
+                cursor = layer.superlayer
+            }
+            return nil
+        }
+
+        private func diagnosticEntries(from resolved: [ResolvedAdaptiveCutout]) -> [SettingsAdaptiveCutoutDiagnosticEntry] {
+            resolved.map { cutout in
+                let appliedLocal = lastAppliedCutoutRects[cutout.id] ?? .zero
+                let appliedWindow: CGRect
+                if appliedLocal.isEmpty || cutout.expectedLocalRect.isEmpty || cutout.opacity <= 0.0001 {
+                    appliedWindow = .zero
+                } else {
+                    let hostRect = CGRect(x: appliedLocal.minX + lastAppliedMaskOrigin.x,
+                                          y: bounds.height - appliedLocal.maxY - lastAppliedMaskOrigin.y,
+                                          width: appliedLocal.width, height: appliedLocal.height)
+                    if let hostPresentation = layer?.presentation(),
+                       let contentView = window?.contentView,
+                       let contentPresentation = contentView.layer?.presentation(),
+                       presentationOpacity(from: hostPresentation, to: contentPresentation) != nil {
+                        appliedWindow = contentView.convert(hostPresentation.convert(hostRect, to: contentPresentation), to: nil)
+                    } else {
+                        appliedWindow = convert(hostRect, to: nil)
+                    }
+                }
+                return SettingsAdaptiveCutoutDiagnosticEntry(
+                    id: cutout.id,
+                    sourceWindowRect: cutout.sourceWindowRect,
+                    presentationWindowRect: cutout.presentationWindowRect,
+                    appliedWindowRect: appliedWindow,
+                    appliedLocalRect: appliedLocal,
+                    opacity: cutout.opacity
+                )
+            }
+        }
+
+        /// Called by diagnostics without rebuilding a mask. The expected source
+        /// is sampled now; the applied rectangle remains the last one sent to
+        /// Core Animation, so a stale opening cannot look aligned by definition.
+        private func diagnosticEntries(for window: NSWindow) -> [SettingsAdaptiveCutoutDiagnosticEntry] {
+            guard self.window === window else { return [] }
+            return diagnosticEntries(from: resolvedAdaptiveCutouts(preferPresentation: true))
+        }
+
+        private var cutoutTrackingIsActive: Bool {
+            if #available(macOS 14.0, *) { return cutoutDisplayLink != nil }
+            return false
+        }
+
+        private func startCutoutTracking() {
+            guard window != nil else { return }
+            let now = CACurrentMediaTime()
+            cutoutTrackingDeadline = max(cutoutTrackingDeadline, now + 0.40)
+            if #available(macOS 14.0, *) {
+                if cutoutDisplayLink == nil {
+                    let displayLink = displayLink(target: cutoutDisplayLinkProxy,
+                                                  selector: #selector(CutoutDisplayLinkProxy.didFire(_:)))
+                    displayLink.add(to: .main, forMode: .common)
+                    cutoutDisplayLink = displayLink
+                }
+                cutoutRegistry?.setTrackingActive(true)
+            }
+            if cutoutTrackingStopTimer == nil { armCutoutTrackingStopTimer() }
+        }
+
+        private func armCutoutTrackingStopTimer() {
+            cutoutTrackingStopTimer?.invalidate()
+            let delay = max(0.05, cutoutTrackingDeadline - CACurrentMediaTime() + 0.05)
+            let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
+                guard let self else { return }
+                if CACurrentMediaTime() >= self.cutoutTrackingDeadline {
+                    self.stopCutoutTracking()
+                } else {
+                    self.armCutoutTrackingStopTimer()
+                }
+            }
+            cutoutTrackingStopTimer = timer
+            RunLoop.main.add(timer, forMode: .common)
+        }
+
+        private func stopCutoutTracking() {
+            cutoutTrackingStopTimer?.invalidate()
+            cutoutTrackingStopTimer = nil
+            if #available(macOS 14.0, *) {
+                cutoutDisplayLink?.invalidate()
+                cutoutDisplayLink = nil
+            }
+            cutoutRegistry?.setTrackingActive(false)
+        }
+
+        @available(macOS 14.0, *)
+        @objc private func cutoutDisplayLinkDidFire(_ displayLink: CADisplayLink) {
+            let changed = refreshAdaptiveCutouts(preferPresentation: true)
+            let now = displayLink.timestamp
+            if changed {
+                cutoutTrackingDeadline = now + 0.40
+                // The existing stop timer checks the extended deadline and
+                // rearms itself; do not replace it on every display frame.
+            }
+            guard now >= cutoutTrackingDeadline else { return }
+            stopCutoutTracking()
+        }
+
+        /// Geometry and pixels have separate invalidation. A panel move or
+        /// right-side height change reuses the installed images; actual raster
+        /// inputs and display-scale changes rebuild them in this same commit.
+        @discardableResult
+        private func apply(_ mask: SettingsTopBackdropMask) -> Bool {
+            let scale = max(1, window?.backingScaleFactor ?? 2)
+            let rasterIdentity = mask.rasterIdentity
+            let needsRasterUpdate = lastRasterIdentity != rasterIdentity || lastRasterScale != scale
+            guard configuration != mask || needsRasterUpdate else { return false }
             configuration = mask
             CATransaction.begin(); CATransaction.setDisableActions(true)
+            defer { CATransaction.commit() }
+            updateEffectLayerFrames()
+            guard needsRasterUpdate else { return true }
+            // Remember failed attempts as well. An unavailable private filter
+            // must not turn an unchanged window into an endless retry loop.
+            lastRasterIdentity = rasterIdentity
+            lastRasterScale = scale
             if let backdrop, let filter = Self.makeFilter(),
                let radiusImage = mask.image(blur: true)?.cgImage(forProposedRect: nil, context: nil, hints: nil),
                let colorImage = mask.image()?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
@@ -1030,59 +1629,108 @@ private struct SettingsNativeTopBackdrop: NSViewRepresentable {
                 filter.setValue(currentBlurRadius, forKey: "inputRadius")
                 filter.setValue(radiusImage, forKey: "inputMaskImage")
                 filter.setValue(true, forKey: "inputNormalizeEdges")
-                backdrop.filters = [filter]
+                install(filter, on: backdrop)
                 coverMask.contents = colorImage
                 cover.isHidden = false
             } else {
                 backdrop?.filters = nil
+                blurStage.filters = nil
                 cover.isHidden = true
                 if !reportedUnavailable {
                     NSLog("HushType: variable top backdrop unavailable; effect disabled.")
                     reportedUnavailable = true
                 }
             }
-            CATransaction.commit()
-            updateFrames()
+            return true
         }
-        private static func makeFilter() -> NSObject? {
+        private static func makeFilter(typeName: String = "variableBlur") -> NSObject? {
             let factory = NSSelectorFromString("filterWithType:")
             let keysSelector = NSSelectorFromString("inputKeys")
             guard let type = NSClassFromString("CAFilter") as? NSObject.Type,
                   type.responds(to: factory),
-                  let filter = type.perform(factory, with: "variableBlur")?.takeUnretainedValue() as? NSObject,
+                  let filter = type.perform(factory, with: typeName)?.takeUnretainedValue() as? NSObject,
                   filter.responds(to: keysSelector),
                   let keys = filter.perform(keysSelector)?.takeUnretainedValue() as? [String],
-                  Set(["inputRadius", "inputMaskImage", "inputNormalizeEdges"]).isSubset(of: Set(keys))
+                  Set(typeName == "variableBlur" ? ["inputRadius", "inputMaskImage", "inputNormalizeEdges"] : ["inputRadius"]).isSubset(of: Set(keys))
             else { return nil }
             return filter
         }
         private func updateFrames() {
             CATransaction.begin(); CATransaction.setDisableActions(true)
-            backdrop?.frame = bounds
-            backdrop?.setValue(window?.backingScaleFactor ?? 2, forKey: "scale")
-            cover.frame = bounds
+            let scale = max(1, window?.backingScaleFactor ?? 2)
+            updateEffectLayerFrames()
+            if let configuration, configuration.sidebar {
+                let inset = blurConfiguration.edgeInsetPixels / scale
+                let effectBounds = blurStage.bounds
+                let region = effectBounds.insetBy(dx: inset, dy: inset)
+                backdrop?.isHidden = region.width <= 0 || region.height <= 0
+                backdrop?.frame = region.isEmpty ? .zero : region
+                let panel = CGRect(x: 0, y: effectBounds.height - configuration.panelHeight,
+                                   width: effectBounds.width, height: configuration.panelHeight)
+                    .insetBy(dx: inset, dy: inset)
+                let radius = max(0, 20 - inset)
+                sourceClip.frame = backdrop?.bounds ?? .zero
+                sourceClip.path = CGPath(roundedRect: panel.offsetBy(dx: -region.minX, dy: -region.minY),
+                                        cornerWidth: radius, cornerHeight: radius, transform: nil)
+                backdrop?.mask = sourceClip
+                outputClip.frame = effectBounds
+                outputClip.path = CGPath(roundedRect: panel, cornerWidth: radius, cornerHeight: radius, transform: nil)
+                let band = CAShapeLayer()
+                band.frame = effectBounds
+                band.path = CGPath(rect: region.isEmpty ? .zero : region, transform: nil)
+                outputClip.mask = band
+                blurStage.mask = outputClip
+            } else {
+                backdrop?.frame = blurStage.bounds
+                backdrop?.isHidden = false
+                backdrop?.mask = nil
+                blurStage.mask = nil
+            }
+            backdrop?.setValue(scale, forKey: "scale")
             coverMask.frame = cover.bounds
             effectiveAppearance.performAsCurrentDrawingAppearance {
                 cover.backgroundColor = NSColor.windowBackgroundColor.cgColor
             }
             CATransaction.commit()
+            if let baseConfiguration, baseConfiguration.blurInset != blurConfiguration.edgeInsetPixels / scale {
+                update(baseConfiguration, cutoutRegistry: cutoutRegistry)
+            }
             let nextRects = currentScrollerRects()
             if scrollerRects != nextRects {
                 scrollerRects = nextRects
-                if let configuration { update(configuration) }
+                if let baseConfiguration { update(baseConfiguration, cutoutRegistry: cutoutRegistry) }
             }
         }
 
+        private func updateEffectLayerFrames() {
+            let frame: CGRect
+            if let configuration {
+                frame = CGRect(x: configuration.origin.x,
+                               y: bounds.height - configuration.origin.y - configuration.size.height,
+                               width: configuration.size.width, height: configuration.size.height)
+            } else {
+                frame = bounds
+            }
+            blurStage.frame = frame
+            backdrop?.frame = blurStage.bounds
+            cover.frame = frame
+            coverMask.frame = cover.bounds
+        }
+
         private func currentScrollerRects() -> [CGRect] {
-            guard let content = window?.contentView else { return [] }
+            guard let content = window?.contentView, let configuration else { return [] }
+            let maskFrame = CGRect(x: configuration.origin.x,
+                                   y: bounds.height - configuration.origin.y - configuration.size.height,
+                                   width: configuration.size.width, height: configuration.size.height)
             var result: [CGRect] = []
             func visit(_ view: NSView) {
                 if let scroll = view as? NSScrollView,
                    scroll.hasVerticalScroller, let scroller = scroll.verticalScroller {
-                    let rect = convert(scroller.bounds, from: scroller).intersection(bounds)
+                    let rect = convert(scroller.bounds, from: scroller).intersection(maskFrame)
                     if !rect.isNull && !rect.isEmpty {
                         // Convert AppKit bottom-left to the image's top-left coordinates.
-                        result.append(CGRect(x: rect.minX, y: bounds.height - rect.maxY,
+                        result.append(CGRect(x: rect.minX - configuration.origin.x,
+                                             y: bounds.height - rect.maxY - configuration.origin.y,
                                              width: rect.width, height: rect.height))
                     }
                 }

@@ -115,8 +115,8 @@
 /* Status-menu wrapper around an app-owned localized state error; argument 1 is error text. */
 
 "status.error" = "错误：%1$@";
-"status.insertion_permission_denied" = "macOS 阻止了自动粘贴。转写文本已保存在剪贴板；请在“辅助功能”中允许 HushType，重启后再试。";
-"status.insertion_failed" = "HushType 无法插入转写文本，请尝试从剪贴板手动粘贴。";
+"status.insertion_permission_denied" = "macOS 阻止了自动输入，请在“辅助功能”中允许 HushType 后重试。";
+"status.insertion_failed" = "HushType 无法完成自动输入。";
 "status.needs_attention" = "需要处理";
 
 /* Status-menu state after unloading the local speech model. */
@@ -1671,6 +1671,39 @@
 "settings.debug.scroll_blur.effective_range" = "实际半径";
 "settings.debug.scroll_blur.apply_immediately" = "更改立即生效";
 "settings.debug.restore_defaults" = "恢复默认设置";
+"settings.debug.scroll_blur.right_preview" = "右侧 · Preview 效果";
+"settings.debug.sidebar_official" = "左侧 · 官方效果";
+"settings.debug.sidebar_official.style" = "系统样式";
+"settings.debug.sidebar_official.style.soft" = "柔和";
+"settings.debug.sidebar_official.style.hard" = "清晰边界";
+"settings.debug.sidebar_official.style.automatic" = "自动";
+"settings.debug.sidebar_official.bar_height" = "固定栏高度";
+"settings.debug.sidebar_official.bar_spacing" = "固定栏间距";
+"settings.debug.sidebar_official.points.value" = "%1$.0f 点";
+"settings.debug.sidebar_official.description" = "仅影响左侧。高度和间距会调整固定栏布局；模糊由 macOS 控制。";
+"settings.debug.sidebar_official.restore" = "恢复左侧默认";
+"settings.debug.scroll_blur.edge_inset" = "模糊边缘";
+"settings.debug.scroll_blur.edge_inset.pixels" = "内缩";
+"settings.debug.scroll_blur.edge_inset.pixels.value" = "%1$.0f 像素";
+"settings.debug.scroll_blur.edge_inset.description" = "当前 %1$.0f 像素内缩在此窗口的显示倍率下为 %2$.1f 点。";
+"settings.debug.scroll_blur.edge_inset.restore" = "恢复 2 像素";
+"settings.debug.sidebar_scroll_test" = "侧栏滚动测试";
+"settings.debug.sidebar_scroll_test.enabled" = "添加 100 个填充项";
+"settings.debug.sidebar_scroll_test.description" = "在真实导航下方添加无功能填充行，以便观察侧栏滚动。仅在 Preview 中生效。";
+"settings.debug.sidebar_scroll_test.filler_item" = "滚动测试项 %1$d";
+"settings.debug.temporary_clipboard" = "临时剪贴板";
+"settings.debug.temporary_clipboard_markers" = "添加临时剪贴板标记";
+"settings.debug.temporary_clipboard_markers.description" = "帮助支持此约定的剪贴板历史工具忽略自动输入。关闭可排查兼容性；并非所有管理器都支持。";
 "settings.debug.logs" = "系统日志";
 "settings.debug.logs.description" = "HushType 会将诊断信息写入统一日志，子系统为 com.felix.hushtype。";
 "settings.debug.open_console" = "打开“控制台”";
+"settings.general.input_method" = "文字输入方式";
+"settings.input_method.clipboard" = "临时剪贴板";
+"settings.input_method.unicode" = "Unicode 键盘输入";
+"settings.debug.input" = "文字输入";
+"settings.debug.input_method" = "输入方式";
+"settings.debug.unicode_batch_size" = "每批 UTF-16 单元数";
+"settings.debug.unicode_batch_size.value" = "%1$d 个 UTF-16 单元";
+"settings.debug.unicode_interval_milliseconds" = "Unicode 批次间隔";
+"settings.debug.clipboard_restore_milliseconds" = "剪贴板恢复延迟";
+"settings.debug.milliseconds.value" = "%1$d 毫秒";

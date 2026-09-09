@@ -10,6 +10,7 @@ final class SettingsScrollBlurConfigurationTests: XCTestCase {
         XCTAssertTrue(preview.enabled)
         XCTAssertEqual(preview.minimumRadius, 10.5)
         XCTAssertEqual(preview.maximumRadius, 30)
+        XCTAssertEqual(preview.edgeInsetPixels, 2)
         XCTAssertFalse(SettingsScrollBlurConfiguration.load(defaults: defaults, isPreview: false).enabled)
         defaults.set(false, forKey: SettingsScrollBlurConfiguration.enabledKey)
         defaults.set(80, forKey: SettingsScrollBlurConfiguration.minimumRadiusKey)
@@ -18,6 +19,27 @@ final class SettingsScrollBlurConfigurationTests: XCTestCase {
         XCTAssertFalse(overridden.enabled)
         XCTAssertEqual(overridden.minimumRadius, 0)
         XCTAssertEqual(overridden.maximumRadius, 60)
+    }
+
+    func testEdgeInsetPixelsDefaultAndValidation() throws {
+        let suite = "HushType.blur-edge-inset-tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        XCTAssertEqual(
+            SettingsScrollBlurConfiguration.load(defaults: defaults, isPreview: false).edgeInsetPixels,
+            SettingsScrollBlurConfiguration.defaultEdgeInsetPixels
+        )
+
+        defaults.set(-1, forKey: SettingsScrollBlurConfiguration.edgeInsetPixelsKey)
+        XCTAssertEqual(SettingsScrollBlurConfiguration.load(defaults: defaults).edgeInsetPixels, 0)
+        defaults.set(101, forKey: SettingsScrollBlurConfiguration.edgeInsetPixelsKey)
+        XCTAssertEqual(SettingsScrollBlurConfiguration.load(defaults: defaults).edgeInsetPixels, 100)
+        defaults.set(Double.nan, forKey: SettingsScrollBlurConfiguration.edgeInsetPixelsKey)
+        XCTAssertEqual(
+            SettingsScrollBlurConfiguration.load(defaults: defaults).edgeInsetPixels,
+            SettingsScrollBlurConfiguration.defaultEdgeInsetPixels
+        )
     }
 
     func testDebugPreferencesNormalizeRangeAndRestorePreviewDefaults() throws {
@@ -41,6 +63,14 @@ final class SettingsScrollBlurConfigurationTests: XCTestCase {
         XCTAssertTrue(restored.enabled)
         XCTAssertEqual(restored.minimumRadius, SettingsScrollBlurConfiguration.defaultMinimumRadius)
         XCTAssertEqual(restored.maximumRadius, SettingsScrollBlurConfiguration.defaultMaximumRadius)
+
+        let edge = SettingsDebugPreferences.saveScrollBlurEdgeInsetPixels(11, defaults: defaults)
+        XCTAssertEqual(edge.edgeInsetPixels, 11)
+        SettingsDebugPreferences.restoreScrollBlurEdgeInsetPixelsDefault(defaults: defaults)
+        XCTAssertEqual(
+            SettingsScrollBlurConfiguration.load(defaults: defaults).edgeInsetPixels,
+            SettingsScrollBlurConfiguration.defaultEdgeInsetPixels
+        )
     }
 
     func testDebugSectionIsPreviewOnlyAndOnboardingStillWins() {

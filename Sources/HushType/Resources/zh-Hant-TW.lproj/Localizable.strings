@@ -115,8 +115,8 @@
 /* Status-menu wrapper around an app-owned localized state error; argument 1 is error text. */
 
 "status.error" = "錯誤：%1$@";
-"status.insertion_permission_denied" = "macOS 阻止了自動貼上。轉寫文字已保存在剪貼簿；請在「輔助使用」中允許 HushType，重新啟動後再試。";
-"status.insertion_failed" = "HushType 無法插入轉寫文字，請嘗試從剪貼簿手動貼上。";
+"status.insertion_permission_denied" = "macOS 阻止了自動輸入，請在「輔助使用」中允許 HushType 後再試。";
+"status.insertion_failed" = "HushType 無法完成自動輸入。";
 "status.needs_attention" = "需要處理";
 
 /* Status-menu state after unloading the local speech model. */
@@ -1671,6 +1671,39 @@
 "settings.debug.scroll_blur.effective_range" = "實際半徑";
 "settings.debug.scroll_blur.apply_immediately" = "變更立即生效";
 "settings.debug.restore_defaults" = "恢復預設設定";
+"settings.debug.scroll_blur.right_preview" = "右側 · Preview 效果";
+"settings.debug.sidebar_official" = "左側 · 官方效果";
+"settings.debug.sidebar_official.style" = "系統樣式";
+"settings.debug.sidebar_official.style.soft" = "柔和";
+"settings.debug.sidebar_official.style.hard" = "清晰邊界";
+"settings.debug.sidebar_official.style.automatic" = "自動";
+"settings.debug.sidebar_official.bar_height" = "固定欄高度";
+"settings.debug.sidebar_official.bar_spacing" = "固定欄間距";
+"settings.debug.sidebar_official.points.value" = "%1$.0f 點";
+"settings.debug.sidebar_official.description" = "僅影響左側。高度和間距會調整固定欄版面；模糊由 macOS 控制。";
+"settings.debug.sidebar_official.restore" = "恢復左側預設";
+"settings.debug.scroll_blur.edge_inset" = "模糊邊緣";
+"settings.debug.scroll_blur.edge_inset.pixels" = "內縮";
+"settings.debug.scroll_blur.edge_inset.pixels.value" = "%1$.0f 像素";
+"settings.debug.scroll_blur.edge_inset.description" = "目前 %1$.0f 像素內縮在此視窗的顯示倍率下為 %2$.1f 點。";
+"settings.debug.scroll_blur.edge_inset.restore" = "恢復 2 像素";
+"settings.debug.sidebar_scroll_test" = "側欄捲動測試";
+"settings.debug.sidebar_scroll_test.enabled" = "新增 100 個填充項目";
+"settings.debug.sidebar_scroll_test.description" = "在真實導覽下方加入無功能填充列，以便觀察側欄捲動。僅在 Preview 中生效。";
+"settings.debug.sidebar_scroll_test.filler_item" = "捲動測試項目 %1$d";
+"settings.debug.temporary_clipboard" = "暫時剪貼簿";
+"settings.debug.temporary_clipboard_markers" = "加入暫時剪貼簿標記";
+"settings.debug.temporary_clipboard_markers.description" = "協助支援此約定的剪貼簿歷史工具忽略自動輸入。關閉可排查相容性；並非所有管理工具都支援。";
 "settings.debug.logs" = "系統日誌";
 "settings.debug.logs.description" = "HushType 會將診斷資訊寫入統一日誌，子系統為 com.felix.hushtype。";
 "settings.debug.open_console" = "開啟「主控台」";
+"settings.general.input_method" = "文字輸入方式";
+"settings.input_method.clipboard" = "暫時剪貼簿";
+"settings.input_method.unicode" = "Unicode 鍵盤輸入";
+"settings.debug.input" = "文字輸入";
+"settings.debug.input_method" = "輸入方式";
+"settings.debug.unicode_batch_size" = "每批 UTF-16 單元數";
+"settings.debug.unicode_batch_size.value" = "%1$d 個 UTF-16 單元";
+"settings.debug.unicode_interval_milliseconds" = "Unicode 批次間隔";
+"settings.debug.clipboard_restore_milliseconds" = "剪貼簿還原延遲";
+"settings.debug.milliseconds.value" = "%1$d 毫秒";

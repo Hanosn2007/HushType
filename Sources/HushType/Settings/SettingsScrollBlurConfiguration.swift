@@ -18,15 +18,34 @@ struct SettingsScrollBlurConfiguration: Equatable {
     /// A disabled host should retain this value as its stationary radius.
     let maximumRadius: CGFloat
 
+    /// Inset, in backing pixels, applied before the backdrop is blurred.
+    /// This is a rendering-pixel margin, not a physical panel pixel measurement.
+    let edgeInsetPixels: CGFloat
+
+    init(
+        enabled: Bool,
+        minimumRadius: CGFloat,
+        maximumRadius: CGFloat,
+        edgeInsetPixels: CGFloat = 2
+    ) {
+        self.enabled = enabled
+        self.minimumRadius = minimumRadius
+        self.maximumRadius = maximumRadius
+        self.edgeInsetPixels = edgeInsetPixels
+    }
+
     /// UserDefaults keys intentionally use the shipped app's bundle domain.
     static let enabledKey = "hushtype.preview.scrollBlur.enabled"
     static let minimumRadiusKey = "hushtype.preview.scrollBlur.minimumRadius"
     static let maximumRadiusKey = "hushtype.preview.scrollBlur.maximumRadius"
+    static let edgeInsetPixelsKey = "hushtype.preview.scrollBlur.edgeInsetPixels"
 
     /// Defaults preserve the accepted stationary look: maximum radius 30.
     static let defaultMinimumRadius: CGFloat = 10.5
     static let defaultMaximumRadius: CGFloat = 30
     static let allowedRadiusRange: ClosedRange<CGFloat> = 0...60
+    static let defaultEdgeInsetPixels: CGFloat = 2
+    static let allowedEdgeInsetPixelsRange: ClosedRange<CGFloat> = 0...100
 
     /// True when the short bundle version marks this process as a Preview build.
     ///
@@ -58,13 +77,16 @@ struct SettingsScrollBlurConfiguration: Equatable {
         let enabled = (defaults.object(forKey: enabledKey) as? Bool) ?? isPreview
         let requestedMinimum = number(forKey: minimumRadiusKey, defaults: defaults) ?? defaultMinimumRadius
         let requestedMaximum = number(forKey: maximumRadiusKey, defaults: defaults) ?? defaultMaximumRadius
+        let requestedEdgeInsetPixels = number(forKey: edgeInsetPixelsKey, defaults: defaults)
+            ?? defaultEdgeInsetPixels
 
         let minimum = sanitizedRadius(requestedMinimum, fallback: defaultMinimumRadius)
         let maximum = sanitizedRadius(requestedMaximum, fallback: defaultMaximumRadius)
         return Self(
             enabled: enabled,
             minimumRadius: Swift.min(minimum, maximum),
-            maximumRadius: Swift.max(minimum, maximum)
+            maximumRadius: Swift.max(minimum, maximum),
+            edgeInsetPixels: sanitizedEdgeInsetPixels(requestedEdgeInsetPixels)
         )
     }
 
@@ -77,5 +99,13 @@ struct SettingsScrollBlurConfiguration: Equatable {
     private static func sanitizedRadius(_ radius: CGFloat, fallback: CGFloat) -> CGFloat {
         guard radius.isFinite else { return fallback }
         return Swift.min(Swift.max(radius, allowedRadiusRange.lowerBound), allowedRadiusRange.upperBound)
+    }
+
+    private static func sanitizedEdgeInsetPixels(_ pixels: CGFloat) -> CGFloat {
+        guard pixels.isFinite else { return defaultEdgeInsetPixels }
+        return Swift.min(
+            Swift.max(pixels, allowedEdgeInsetPixelsRange.lowerBound),
+            allowedEdgeInsetPixelsRange.upperBound
+        )
     }
 }

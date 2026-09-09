@@ -222,29 +222,35 @@ private struct SettingsHistoryView: View {
                 }
             }
 
-            SettingsHistoryCard(
-                title: L10n.string("settings.history.storage", fallback: "Storage"),
-                footer: L10n.string(
-                    "settings.history.retention_help",
-                    fallback: "Items are permanently removed when either limit is reached. Changing a limit applies immediately."
-                )
-            ) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Picker(L10n.string("settings.history.maximum_entries", fallback: "Maximum entries"), selection: $model.historyMaximumEntries) {
-                        Text("100").tag(100)
-                        Text("500").tag(500)
-                        Text("1,000").tag(1000)
+            SettingsHistoryCard {
+                SettingsFeatureGroup(
+                    title: L10n.string("settings.history.storage", fallback: "Storage"),
+                    systemImage: "archivebox"
+                ) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Picker(L10n.string("settings.history.maximum_entries", fallback: "Maximum entries"), selection: $model.historyMaximumEntries) {
+                            Text("100").tag(100)
+                            Text("500").tag(500)
+                            Text("1,000").tag(1000)
+                        }
+                        Picker(L10n.string("settings.history.retention", fallback: "Keep history"), selection: $model.historyRetentionDays) {
+                            Text(L10n.string("settings.history.retention.seven_days", fallback: "7 days")).tag(7)
+                            Text(L10n.string("settings.history.retention.thirty_days", fallback: "30 days")).tag(30)
+                            Text(L10n.string("settings.history.retention.ninety_days", fallback: "90 days")).tag(90)
+                            Text(L10n.string("settings.history.retention.forever", fallback: "No time limit")).tag(0)
+                        }
+                        Button(L10n.string("settings.history.clear", fallback: "Clear All History"), role: .destructive) {
+                            isConfirmingClear = true
+                        }
+                        .disabled(store.entries.isEmpty)
+
+                        Text(L10n.string(
+                            "settings.history.retention_help",
+                            fallback: "Items are permanently removed when either limit is reached. Changing a limit applies immediately."
+                        ))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                     }
-                    Picker(L10n.string("settings.history.retention", fallback: "Keep history"), selection: $model.historyRetentionDays) {
-                        Text(L10n.string("settings.history.retention.seven_days", fallback: "7 days")).tag(7)
-                        Text(L10n.string("settings.history.retention.thirty_days", fallback: "30 days")).tag(30)
-                        Text(L10n.string("settings.history.retention.ninety_days", fallback: "90 days")).tag(90)
-                        Text(L10n.string("settings.history.retention.forever", fallback: "No time limit")).tag(0)
-                    }
-                    Button(L10n.string("settings.history.clear", fallback: "Clear All History"), role: .destructive) {
-                        isConfirmingClear = true
-                    }
-                    .disabled(store.entries.isEmpty)
                 }
             }
 
@@ -610,22 +616,25 @@ private struct SettingsDictationView: View {
             }
 
             Section {
-                Picker(L10n.string("menu.speech_to_text_language", fallback: "Speech-to-Text Language"), selection: $model.speechLanguage) {
-                    Text(L10n.string("menu.choice.auto", fallback: "Auto")).tag("auto")
-                    Text(L10n.string("picker.autonym.en", fallback: "English")).tag("english")
-                    Text(L10n.string("picker.autonym.zh", fallback: "中文")).tag("chinese")
-                    Text(L10n.string("picker.autonym.ja", fallback: "日本語")).tag("japanese")
+                SettingsFeatureGroup(
+                    title: L10n.string("settings.dictation.output", fallback: "Recognition and output"),
+                    systemImage: "text.bubble"
+                ) {
+                    Picker(L10n.string("menu.speech_to_text_language", fallback: "Speech-to-Text Language"), selection: $model.speechLanguage) {
+                        Text(L10n.string("menu.choice.auto", fallback: "Auto")).tag("auto")
+                        Text(L10n.string("picker.autonym.en", fallback: "English")).tag("english")
+                        Text(L10n.string("picker.autonym.zh", fallback: "中文")).tag("chinese")
+                        Text(L10n.string("picker.autonym.ja", fallback: "日本語")).tag("japanese")
+                    }
+                    Toggle(L10n.string("settings.general.number_conversion", fallback: "Convert Chinese numbers to digits"), isOn: $model.numberConversionEnabled)
+                    Toggle(L10n.string("settings.dictation.traditional_chinese", fallback: "Convert Simplified Chinese output to Traditional Chinese"), isOn: $model.chineseConversionEnabled)
+                    Picker(L10n.string("settings.general.punctuation", fallback: "Punctuation cleanup"), selection: $model.punctuationMode) {
+                        Text(L10n.string("settings.general.punctuation.soft", fallback: "Soft")).tag(PunctuationMode.soft)
+                        Text(L10n.string("settings.general.punctuation.hard", fallback: "Strict")).tag(PunctuationMode.hard)
+                        Text(L10n.string("settings.general.punctuation.off", fallback: "Off")).tag(PunctuationMode.off)
+                    }
+                    .pickerStyle(.segmented)
                 }
-                Toggle(L10n.string("settings.general.number_conversion", fallback: "Convert Chinese numbers to digits"), isOn: $model.numberConversionEnabled)
-                Toggle(L10n.string("settings.dictation.traditional_chinese", fallback: "Convert Simplified Chinese output to Traditional Chinese"), isOn: $model.chineseConversionEnabled)
-                Picker(L10n.string("settings.general.punctuation", fallback: "Punctuation cleanup"), selection: $model.punctuationMode) {
-                    Text(L10n.string("settings.general.punctuation.soft", fallback: "Soft")).tag(PunctuationMode.soft)
-                    Text(L10n.string("settings.general.punctuation.hard", fallback: "Strict")).tag(PunctuationMode.hard)
-                    Text(L10n.string("settings.general.punctuation.off", fallback: "Off")).tag(PunctuationMode.off)
-                }
-                .pickerStyle(.segmented)
-            } header: {
-                Text(L10n.string("settings.dictation.output", fallback: "Recognition and output"))
             }
         }
     }
@@ -1056,6 +1065,7 @@ private struct SettingsPermissionsView: View {
 
 private struct SettingsGeneralView: View {
     @ObservedObject var model: HushTypeSettingsModel
+    @AppStorage("hushtype.input.method") private var inputMethodRaw = TextInsertionConfiguration.Method.clipboard.rawValue
     private let deviceRefreshTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -1072,6 +1082,19 @@ private struct SettingsGeneralView: View {
                     isOn: $model.releaseF5WhenModelUnloaded
                 )
                 Toggle(L10n.string("settings.general.text_polish", fallback: "Enable text polishing"), isOn: $model.textPolishEnabled)
+            }
+
+            SettingsSection {
+                Picker(
+                    L10n.string("settings.general.input_method", fallback: "Text input method"),
+                    selection: inputMethodBinding
+                ) {
+                    Text(L10n.string("settings.input_method.clipboard", fallback: "Temporary clipboard"))
+                        .tag(TextInsertionConfiguration.Method.clipboard)
+                    Text(L10n.string("settings.input_method.unicode", fallback: "Unicode keyboard input"))
+                        .tag(TextInsertionConfiguration.Method.unicode)
+                }
+                .pickerStyle(.menu)
             }
 
             SettingsSection {
@@ -1156,6 +1179,13 @@ private struct SettingsGeneralView: View {
         }
         .onAppear { model.refreshAudioInputDevices() }
         .onReceive(deviceRefreshTimer) { _ in model.refreshAudioInputDevices() }
+    }
+
+    private var inputMethodBinding: Binding<TextInsertionConfiguration.Method> {
+        Binding(
+            get: { TextInsertionConfiguration.Method(rawValue: inputMethodRaw) ?? .clipboard },
+            set: { inputMethodRaw = $0.rawValue }
+        )
     }
 }
 

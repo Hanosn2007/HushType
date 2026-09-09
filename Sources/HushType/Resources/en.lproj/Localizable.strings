@@ -114,8 +114,8 @@
 /* Status-menu wrapper around an app-owned localized state error; argument 1 is error text. */
 
 "status.error" = "Error: %1$@";
-"status.insertion_permission_denied" = "macOS blocked automatic paste. The transcription is on the clipboard. Allow HushType in Accessibility, relaunch, and try again.";
-"status.insertion_failed" = "HushType couldn't insert the transcription. Try pasting it from the clipboard.";
+"status.insertion_permission_denied" = "macOS blocked automatic input. Allow HushType in Accessibility and try again.";
+"status.insertion_failed" = "HushType couldn't complete automatic input.";
 "status.needs_attention" = "Needs attention";
 
 /* Status-menu state after unloading the local speech model. */
@@ -1669,6 +1669,39 @@
 "settings.debug.scroll_blur.effective_range" = "Effective radius";
 "settings.debug.scroll_blur.apply_immediately" = "Changes apply immediately";
 "settings.debug.restore_defaults" = "Restore Defaults";
+"settings.debug.scroll_blur.right_preview" = "Right · Preview effect";
+"settings.debug.sidebar_official" = "Left · System effect";
+"settings.debug.sidebar_official.style" = "System style";
+"settings.debug.sidebar_official.style.soft" = "Soft";
+"settings.debug.sidebar_official.style.hard" = "Hard";
+"settings.debug.sidebar_official.style.automatic" = "Automatic";
+"settings.debug.sidebar_official.bar_height" = "Fixed bar height";
+"settings.debug.sidebar_official.bar_spacing" = "Fixed bar spacing";
+"settings.debug.sidebar_official.points.value" = "%1$.0f pt";
+"settings.debug.sidebar_official.description" = "Only affects the left sidebar. Height and spacing change the fixed bar; macOS controls the blur.";
+"settings.debug.sidebar_official.restore" = "Restore left defaults";
+"settings.debug.scroll_blur.edge_inset" = "Blur edge";
+"settings.debug.scroll_blur.edge_inset.pixels" = "Inset";
+"settings.debug.scroll_blur.edge_inset.pixels.value" = "%1$.0f px";
+"settings.debug.scroll_blur.edge_inset.description" = "The current %1$.0f-pixel inset is %2$.1f pt at this window's display scale.";
+"settings.debug.scroll_blur.edge_inset.restore" = "Restore 2 px";
+"settings.debug.sidebar_scroll_test" = "Sidebar scroll test";
+"settings.debug.sidebar_scroll_test.enabled" = "Add 100 filler items";
+"settings.debug.sidebar_scroll_test.description" = "Adds inert rows below the real navigation so you can inspect sidebar scrolling. Preview only.";
+"settings.debug.sidebar_scroll_test.filler_item" = "Scroll test item %1$d";
+"settings.debug.temporary_clipboard" = "Temporary clipboard";
+"settings.debug.temporary_clipboard_markers" = "Add temporary clipboard marker";
+"settings.debug.temporary_clipboard_markers.description" = "Helps clipboard history tools that support this convention ignore automatic input. Turn it off to investigate compatibility; not every manager supports it.";
 "settings.debug.logs" = "System Logs";
 "settings.debug.logs.description" = "HushType writes diagnostics to the unified log under subsystem com.felix.hushtype.";
 "settings.debug.open_console" = "Open Console";
+"settings.general.input_method" = "Text input method";
+"settings.input_method.clipboard" = "Temporary clipboard";
+"settings.input_method.unicode" = "Unicode keyboard input";
+"settings.debug.input" = "Text input";
+"settings.debug.input_method" = "Input method";
+"settings.debug.unicode_batch_size" = "UTF-16 code units per batch";
+"settings.debug.unicode_batch_size.value" = "%1$d UTF-16 units";
+"settings.debug.unicode_interval_milliseconds" = "Unicode batch interval";
+"settings.debug.clipboard_restore_milliseconds" = "Clipboard restore delay";
+"settings.debug.milliseconds.value" = "%1$d ms";

@@ -3,6 +3,20 @@ import XCTest
 @testable import HushType
 
 final class SettingsChromeLayoutTests: XCTestCase {
+    func testScrollBlurOwnershipSeparatesPanelsAndAllowsNestedEditors() {
+        let sidebar = CGRect(x: 8, y: 8, width: 180, height: 600)
+        let detail = CGRect(x: 196, y: 0, width: 600, height: 608)
+        let sidebarScroll = CGRect(x: 10, y: 10, width: 176, height: 596)
+        let detailScroll = CGRect(x: 196, y: 0, width: 600, height: 608)
+        XCTAssertTrue(settingsScrollViewportBelongsToPanel(sidebarScroll, panel: sidebar))
+        XCTAssertFalse(settingsScrollViewportBelongsToPanel(detailScroll, panel: sidebar))
+        XCTAssertTrue(settingsScrollViewportBelongsToPanel(detailScroll, panel: detail))
+        XCTAssertFalse(settingsScrollViewportBelongsToPanel(sidebarScroll, panel: detail))
+        XCTAssertTrue(settingsScrollViewportBelongsToPanel(CGRect(x: 280, y: 60, width: 300, height: 100), panel: detail))
+        XCTAssertFalse(settingsScrollViewportBelongsToPanel(CGRect(x: 280, y: 900, width: 300, height: 100), panel: detail))
+        XCTAssertFalse(settingsScrollViewportBelongsToPanel(sidebarScroll, panel: .zero))
+    }
+
     @MainActor
     func testClickOnlyButtonConsumesADragThatReturnsToItsStart() throws {
         let window = NSWindow(
@@ -139,11 +153,77 @@ final class SettingsChromeLayoutTests: XCTestCase {
     }
 
     @MainActor
+    func testExcessiveBlurInsetClearsBlurMaskWithoutRemovingTint() throws {
+        let mask = SettingsTopBackdropMask(size: CGSize(width: 180, height: 64),
+            blurInset: 100, panelHeight: 400, sidebar: true, cutouts: [], origin: .zero)
+        let blur = try XCTUnwrap(mask.image(blur: true))
+        let tint = try XCTUnwrap(mask.image())
+        let blurPixels = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(blur.tiffRepresentation)))
+        let tintPixels = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(tint.tiffRepresentation)))
+        XCTAssertEqual(blurPixels.colorAt(x: 90, y: 10)!.alphaComponent, 0)
+        XCTAssertGreaterThan(tintPixels.colorAt(x: 90, y: 10)!.alphaComponent, 0.1)
+    }
+
+    @MainActor
+    func testDetailMaskPlacementChangesReuseIdenticalPixels() throws {
+        let cutouts = [SettingsTopBackdropCutout(
+            rect: CGRect(x: 30.25, y: 10.5, width: 71, height: 36), opacity: 0.65)]
+        let first = SettingsTopBackdropMask(size: CGSize(width: 220, height: 52),
+            openingInset: 0.75, blurInset: 2, panelHeight: 400, sidebar: false,
+            cutouts: cutouts, origin: .zero)
+        let moved = SettingsTopBackdropMask(size: first.size,
+            openingInset: 0.75, blurInset: 1, panelHeight: 900, sidebar: false,
+            cutouts: cutouts, origin: CGPoint(x: 188, y: 8))
+        XCTAssertNotEqual(first, moved)
+        XCTAssertEqual(first.rasterIdentity, moved.rasterIdentity)
+        for blur in [false, true] {
+            let firstImage = try XCTUnwrap(first.image(blur: blur)?
+                .cgImage(forProposedRect: nil, context: nil, hints: nil))
+            let movedImage = try XCTUnwrap(moved.image(blur: blur)?
+                .cgImage(forProposedRect: nil, context: nil, hints: nil))
+            XCTAssertEqual(firstImage.width, movedImage.width)
+            XCTAssertEqual(firstImage.height, movedImage.height)
+            XCTAssertEqual(try XCTUnwrap(firstImage.dataProvider?.data) as Data,
+                           try XCTUnwrap(movedImage.dataProvider?.data) as Data)
+        }
+    }
+
+    func testRasterIdentityInvalidatesForDrawingChanges() {
+        let original = SettingsTopBackdropMask(size: CGSize(width: 220, height: 52),
+            panelHeight: 400, sidebar: false,
+            cutouts: [.init(rect: CGRect(x: 30, y: 10, width: 71, height: 36), opacity: 1)],
+            origin: .zero)
+        var changed = original
+        changed.cutouts = [.init(rect: CGRect(x: 31, y: 10, width: 71, height: 36), opacity: 1)]
+        XCTAssertNotEqual(original.rasterIdentity, changed.rasterIdentity)
+        changed.cutouts = [.init(rect: CGRect(x: 30, y: 10, width: 71, height: 36), opacity: 0.5)]
+        XCTAssertNotEqual(original.rasterIdentity, changed.rasterIdentity)
+        changed = original
+        changed.excludedRects = [CGRect(x: 200, y: 0, width: 20, height: 52)]
+        XCTAssertNotEqual(original.rasterIdentity, changed.rasterIdentity)
+        changed = original
+        changed.openingInset = 0.75
+        XCTAssertNotEqual(original.rasterIdentity, changed.rasterIdentity)
+        changed = original
+        changed.colorHeight = 64
+        XCTAssertNotEqual(original.rasterIdentity, changed.rasterIdentity)
+
+        let sidebar = SettingsTopBackdropMask(size: original.size,
+            blurInset: 2, panelHeight: 40, sidebar: true, cutouts: [], origin: .zero)
+        var insetChanged = sidebar
+        insetChanged.blurInset = 1
+        XCTAssertNotEqual(sidebar.rasterIdentity, insetChanged.rasterIdentity)
+        let heightChanged = SettingsTopBackdropMask(size: original.size,
+            blurInset: 2, panelHeight: 64, sidebar: true, cutouts: [], origin: .zero)
+        XCTAssertNotEqual(sidebar.rasterIdentity, heightChanged.rasterIdentity)
+    }
+
+    @MainActor
     func testBackdropMaskFadesDownwardAndLeavesGlassOpeningClear() throws {
         let mask = SettingsTopBackdropMask(size: CGSize(width: 200, height: 64),
             panelHeight: 400, sidebar: false,
-            holes: [CGRect(x: 30, y: 10, width: 71, height: 36)],
-            toggle: .zero, toggleOpacity: 0, origin: .zero)
+            cutouts: [.init(rect: CGRect(x: 30, y: 10, width: 71, height: 36), opacity: 1)],
+            origin: CGPoint(x: 188, y: 8))
         let image = try XCTUnwrap(mask.image())
         let bitmap = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(image.tiffRepresentation)))
         func alpha(_ x: Int, _ y: Int) -> CGFloat {
@@ -160,9 +240,9 @@ final class SettingsChromeLayoutTests: XCTestCase {
     @MainActor
     func testSidebarBackdropExcludesRimAndUsesLocalHoleCoordinates() throws {
         let mask = SettingsTopBackdropMask(size: CGSize(width: 180, height: 64),
-            panelHeight: 400, sidebar: true, holes: [],
-            toggle: CGRect(x: 100, y: 18, width: 44, height: 36),
-            toggleOpacity: 1, origin: CGPoint(x: 8, y: 8))
+            panelHeight: 400, sidebar: true,
+            cutouts: [.init(rect: CGRect(x: 92, y: 10, width: 44, height: 36), opacity: 1)],
+            origin: CGPoint(x: 8, y: 8))
         let image = try XCTUnwrap(mask.image())
         let bitmap = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(image.tiffRepresentation)))
         XCTAssertLessThan(bitmap.colorAt(x: 0, y: 28)!.alphaComponent, 0.01)
@@ -174,8 +254,8 @@ final class SettingsChromeLayoutTests: XCTestCase {
     func testInsetOpeningCoversTheOuterPixelWithoutFillingItsCenter() throws {
         let mask = SettingsTopBackdropMask(size: CGSize(width: 200, height: 64),
             openingInset: 1.5, panelHeight: 400, sidebar: false,
-            holes: [CGRect(x: 30, y: 10, width: 71, height: 36)],
-            toggle: .zero, toggleOpacity: 0, origin: .zero)
+            cutouts: [.init(rect: CGRect(x: 30, y: 10, width: 71, height: 36), opacity: 1)],
+            origin: .zero)
         let image = try XCTUnwrap(mask.image())
         let bitmap = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(image.tiffRepresentation)))
         XCTAssertGreaterThan(bitmap.colorAt(x: 65, y: 10)!.alphaComponent, 0.3)
@@ -186,8 +266,7 @@ final class SettingsChromeLayoutTests: XCTestCase {
     func testScrollerTrackIsExcludedFromBlurAndTint() throws {
         let mask = SettingsTopBackdropMask(size: CGSize(width: 200, height: 52),
             excludedRects: [CGRect(x: 180, y: 0, width: 20, height: 52)],
-            panelHeight: 400, sidebar: false, holes: [],
-            toggle: .zero, toggleOpacity: 0, origin: .zero)
+            panelHeight: 400, sidebar: false, cutouts: [], origin: .zero)
         for blur in [false, true] {
             let image = try XCTUnwrap(mask.image(blur: blur))
             let cg = try XCTUnwrap(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
