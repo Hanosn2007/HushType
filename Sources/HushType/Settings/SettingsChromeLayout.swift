@@ -521,6 +521,12 @@ struct SettingsWindowShell<Detail: View, Sidebar: View, Header: View>: View {
 
     // Scroll content extends behind the B8 opacity cover and native glass controls.
     private var extendsScrollUnderHeader: Bool { true }
+    private var sidebarAboveDetailBackdrop: Bool {
+        if #available(macOS 26.0, *) {
+            return SettingsScrollBlurConfiguration.defaultIsPreview
+        }
+        return false
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -560,25 +566,31 @@ struct SettingsWindowShell<Detail: View, Sidebar: View, Header: View>: View {
                             )
                         }
                     }
-                ZStack(alignment: .topLeading) {
-                    Group {
-                        if extendsScrollUnderHeader {
-                            SettingsChromeFadeLayer(progress: sidebarExpanded ? 1 : 0,
-                                sidebarWidth: resolvedSidebarWidth,
-                                minimumToggleX: chrome.minimumToggleX,
-                                titlebarCenterY: chrome.titlebarCenterY,
-                                detailLayoutProgress: stabilizesDetailWidth ? (sidebarExpanded ? 1 : 0) : nil,
-                                titlebarBottomY: chrome.titlebarBottomY)
-                        } else {
-                            Color.clear
-                        }
+                    // The public sidebar owns its native glass and shadow. The
+                    // right backdrop must neither resample nor cover that shadow
+                    // at detail.minX, or a hard vertical seam appears in light mode.
+                    .zIndex(sidebarAboveDetailBackdrop ? 1 : 0)
+                Group {
+                    if extendsScrollUnderHeader {
+                        SettingsChromeFadeLayer(progress: sidebarExpanded ? 1 : 0,
+                            sidebarWidth: resolvedSidebarWidth,
+                            minimumToggleX: chrome.minimumToggleX,
+                            titlebarCenterY: chrome.titlebarCenterY,
+                            detailLayoutProgress: stabilizesDetailWidth ? (sidebarExpanded ? 1 : 0) : nil,
+                            titlebarBottomY: chrome.titlebarBottomY)
+                    } else {
+                        Color.clear
                     }
-                    .allowsHitTesting(false)
-                    SettingsTitlebarDragRegion(registry: titlebarDragExclusionRegistry)
-                        .frame(height: chrome.titlebarBottomY)
-                        .frame(maxHeight: .infinity, alignment: .top)
                 }
+                .allowsHitTesting(false)
                 .accessibilityHidden(true)
+                // Keep titlebar hit testing above the sidebar even though the
+                // visual backdrop now sits below it.
+                SettingsTitlebarDragRegion(registry: titlebarDragExclusionRegistry)
+                    .frame(height: chrome.titlebarBottomY)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .accessibilityHidden(true)
+                    .zIndex(2)
                 SettingsClickOnlyIconButton(
                     symbolName: "sidebar.left", label: toggleLabel, isEnabled: true
                 ) {
@@ -594,9 +606,11 @@ struct SettingsWindowShell<Detail: View, Sidebar: View, Header: View>: View {
                 .modifier(SettingsToggleGlassBackdrop(progress: sidebarExpanded ? 1 : 0,
                                                       sidebarWidth: resolvedSidebarWidth,
                                                       minimumToggleX: chrome.minimumToggleX))
+                .zIndex(3)
                 header()
                     .environment(\.settingsTitlebarDragExclusionRegistry, titlebarDragExclusionRegistry)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .zIndex(3)
             }
             .environment(\.settingsAdaptiveCutoutRegistry, adaptiveCutoutRegistry)
             .onChange(of: geometry.size.width) { _, width in
@@ -661,13 +675,19 @@ struct SettingsChromeLayout: Layout {
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        guard subviews.count == 5 else { return }
+        guard subviews.count == 5 || subviews.count == 6 else { return }
         let frames = SettingsChromeFrames(size: bounds.size, progress: progress,
                                           sidebarWidth: sidebarWidth,
                                           minimumToggleX: minimumToggleX, titlebarCenterY: titlebarCenterY,
                                           extendsDetailUnderHeader: extendsDetailUnderHeader,
                                           detailLayoutProgress: detailLayoutProgress)
-        for (view, frame) in zip(subviews, [frames.detail, frames.sidebar, CGRect(origin: .zero, size: bounds.size), frames.toggle, frames.header]) {
+        let fullFrame = CGRect(origin: .zero, size: bounds.size)
+        // Older standalone previews combine the backdrop and drag region;
+        // the product keeps them separate so their stacking can differ.
+        let placements = subviews.count == 6
+            ? [frames.detail, frames.sidebar, fullFrame, fullFrame, frames.toggle, frames.header]
+            : [frames.detail, frames.sidebar, fullFrame, frames.toggle, frames.header]
+        for (view, frame) in zip(subviews, placements) {
             view.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
                        anchor: .topLeading, proposal: ProposedViewSize(frame.size))
         }

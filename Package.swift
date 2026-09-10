@@ -1,6 +1,12 @@
 // swift-tools-version: 6.0
 
 import PackageDescription
+import Foundation
+
+let packageDirectory = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()
+    .path
+let swiftUIShimSearchPath = "\(packageDirectory)/Sources/SwiftUIShim"
 
 let package = Package(
     name: "HushType",
@@ -37,6 +43,14 @@ let package = Package(
             resources: [
                 .process("Resources"),
             ],
+            swiftSettings: [
+                // Swift's module loader compiles this source interface into the
+                // derived module cache. It preserves SwiftUI's system ABI and
+                // avoids tracking an architecture-specific .swiftmodule.
+                .unsafeFlags([
+                    "-I\(swiftUIShimSearchPath)",
+                ]),
+            ],
             linkerSettings: [
                 .linkedFramework("Carbon"),
                 .linkedFramework("CoreBluetooth"),
@@ -46,7 +60,12 @@ let package = Package(
         .testTarget(
             name: "HushTypeTests",
             dependencies: ["HushType", "ExceptionCatcher"],
-            path: "Tests/HushTypeTests"
+            path: "Tests/HushTypeTests",
+            // HushType's module interface records its ordinary SwiftUI_SPI
+            // import, so test compilation needs the same source-interface path.
+            swiftSettings: [
+                .unsafeFlags(["-I\(swiftUIShimSearchPath)"]),
+            ]
         ),
     ],
     swiftLanguageModes: [.v5]

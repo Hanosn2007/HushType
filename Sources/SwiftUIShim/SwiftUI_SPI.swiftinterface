@@ -1,0 +1,20 @@
+// swift-interface-format-version: 1.0
+// swift-module-flags: -enable-objc-interop -enable-library-evolution -swift-version 5 -O -module-name SwiftUI_SPI -module-abi-name SwiftUI
+// API declarations informed by WebKit's public SwiftUI_SPI.swiftinterface.
+import SwiftUI
+import Swift
+public struct Material : Swift.Sendable {}
+extension SwiftUI_SPI.Material : SwiftUI.ShapeStyle {
+  nonisolated public static func _makeView<S>(view: SwiftUI._GraphValue<SwiftUI._ShapeView<S, SwiftUI_SPI.Material>>, inputs: SwiftUI._ViewInputs) -> SwiftUI._ViewOutputs where S : SwiftUI.Shape
+  public func _apply(to shape: inout SwiftUI._ShapeStyle_Shape)
+  public static func _apply(to type: inout SwiftUI._ShapeStyle_ShapeType)
+  public typealias Resolved = Swift.Never
+}
+extension SwiftUI_SPI.Material {
+  @available(macOS 26.0, *)
+  public struct _GlassVariant {
+    public static var controlCenter: SwiftUI_SPI.Material._GlassVariant { get }
+  }
+  @available(macOS 26.0, *)
+  public static func _glass(_ variant: SwiftUI_SPI.Material._GlassVariant) -> SwiftUI_SPI.Material
+}

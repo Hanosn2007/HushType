@@ -6,374 +6,16 @@ import SwiftUI
 /// intentionally hidden from normal settings pages.
 struct SettingsDebugView: View {
     @ObservedObject var model: HushTypeSettingsModel
-    @Environment(\.settingsTopBarHeight) private var topBarHeight
     @Environment(\.displayScale) private var displayScale
     @State private var configuration = SettingsScrollBlurConfiguration.current
     @State private var officialSidebarConfiguration = SettingsOfficialSidebarConfiguration.current
     @State private var inputConfiguration = TextInsertionConfiguration.load()
     @State private var sidebarScrollTestEnabled = SettingsSidebarScrollTestConfiguration.isEnabled()
+    @State private var overlaySnapRadius = Double(FloatingOverlayDragPreferences.snapRadius)
+    @State private var fadeExponent = Double(FloatingOverlayDragPreferences.fadeExponent)
 
     var body: some View {
-        GeometryReader { geometry in
-            Form {
-                Section {
-                    Text(
-                        L10n.string(
-                            "settings.debug.subtitle",
-                            fallback: "Inspect Preview-only settings and diagnostics."
-                        )
-                    )
-                    .foregroundStyle(.secondary)
-                }
-
-                Section {
-                    LabeledContent(
-                        L10n.string("settings.debug.version", fallback: "Current version"),
-                        value: model.appVersionDisplay
-                    )
-                    LabeledContent(
-                        L10n.string("settings.debug.scroll_blur_status", fallback: "Scroll blur"),
-                        value: configuration.enabled
-                            ? L10n.string("settings.debug.scroll_blur_enabled", fallback: "Enabled")
-                            : L10n.string("settings.debug.scroll_blur_disabled", fallback: "Disabled")
-                    )
-                    LabeledContent(
-                        L10n.string("settings.debug.scroll_blur.effective_range", fallback: "Effective radius"),
-                        value: radiusRangeDescription
-                    )
-                } header: {
-                    Label(
-                        L10n.string("settings.debug.status", fallback: "Current Status"),
-                        systemImage: "info.circle"
-                    )
-                }
-
-                Section {
-                    SettingsFeatureGroup(
-                        title: L10n.string("settings.debug.scroll_blur.right_preview", fallback: "Right · Preview effect"),
-                        systemImage: "circle.lefthalf.filled"
-                    ) {
-                        Toggle(isOn: enabledBinding) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(
-                                    L10n.string("settings.debug.scroll_blur", fallback: "Enable scroll-driven blur"))
-                                Text(
-                                    L10n.string(
-                                        "settings.debug.scroll_blur.description",
-                                        fallback: "Adjust the settings-page top blur while scrolling."
-                                    )
-                                )
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            }
-                        }
-
-                        radiusSlider(
-                            label: L10n.string(
-                                "settings.debug.scroll_blur.minimum_radius", fallback: "Minimum radius"),
-                            value: minimumRadiusBinding
-                        )
-                        radiusSlider(
-                            label: L10n.string(
-                                "settings.debug.scroll_blur.maximum_radius", fallback: "Maximum radius"),
-                            value: maximumRadiusBinding
-                        )
-
-                        HStack {
-                            Button(L10n.string("settings.debug.restore_defaults", fallback: "Restore Defaults")) {
-                                restoreDefaults()
-                            }
-                            Spacer()
-                            Text(
-                                L10n.string(
-                                    "settings.debug.scroll_blur.apply_immediately",
-                                    fallback: "Changes apply immediately")
-                            )
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
-                Section {
-                    SettingsFeatureGroup(
-                        title: L10n.string(
-                            "settings.debug.sidebar_official", fallback: "Left · System effect"),
-                        systemImage: "sidebar.leading"
-                    ) {
-                        Picker(
-                            L10n.string(
-                                "settings.debug.sidebar_official.style", fallback: "System style"),
-                            selection: officialSidebarStyleBinding
-                        ) {
-                            Text(
-                                L10n.string(
-                                    "settings.debug.sidebar_official.style.soft", fallback: "Soft")
-                            )
-                            .tag(SettingsOfficialSidebarConfiguration.Style.soft)
-                            Text(
-                                L10n.string(
-                                    "settings.debug.sidebar_official.style.hard", fallback: "Hard")
-                            )
-                            .tag(SettingsOfficialSidebarConfiguration.Style.hard)
-                            Text(
-                                L10n.string(
-                                    "settings.debug.sidebar_official.style.automatic", fallback: "Automatic")
-                            )
-                            .tag(SettingsOfficialSidebarConfiguration.Style.automatic)
-                        }
-                        .pickerStyle(.menu)
-
-                        officialSidebarSlider(
-                            label: L10n.string(
-                                "settings.debug.sidebar_official.bar_height", fallback: "Fixed bar height"),
-                            value: officialSidebarBarHeightBinding,
-                            range: SettingsOfficialSidebarConfiguration.allowedBarHeightRange
-                        )
-                        officialSidebarSlider(
-                            label: L10n.string(
-                                "settings.debug.sidebar_official.bar_spacing", fallback: "Fixed bar spacing"),
-                            value: officialSidebarBarSpacingBinding,
-                            range: SettingsOfficialSidebarConfiguration.allowedBarSpacingRange
-                        )
-
-                        Text(
-                            L10n.string(
-                                "settings.debug.sidebar_official.description",
-                                fallback:
-                                    "Only affects the left sidebar. Height and spacing change the fixed bar; macOS controls the blur."
-                            )
-                        )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                        HStack {
-                            Button(
-                                L10n.string(
-                                    "settings.debug.sidebar_official.restore", fallback: "Restore left defaults")
-                            ) {
-                                restoreOfficialSidebarDefaults()
-                            }
-                            Spacer()
-                            Text(
-                                L10n.string(
-                                    "settings.debug.scroll_blur.apply_immediately",
-                                    fallback: "Changes apply immediately"
-                                )
-                            )
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
-                Section {
-                    SettingsFeatureGroup(
-                        title: L10n.string(
-                            "settings.debug.sidebar_scroll_test", fallback: "Sidebar scroll test"),
-                        systemImage: "sidebar.leading"
-                    ) {
-                        Toggle(isOn: sidebarScrollTestBinding) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(
-                                    L10n.string(
-                                        "settings.debug.sidebar_scroll_test.enabled",
-                                        fallback: "Add 100 filler items"
-                                    )
-                                )
-                                Text(
-                                    L10n.string(
-                                        "settings.debug.sidebar_scroll_test.description",
-                                        fallback:
-                                            "Adds inert rows below the real navigation so you can inspect sidebar scrolling. Preview only."
-                                    )
-                                )
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-
-                if #unavailable(macOS 26.0) {
-                    Section {
-                        SettingsFeatureGroup(
-                            title: L10n.string("settings.debug.scroll_blur.edge_inset", fallback: "Blur edge"),
-                            systemImage: "rectangle.inset.filled"
-                        ) {
-                            edgeInsetSlider
-
-                            Text(
-                                L10n.format(
-                                    "settings.debug.scroll_blur.edge_inset.description",
-                                    "The current %1$.0f-pixel inset is %2$.1f pt at this window's display scale.",
-                                    arguments: [
-                                        Double(configuration.edgeInsetPixels),
-                                        Double(configuration.edgeInsetPixels / max(1, displayScale))
-                                    ]
-                                )
-                            )
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                            HStack {
-                                Button(
-                                    L10n.string(
-                                        "settings.debug.scroll_blur.edge_inset.restore",
-                                        fallback: "Restore 2 px"
-                                    )
-                                ) {
-                                    restoreEdgeInsetPixelsDefault()
-                                }
-                                Spacer()
-                                Text(
-                                    L10n.string(
-                                        "settings.debug.scroll_blur.apply_immediately",
-                                        fallback: "Changes apply immediately"
-                                    )
-                                )
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-
-                Section {
-                    Picker(
-                        L10n.string("settings.debug.input_method", fallback: "Input method"),
-                        selection: inputMethodBinding
-                    ) {
-                        inputMethodChoices
-                    }
-                    .pickerStyle(.menu)
-                } header: {
-                    Label(
-                        L10n.string("settings.debug.input", fallback: "Text input"), systemImage: "text.cursor")
-                }
-
-                Section {
-                    SettingsFeatureGroup(
-                        title: L10n.string("settings.input_method.unicode", fallback: "Unicode keyboard input"),
-                        systemImage: "keyboard"
-                    ) {
-                        Picker(
-                            L10n.string(
-                                "settings.debug.unicode_batch_size",
-                                fallback: "UTF-16 code units per batch"
-                            ),
-                            selection: unicodeBatchSizeBinding
-                        ) {
-                            ForEach(TextInsertionConfiguration.batchSizes, id: \.self) { size in
-                                Text(
-                                    L10n.format(
-                                        "settings.debug.unicode_batch_size.value",
-                                        "%1$d UTF-16 units",
-                                        arguments: [size]
-                                    )
-                                )
-                                .tag(size)
-                            }
-                        }
-                        .pickerStyle(.menu)
-
-                        Picker(
-                            L10n.string(
-                                "settings.debug.unicode_interval_milliseconds",
-                                fallback: "Unicode batch interval"
-                            ),
-                            selection: unicodeIntervalBinding
-                        ) {
-                            ForEach(TextInsertionConfiguration.intervals, id: \.self) { interval in
-                                Text(
-                                    L10n.format(
-                                        "settings.debug.milliseconds.value",
-                                        "%1$d ms",
-                                        arguments: [interval]
-                                    )
-                                )
-                                .tag(interval)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                    }
-                }
-
-                Section {
-                    SettingsFeatureGroup(
-                        title: L10n.string(
-                            "settings.debug.temporary_clipboard", fallback: "Temporary clipboard"),
-                        systemImage: "clipboard"
-                    ) {
-                        Picker(
-                            L10n.string(
-                                "settings.debug.clipboard_restore_milliseconds",
-                                fallback: "Clipboard restore delay"
-                            ),
-                            selection: clipboardRestoreDelayBinding
-                        ) {
-                            ForEach(TextInsertionConfiguration.restoreDelays, id: \.self) { delay in
-                                Text(
-                                    L10n.format(
-                                        "settings.debug.milliseconds.value",
-                                        "%1$d ms",
-                                        arguments: [delay]
-                                    )
-                                )
-                                .tag(delay)
-                            }
-                        }
-                        .pickerStyle(.menu)
-
-                        Toggle(
-                            L10n.string(
-                                "settings.debug.temporary_clipboard_markers",
-                                fallback: "Add temporary clipboard marker"
-                            ),
-                            isOn: temporaryMarkersBinding
-                        )
-
-                        Text(
-                            L10n.string(
-                                "settings.debug.temporary_clipboard_markers.description",
-                                fallback:
-                                    "Helps clipboard history tools that support this convention ignore automatic input. Turn it off to investigate compatibility; not every manager supports it."
-                            )
-                        )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    }
-                }
-
-                Section {
-                    Text(
-                        L10n.string(
-                            "settings.debug.logs.description",
-                            fallback:
-                                "HushType writes diagnostics to the unified log under subsystem com.felix.hushtype."
-                        )
-                    )
-                    .foregroundStyle(.secondary)
-
-                    Button(L10n.string("settings.debug.open_console", fallback: "Open Console")) {
-                        NSWorkspace.shared.open(
-                            URL(fileURLWithPath: "/System/Applications/Utilities/Console.app"))
-                    }
-                } header: {
-                    Label(
-                        L10n.string("settings.debug.logs", fallback: "System Logs"),
-                        systemImage: "doc.text.magnifyingglass"
-                    )
-                }
-            }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .contentMargins(.top, topBarHeight, for: .scrollContent)
-            .contentMargins(.horizontal, max(0, (geometry.size.width - 736) / 2), for: .scrollContent)
-            .focusSection()
-            .accessibilityElement(children: .contain)
-        }
+        SettingsDebugForm { sections }
         .onAppear { reloadConfiguration() }
         .onReceive(
             NotificationCenter.default.publisher(
@@ -382,6 +24,395 @@ struct SettingsDebugView: View {
             ).receive(on: RunLoop.main)
         ) { _ in
             reloadConfiguration()
+        }
+    }
+
+    @ViewBuilder
+    private var sections: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text(L10n.string("settings.debug.overlay.snap_radius", fallback: "Snap radius"))
+                    Spacer()
+                    Text(String(format: "%.0f pt", overlaySnapRadius))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                Slider(value: Binding(
+                    get: { overlaySnapRadius },
+                    set: { overlaySnapRadius = Double(FloatingOverlayDragPreferences.save(CGFloat($0))) }
+                ), in: 2...40, step: 1)
+                .accessibilityLabel(Text(L10n.string("settings.debug.overlay.snap_radius", fallback: "Snap radius")))
+            }
+            Text(L10n.string("settings.debug.overlay.description", fallback: "Snap when the panel center enters this radius around the default position. Changes apply immediately; snapping gives one trackpad haptic cue."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button(L10n.string("settings.debug.overlay.reset", fallback: "Reset to 10 pt")) {
+                overlaySnapRadius = Double(FloatingOverlayDragPreferences.save(FloatingOverlayDragPreferences.defaultRadius))
+            }
+            overlayGuideSlider(
+                label: L10n.string("settings.debug.overlay.curve", fallback: "Fade acceleration"),
+                value: $fadeExponent, range: 1...4, step: 0.1,
+                key: FloatingOverlayDragPreferences.fadeExponentKey,
+                display: String(format: "%.1f", fadeExponent)
+            )
+            Text(L10n.string("settings.debug.overlay.curve_help", fallback: "1 is linear. Higher values retain the guide longer, then fade faster near the center. Changes apply immediately."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } header: {
+            Label(L10n.string("settings.debug.overlay.title", fallback: "Listening panel"), systemImage: "move.3d")
+        }
+
+        overlayGlassSection
+
+        Section {
+            Text(
+                L10n.string(
+                    "settings.debug.subtitle",
+                    fallback: "Inspect Preview-only settings and diagnostics."
+                )
+            )
+            .foregroundStyle(.secondary)
+        }
+
+        Section {
+            LabeledContent(
+                L10n.string("settings.debug.version", fallback: "Current version"),
+                value: model.appVersionDisplay
+            )
+            LabeledContent(
+                L10n.string("settings.debug.scroll_blur_status", fallback: "Scroll blur"),
+                value: configuration.enabled
+                    ? L10n.string("settings.debug.scroll_blur_enabled", fallback: "Enabled")
+                    : L10n.string("settings.debug.scroll_blur_disabled", fallback: "Disabled")
+            )
+            LabeledContent(
+                L10n.string("settings.debug.scroll_blur.effective_range", fallback: "Effective radius"),
+                value: radiusRangeDescription
+            )
+        } header: {
+            Label(
+                L10n.string("settings.debug.status", fallback: "Current Status"),
+                systemImage: "info.circle"
+            )
+        }
+
+        Section {
+            SettingsFeatureGroup(
+                title: L10n.string("settings.debug.scroll_blur.right_preview", fallback: "Right · Preview effect"),
+                systemImage: "circle.lefthalf.filled"
+            ) {
+                Toggle(isOn: enabledBinding) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(
+                            L10n.string("settings.debug.scroll_blur", fallback: "Enable scroll-driven blur"))
+                        Text(
+                            L10n.string(
+                                "settings.debug.scroll_blur.description",
+                                fallback: "Adjust the settings-page top blur while scrolling."
+                            )
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+
+                radiusSlider(
+                    label: L10n.string(
+                        "settings.debug.scroll_blur.minimum_radius", fallback: "Minimum radius"),
+                    value: minimumRadiusBinding
+                )
+                radiusSlider(
+                    label: L10n.string(
+                        "settings.debug.scroll_blur.maximum_radius", fallback: "Maximum radius"),
+                    value: maximumRadiusBinding
+                )
+
+                HStack {
+                    Button(L10n.string("settings.debug.restore_defaults", fallback: "Restore Defaults")) {
+                        restoreDefaults()
+                    }
+                    Spacer()
+                    Text(
+                        L10n.string(
+                            "settings.debug.scroll_blur.apply_immediately",
+                            fallback: "Changes apply immediately")
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            }
+        }
+
+        Section {
+            SettingsFeatureGroup(
+                title: L10n.string(
+                    "settings.debug.sidebar_official", fallback: "Left · System effect"),
+                systemImage: "sidebar.leading"
+            ) {
+                Picker(
+                    L10n.string(
+                        "settings.debug.sidebar_official.style", fallback: "System style"),
+                    selection: officialSidebarStyleBinding
+                ) {
+                    Text(
+                        L10n.string(
+                            "settings.debug.sidebar_official.style.soft", fallback: "Soft")
+                    )
+                    .tag(SettingsOfficialSidebarConfiguration.Style.soft)
+                    Text(
+                        L10n.string(
+                            "settings.debug.sidebar_official.style.hard", fallback: "Hard")
+                    )
+                    .tag(SettingsOfficialSidebarConfiguration.Style.hard)
+                    Text(
+                        L10n.string(
+                            "settings.debug.sidebar_official.style.automatic", fallback: "Automatic")
+                    )
+                    .tag(SettingsOfficialSidebarConfiguration.Style.automatic)
+                }
+                .pickerStyle(.menu)
+
+                officialSidebarSlider(
+                    label: L10n.string(
+                        "settings.debug.sidebar_official.bar_height", fallback: "Fixed bar height"),
+                    value: officialSidebarBarHeightBinding,
+                    range: SettingsOfficialSidebarConfiguration.allowedBarHeightRange
+                )
+                officialSidebarSlider(
+                    label: L10n.string(
+                        "settings.debug.sidebar_official.bar_spacing", fallback: "Fixed bar spacing"),
+                    value: officialSidebarBarSpacingBinding,
+                    range: SettingsOfficialSidebarConfiguration.allowedBarSpacingRange
+                )
+
+                Text(
+                    L10n.string(
+                        "settings.debug.sidebar_official.description",
+                        fallback:
+                            "Only affects the left sidebar. Height and spacing change the fixed bar; macOS controls the blur."
+                    )
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                HStack {
+                    Button(
+                        L10n.string(
+                            "settings.debug.sidebar_official.restore", fallback: "Restore left defaults")
+                    ) {
+                        restoreOfficialSidebarDefaults()
+                    }
+                    Spacer()
+                    Text(
+                        L10n.string(
+                            "settings.debug.scroll_blur.apply_immediately",
+                            fallback: "Changes apply immediately"
+                        )
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            }
+        }
+
+        Section {
+            SettingsFeatureGroup(
+                title: L10n.string(
+                    "settings.debug.sidebar_scroll_test", fallback: "Sidebar scroll test"),
+                systemImage: "sidebar.leading"
+            ) {
+                Toggle(isOn: sidebarScrollTestBinding) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(
+                            L10n.string(
+                                "settings.debug.sidebar_scroll_test.enabled",
+                                fallback: "Add 100 filler items"
+                            )
+                        )
+                        Text(
+                            L10n.string(
+                                "settings.debug.sidebar_scroll_test.description",
+                                fallback:
+                                    "Adds inert rows below the real navigation so you can inspect sidebar scrolling. Preview only."
+                            )
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+
+        if #unavailable(macOS 26.0) {
+            Section {
+                SettingsFeatureGroup(
+                    title: L10n.string("settings.debug.scroll_blur.edge_inset", fallback: "Blur edge"),
+                    systemImage: "rectangle.inset.filled"
+                ) {
+                    edgeInsetSlider
+
+                    Text(
+                        L10n.format(
+                            "settings.debug.scroll_blur.edge_inset.description",
+                            "The current %1$.0f-pixel inset is %2$.1f pt at this window's display scale.",
+                            arguments: [
+                                Double(configuration.edgeInsetPixels),
+                                Double(configuration.edgeInsetPixels / max(1, displayScale))
+                            ]
+                        )
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                    HStack {
+                        Button(
+                            L10n.string(
+                                "settings.debug.scroll_blur.edge_inset.restore",
+                                fallback: "Restore 2 px"
+                            )
+                        ) {
+                            restoreEdgeInsetPixelsDefault()
+                        }
+                        Spacer()
+                        Text(
+                            L10n.string(
+                                "settings.debug.scroll_blur.apply_immediately",
+                                fallback: "Changes apply immediately"
+                            )
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+
+        Section {
+            Picker(
+                L10n.string("settings.debug.input_method", fallback: "Input method"),
+                selection: inputMethodBinding
+            ) {
+                inputMethodChoices
+            }
+            .pickerStyle(.menu)
+        } header: {
+            Label(
+                L10n.string("settings.debug.input", fallback: "Text input"), systemImage: "text.cursor")
+        }
+
+        Section {
+            SettingsFeatureGroup(
+                title: L10n.string("settings.input_method.unicode", fallback: "Unicode keyboard input"),
+                systemImage: "keyboard"
+            ) {
+                Picker(
+                    L10n.string(
+                        "settings.debug.unicode_batch_size",
+                        fallback: "UTF-16 code units per batch"
+                    ),
+                    selection: unicodeBatchSizeBinding
+                ) {
+                    ForEach(TextInsertionConfiguration.batchSizes, id: \.self) { size in
+                        Text(
+                            L10n.format(
+                                "settings.debug.unicode_batch_size.value",
+                                "%1$d UTF-16 units",
+                                arguments: [size]
+                            )
+                        )
+                        .tag(size)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                Picker(
+                    L10n.string(
+                        "settings.debug.unicode_interval_milliseconds",
+                        fallback: "Unicode batch interval"
+                    ),
+                    selection: unicodeIntervalBinding
+                ) {
+                    ForEach(TextInsertionConfiguration.intervals, id: \.self) { interval in
+                        Text(
+                            L10n.format(
+                                "settings.debug.milliseconds.value",
+                                "%1$d ms",
+                                arguments: [interval]
+                            )
+                        )
+                        .tag(interval)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+        }
+
+        Section {
+            SettingsFeatureGroup(
+                title: L10n.string(
+                    "settings.debug.temporary_clipboard", fallback: "Temporary clipboard"),
+                systemImage: "clipboard"
+            ) {
+                Picker(
+                    L10n.string(
+                        "settings.debug.clipboard_restore_milliseconds",
+                        fallback: "Clipboard restore delay"
+                    ),
+                    selection: clipboardRestoreDelayBinding
+                ) {
+                    ForEach(TextInsertionConfiguration.restoreDelays, id: \.self) { delay in
+                        Text(
+                            L10n.format(
+                                "settings.debug.milliseconds.value",
+                                "%1$d ms",
+                                arguments: [delay]
+                            )
+                        )
+                        .tag(delay)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                Toggle(
+                    L10n.string(
+                        "settings.debug.temporary_clipboard_markers",
+                        fallback: "Add temporary clipboard marker"
+                    ),
+                    isOn: temporaryMarkersBinding
+                )
+
+                Text(
+                    L10n.string(
+                        "settings.debug.temporary_clipboard_markers.description",
+                        fallback:
+                            "Helps clipboard history tools that support this convention ignore automatic input. Turn it off to investigate compatibility; not every manager supports it."
+                    )
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+
+        Section {
+            Text(
+                L10n.string(
+                    "settings.debug.logs.description",
+                    fallback:
+                        "HushType writes diagnostics to the unified log under subsystem com.felix.hushtype."
+                )
+            )
+            .foregroundStyle(.secondary)
+
+            Button(L10n.string("settings.debug.open_console", fallback: "Open Console")) {
+                NSWorkspace.shared.open(
+                    URL(fileURLWithPath: "/System/Applications/Utilities/Console.app"))
+            }
+        } header: {
+            Label(
+                L10n.string("settings.debug.logs", fallback: "System Logs"),
+                systemImage: "doc.text.magnifyingglass"
+            )
         }
     }
 
@@ -500,6 +531,31 @@ struct SettingsDebugView: View {
             .tag(TextInsertionConfiguration.Method.clipboard)
         Text(L10n.string("settings.input_method.unicode", fallback: "Unicode keyboard input"))
             .tag(TextInsertionConfiguration.Method.unicode)
+    }
+
+    private var overlayGlassSection: some View {
+        Section {
+            Text(L10n.string("settings.debug.glass.control_center", fallback: "ControlCenter material"))
+            Text(L10n.string("settings.debug.glass.control_center_help", fallback: "The snap guide uses the system ControlCenter material and fades as the listening panel approaches."))
+                .font(.caption).foregroundStyle(.secondary)
+        } header: {
+            Label(L10n.string("settings.debug.glass.title", fallback: "Guide glass material"), systemImage: "drop")
+        }
+    }
+
+    private func overlayGuideSlider(label: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double, key: String, display: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(label)
+                Spacer()
+                Text(display).monospacedDigit().foregroundStyle(.secondary)
+            }
+            Slider(value: Binding(get: { value.wrappedValue }, set: {
+                value.wrappedValue = $0
+                UserDefaults.standard.set($0, forKey: key)
+            }), in: range, step: step)
+            .accessibilityLabel(Text(label))
+        }
     }
 
     private var radiusRangeDescription: String {
@@ -636,6 +692,31 @@ struct SettingsDebugView: View {
         officialSidebarConfiguration = SettingsOfficialSidebarConfiguration.current
         inputConfiguration = TextInsertionConfiguration.load()
         sidebarScrollTestEnabled = SettingsSidebarScrollTestConfiguration.isEnabled()
+    }
+}
+
+/// Keep the large form's content outside the GeometryReader closure. Sidebar
+/// animation changes the proposed width every frame; only margins need to be
+/// recomputed, not every localized label, binding, picker and disclosure group.
+private struct SettingsDebugForm<Content: View>: View {
+    @Environment(\.settingsTopBarHeight) private var topBarHeight
+    private let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            Form { content }
+                .formStyle(.grouped)
+                .scrollContentBackground(.hidden)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentMargins(.top, topBarHeight, for: .scrollContent)
+                .contentMargins(.horizontal, max(0, (geometry.size.width - 736) / 2), for: .scrollContent)
+                .focusSection()
+                .accessibilityElement(children: .contain)
+        }
     }
 }
 
