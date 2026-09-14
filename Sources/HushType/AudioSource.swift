@@ -43,7 +43,7 @@ final class MicAudioSource: AudioSource, @unchecked Sendable {
     func start() async throws {
         service.onSamples = onSamples
         service.onError = onError
-        try service.startContinuousCapture()
+        try await service.startContinuousCapture()
     }
 
     func stop() {

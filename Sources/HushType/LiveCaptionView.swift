@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Foundation
 
 /// Semantic role of a dual-line caption row (SPEC §4.5). The visible chip
 /// label and the accessibility label are localized renderings of this value;
@@ -28,70 +29,253 @@ enum LiveCaptionHeaderState: Equatable {
     case loadingVAD       // "Loading VAD model…"
     case loadingModel(Double) // local Qwen model load progress, 0...1
     case live              // "● Live"
+    case finishing
+    case stopped
     case gatedFlash        // "Stop Live Caption to dictate" (orange, 2s)
     case reconnecting(attempt: Int, max: Int)   // cloud transport reconnect
     case autoStopped                            // 5s flash after auto-stop
+}
+
+/// The caption panel starts every session in automatic sizing. A native
+/// resize opts the current session into manual sizing until the user restores
+/// automatic sizing or starts a new session.
+enum LiveCaptionSizingMode: Equatable {
+    case automatic
+    case manual
+}
+
+enum LiveCaptionTimestampPreference {
+    static let key = "hushtype.liveCaption.showsTimestamps"
+}
+
+/// Small value-type state machine kept separate from AppKit so the sizing
+/// lifecycle remains testable without creating a window.
+struct LiveCaptionSizingState: Equatable {
+    private(set) var mode: LiveCaptionSizingMode = .automatic
+
+    var acceptsAutomaticResizing: Bool { mode == .automatic }
+    var showsRestoreControl: Bool { mode == .manual }
+
+    @discardableResult
+    mutating func userDidResize() -> Bool {
+        guard mode != .manual else { return false }
+        mode = .manual
+        return true
+    }
+
+    @discardableResult
+    mutating func restoreAutomaticSizing() -> Bool {
+        guard mode != .automatic else { return false }
+        mode = .automatic
+        return true
+    }
+
+    mutating func resetForNewSession() {
+        mode = .automatic
+    }
 }
 
 /// SwiftUI body of the live caption panel. Owned/hosted by
 /// `LiveCaptionWindow`. State is driven through a small observable model so
 /// the manager can `await MainActor.run { … }` from off-actor contexts.
 final class LiveCaptionViewModel: ObservableObject {
-    @Published var headerState: LiveCaptionHeaderState = .live
-    /// Rolling buffer (max 50 segments — §9.b "Buffer size").
-    @Published var segments: [SegmentEntry] = []
+    @Published var headerState: LiveCaptionHeaderState = .live {
+        didSet { invalidateCaptionContentSize() }
+    }
+    /// Complete in-process session transcript. The manager deliberately does
+    /// not trim this array: the view caps its visible height and scrolls.
+    @Published var segments: [SegmentEntry] = [] {
+        didSet { invalidateCaptionContentSize() }
+    }
 
     /// Small grey line above the target caption — only meaningful for the
     /// cloud translate engine. Nil = hidden. Set/cleared by the manager from
     /// `BackendEvent.sourceDelta` / `.segmentComplete`.
-    @Published var currentSourceLine: String? = nil
+    @Published var currentSourceLine: String? = nil {
+        didSet { invalidateCaptionContentSize() }
+    }
     /// Main caption font; the in-progress translated line. Nil = hidden.
-    /// When non-nil, the existing `isCurrent` highlight on `segments.last` is
-    /// suppressed — the highlight applies to this region instead.
-    @Published var currentTargetLine: String? = nil
+    @Published var currentTargetLine: String? = nil {
+        didSet { invalidateCaptionContentSize() }
+    }
 
     /// "MM:SS · $X.XX" chip shown in the panel header when cloud engine is
     /// active. Nil = hide chip (local engine, or cloud session not yet
     /// emitting audio).
-    @Published var cloudCostChip: String? = nil
+    @Published var cloudCostChip: String? = nil {
+        didSet { invalidateCaptionContentSize() }
+    }
+
+    /// Waiting translations, excluding the sentence currently being sent to
+    /// the local model. The manager updates this from its session queue.
+    @Published var translationPendingCount: Int = 0 {
+        didSet { invalidateCaptionContentSize() }
+    }
+    /// Session-level state such as local translation model preparation. An
+    /// empty value defers to the compact pending-count status below.
+    @Published var translationStatusMessage: String? = nil {
+        didSet { invalidateCaptionContentSize() }
+    }
+
+    var translationStatusText: String? {
+        if let translationStatusMessage,
+           !translationStatusMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return translationStatusMessage
+        }
+        guard translationPendingCount > 0 else { return nil }
+        return L10n.format(
+            "caption.translation.pending",
+            "Translating… %1$d remaining",
+            arguments: [Int32(translationPendingCount)]
+        )
+    }
+
+    /// Rendered by the view to reveal the restore-size control after a native
+    /// resize. The window owns transitions; the model only exposes state.
+    @Published private(set) var sizingState = LiveCaptionSizingState()
+    @Published private(set) var captionSessionGeneration: UInt64 = 0
+
+    /// Installed by `LiveCaptionWindow`. Keeping the layout calculation in
+    /// AppKit lets the panel animate its frame while SwiftUI stays declarative.
+    var onContentSizeInvalidated: (() -> Void)?
 
     struct SegmentEntry: Identifiable, Equatable {
         let id: UUID = UUID()
         let text: String
+        /// Kept with the committed segment so timestamps reflect when the
+        /// caption was received, not when the menu option is turned on.
+        let timestamp: Date = Date()
+        /// Local caption translation arrives after the source segment has
+        /// already been committed and displayed.
+        var translatedText: String? = nil
+        /// Translation failures leave the source text intact and appear as a
+        /// small status line below it.
+        var translationError: String? = nil
+
+        /// The durable transcript keeps both the recognition result and its
+        /// eventual translation, rather than replacing the source text.
+        var historyText: String {
+            guard let translatedText,
+                  !translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return text
+            }
+            return text + "\n" + translatedText
+        }
+
+        /// A compact representation for callers that only show one caption
+        /// line. The source remains the fallback until a translation arrives.
+        var displayText: String {
+            guard let translatedText,
+                  !translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return text
+            }
+            return translatedText
+        }
+
+        var hasTranslatedText: Bool {
+            guard let translatedText else { return false }
+            return !translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    func useManualSizing() {
+        guard sizingState.userDidResize() else { return }
+        invalidateCaptionContentSize()
+    }
+
+    func restoreAutomaticSizing() {
+        guard sizingState.restoreAutomaticSizing() else { return }
+        invalidateCaptionContentSize()
+    }
+
+    func resetSizingForNewSession() {
+        sizingState.resetForNewSession()
+        captionSessionGeneration &+= 1
+        invalidateCaptionContentSize()
+    }
+
+    /// View-owned layout preferences, such as timestamps, also affect the
+    /// auto-fitting panel. The window installs the callback above.
+    func captionLayoutDidChange() {
+        invalidateCaptionContentSize()
+    }
+
+    private func invalidateCaptionContentSize() {
+        onContentSizeInvalidated?()
     }
 }
 
 struct LiveCaptionView: View {
     @ObservedObject var model: LiveCaptionViewModel
+    @Environment(\.displayScale) private var displayScale
     let onStop: () -> Void
+    @StateObject private var scrollFollow = LiveCaptionScrollFollowController()
+    @AppStorage(LiveCaptionTimestampPreference.key) private var showsTimestamps = false
+
+    private static let timestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-                .padding(.horizontal, 18)
-                .padding(.vertical, 8)
+        ZStack(alignment: .top) {
+            VisualEffectBlur(material: .hudWindow)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
 
-            Divider().opacity(0.2)
+            captionBody
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipShape(LiveCaptionTopBlur.contentClipShape(backingScale: displayScale))
 
-            body_
-                .padding(.horizontal, 18)
-                .padding(.vertical, 10)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        }
-        .background(VisualEffectBlur(material: .hudWindow))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
+            // This host remains alive from the Listening state onward. It sits
+            // outside every SwiftUI clip/compositing group so Core Animation can
+            // keep sampling the current content and desktop behind the panel.
+            LiveCaptionTopBlur()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+
+            captionHeader
+                .frame(maxWidth: .infinity, alignment: .top)
+
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 4)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
         .onExitCommand { onStop() }
+        .onAppear {
+            // Covers a timestamp preference restored before this panel was
+            // created, which otherwise would not emit an `onChange` event.
+            model.captionLayoutDidChange()
+        }
+        .onChange(of: model.captionSessionGeneration) { _, _ in
+            scrollFollow.resetForNewSession()
+        }
+        .onChange(of: showsTimestamps) { _, _ in
+            model.captionLayoutDidChange()
+            scrollFollow.scheduleScrollToBottomAfterLayout()
+        }
+    }
+
+    private var captionHeader: some View {
+        header
+                // 6pt inset plus a 20pt control centers the close circle 16pt
+                // from the left and top, aligned to the 16pt glass radius.
+                .padding(.leading, 6)
+                .padding(.trailing, 6)
+                .padding(.vertical, 6)
     }
 
     // MARK: - Header
 
     private var header: some View {
         HStack(spacing: 8) {
+            stopButton
+            if model.sizingState.showsRestoreControl {
+                restoreAutomaticSizeButton
+            }
             headerLeft
                 .animation(.easeInOut(duration: 0.18), value: model.headerState)
             Spacer()
@@ -104,13 +288,21 @@ struct LiveCaptionView: View {
                         fallback: "Cloud Live Caption session cost"
                     ))
             }
-            stopButton
+            moreButton
         }
+        .frame(height: 20)
+        .lineLimit(1)
     }
 
     @ViewBuilder
     private var headerLeft: some View {
         switch model.headerState {
+        case .finishing:
+            Text(L10n.string("overview.finishing", fallback: "Finishing"))
+                .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+        case .stopped:
+            Text(L10n.string("settings.captions.status.stopped", fallback: "Stopped"))
+                .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
         case .loadingModel(let progress):
             HStack(spacing: 6) {
                 ProgressView(value: max(0, min(1, progress)))
@@ -178,8 +370,9 @@ struct LiveCaptionView: View {
         Button(action: onStop) {
             Image(systemName: "xmark.circle.fill")
                 .font(.system(size: 14))
-                .foregroundStyle(.secondary)
-                .contentShape(Rectangle())
+                .foregroundStyle(.secondary.opacity(0.78))
+                .frame(width: 20, height: 20)
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(L10n.string(
@@ -189,72 +382,181 @@ struct LiveCaptionView: View {
         .help(L10n.string("caption.stop.help", fallback: "Stop live caption (Esc)"))
     }
 
+    private var restoreAutomaticSizeButton: some View {
+        Button(action: model.restoreAutomaticSizing) {
+            Image(systemName: "arrow.down.right.and.arrow.up.left.circle.fill")
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary.opacity(0.78))
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L10n.string(
+            "caption.restore_automatic_size.accessibility",
+            fallback: "Restore automatic caption size"
+        ))
+        .help(L10n.string(
+            "caption.restore_automatic_size.help",
+            fallback: "Restore automatic size"
+        ))
+    }
+
+    private var moreButton: some View {
+        Menu {
+            Toggle(
+                L10n.string("caption.timestamps", fallback: "Show timestamps"),
+                isOn: $showsTimestamps
+            )
+        } label: {
+            Image(systemName: "ellipsis.circle.fill")
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary.opacity(0.78))
+                .frame(width: 20, height: 20)
+                .contentShape(Circle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .frame(width: 20, height: 20)
+        .accessibilityLabel(L10n.string(
+            "caption.more.accessibility",
+            fallback: "More live caption options"
+        ))
+        .help(L10n.string("caption.more.help", fallback: "More options"))
+    }
+
     // MARK: - Body
 
     @ViewBuilder
-    private var body_: some View {
-        let hasCurrentLine = (model.currentSourceLine != nil) || (model.currentTargetLine != nil)
-
-        if model.segments.isEmpty && !hasCurrentLine {
-            HStack {
-                Spacer()
-                Text(L10n.string("caption.listening", fallback: "Listening…"))
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(.tertiary)
-                Spacer()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    private var captionBody: some View {
+        if model.segments.isEmpty && !hasCurrentLine && !hasTranslationStatus {
+            listeningPlaceholder
         } else {
             VStack(alignment: .leading, spacing: 0) {
                 scrollback
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if hasCurrentLine {
-                    dualLineRegion
-                        .padding(.top, 6)
-                }
+                currentLineRegion
+                translationStatusRegion
             }
         }
     }
 
-    /// Rolling segment history. The current/last segment gets the white
-    /// highlight only when the dual-line region is NOT showing — when cloud
-    /// is feeding live deltas into `currentTargetLine`, that region owns the
-    /// highlight instead.
+    private var hasCurrentLine: Bool {
+        (model.currentSourceLine != nil) || (model.currentTargetLine != nil)
+    }
+
+    private var hasTranslationStatus: Bool {
+        model.translationStatusText != nil
+    }
+
+    private var listeningPlaceholder: some View {
+        HStack {
+            Spacer()
+            Text(L10n.string("caption.listening", fallback: "Listening…"))
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(.tertiary)
+            Spacer()
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .padding(.top, LiveCaptionTopBlur.height)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var currentLineRegion: some View {
+        if hasCurrentLine {
+            dualLineRegion
+                .padding(.horizontal, 18)
+                .padding(.top, 6)
+                .padding(.bottom, 10)
+        }
+    }
+
+    @ViewBuilder
+    private var translationStatusRegion: some View {
+        if let translationStatus = model.translationStatusText {
+            Text(translationStatus)
+                .font(.system(size: 11, weight: .regular))
+                .foregroundStyle(.secondary)
+                .lineSpacing(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 18)
+                .padding(.top, 2)
+                .padding(.bottom, 8)
+                .accessibilityLabel(translationStatus)
+        }
+    }
+
+    /// Full-session history. New rows follow the live edge only while the
+    /// reader is already at the bottom, so selecting or scrolling older text
+    /// never snaps the reader back to the newest caption.
     private var scrollback: some View {
-        ScrollViewReader { proxy in
+        GeometryReader { viewport in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
-                    // ForEach identity is the entry UUID — stable across appends.
-                    // Do NOT also attach .id("current") on the last view; switching
-                    // a Text's .id between "current" and its UUID on each append
-                    // confuses SwiftUI's diff and causes the white-styled position
-                    // to render stale content. The scroll anchor below is a
-                    // separate invisible view so identity stays clean.
-                    ForEach(Array(model.segments.enumerated()), id: \.element.id) { (index, entry) in
-                        let dualLineActive = (model.currentTargetLine != nil) || (model.currentSourceLine != nil)
-                        let isCurrent = !dualLineActive && (index == model.segments.count - 1)
-                        Text(entry.text)
-                            .font(.system(size: isCurrent ? 17 : 13, weight: .regular))
-                            .lineSpacing(1)
-                            .foregroundStyle(isCurrent ? Color.primary : Color.secondary)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    ForEach(model.segments) { entry in
+                        segmentRow(entry)
                     }
-                    Color.clear
-                        .frame(height: 1)
-                        .id("liveCaptionScrollAnchor")
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .onChange(of: model.segments.count) { _, _ in
-                // Only re-anchor on segment count change — not on per-delta
-                // edits of currentTargetLine — so the live deltas don't
-                // re-scroll 60+ times per second.
-                withAnimation(.easeOut(duration: 0.18)) {
-                    proxy.scrollTo("liveCaptionScrollAnchor", anchor: .bottom)
-                }
+                .padding(.horizontal, 18)
+                .padding(.top, LiveCaptionTopBlur.height + 10)
+                .padding(.bottom, 10)
+                // A short transcript cannot be scrolled downward: its
+                // document is smaller than the viewport. Give it the full
+                // viewport height and align the actual rows at the bottom.
+                .frame(maxWidth: .infinity, minHeight: viewport.size.height, alignment: .bottomLeading)
+                .background(LiveCaptionScrollPositionObserver(controller: scrollFollow))
             }
         }
+        .onChange(of: model.segments) { previousSegments, currentSegments in
+            if currentSegments.isEmpty, !previousSegments.isEmpty {
+                scrollFollow.resetForNewSession()
+                return
+            }
+            // Translation and error rows can make an existing history entry
+            // taller. The controller only scrolls while following the live
+            // edge, so a reader inspecting older captions keeps their place.
+            guard currentSegments != previousSegments else { return }
+            scrollFollow.scheduleScrollToBottomAfterLayout()
+        }
+    }
+
+    @ViewBuilder
+    private func segmentRow(_ entry: LiveCaptionViewModel.SegmentEntry) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if showsTimestamps {
+                Text(Self.timestampFormatter.string(from: entry.timestamp))
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(entry.text)
+                    .font(.system(size: entry.hasTranslatedText ? 14 : 17, weight: .regular))
+                    .lineSpacing(1)
+                    .foregroundStyle(entry.hasTranslatedText ? .secondary : .primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let translatedText = entry.translatedText,
+                   !translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(translatedText)
+                        .font(.system(size: 17, weight: .regular))
+                        .lineSpacing(1)
+                        .foregroundStyle(.primary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if let translationError = entry.translationError,
+                   !translationError.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(translationError)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Pinned dual-line region below the scrollback: source line on top
@@ -314,6 +616,195 @@ struct LiveCaptionView: View {
                 .lineSpacing(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
+        }
+    }
+}
+
+/// Owns one concrete AppKit scroll view. Only the three native live-scroll
+/// notifications can turn off live-follow; document/window layout changes and
+/// our own `scroll(to:)` calls only keep an already-following reader at the
+/// bottom.
+final class LiveCaptionScrollFollowController: ObservableObject {
+    @Published private(set) var followsLiveEdge = true
+
+    private weak var scrollView: NSScrollView?
+    private var notificationObservers: [NSObjectProtocol] = []
+    private var scrollAfterLayoutIsScheduled = false
+    private var userIsLiveScrolling = false
+
+    deinit {
+        stopObserving()
+    }
+
+    func attach(to newScrollView: NSScrollView) {
+        guard scrollView !== newScrollView else { return }
+        stopObserving()
+        scrollView = newScrollView
+
+        let center = NotificationCenter.default
+        notificationObservers = [
+            center.addObserver(
+                forName: NSScrollView.willStartLiveScrollNotification,
+                object: newScrollView,
+                queue: .main
+            ) { [weak self] _ in
+                self?.willStartUserScroll()
+            },
+            center.addObserver(
+                forName: NSScrollView.didLiveScrollNotification,
+                object: newScrollView,
+                queue: .main
+            ) { [weak self] _ in
+                self?.updateFollowStateFromUserScroll()
+            },
+            center.addObserver(
+                forName: NSScrollView.didEndLiveScrollNotification,
+                object: newScrollView,
+                queue: .main
+            ) { [weak self] _ in
+                self?.endUserScroll()
+            },
+        ]
+
+        // Window frame interpolation changes this clip frame. Keep a reader
+        // who is already following pinned to the bottom without interpreting
+        // that resize as a user scroll.
+        newScrollView.contentView.postsFrameChangedNotifications = true
+        notificationObservers.append(
+            center.addObserver(
+                forName: NSView.frameDidChangeNotification,
+                object: newScrollView.contentView,
+                queue: .main
+            ) { [weak self] _ in
+                self?.scheduleScrollToBottomAfterLayout()
+            }
+        )
+        if let documentView = newScrollView.documentView {
+            documentView.postsFrameChangedNotifications = true
+            notificationObservers.append(
+                center.addObserver(
+                    forName: NSView.frameDidChangeNotification,
+                    object: documentView,
+                    queue: .main
+                ) { [weak self] _ in
+                    self?.scheduleScrollToBottomAfterLayout()
+                }
+            )
+        }
+        scheduleScrollToBottomAfterLayout()
+    }
+
+    func resetForNewSession() {
+        userIsLiveScrolling = false
+        followsLiveEdge = true
+        scheduleScrollToBottomAfterLayout()
+    }
+
+    /// Coalesces model additions and clip-frame changes until SwiftUI has laid
+    /// out the document view, then moves the actual `NSClipView` once.
+    func scheduleScrollToBottomAfterLayout() {
+        guard followsLiveEdge, !userIsLiveScrolling, !scrollAfterLayoutIsScheduled else { return }
+        scrollAfterLayoutIsScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.scrollAfterLayoutIsScheduled = false
+            self.scrollToBottomIfFollowing()
+        }
+    }
+
+    private func willStartUserScroll() {
+        userIsLiveScrolling = true
+        scrollAfterLayoutIsScheduled = false
+        // Suspend immediately so an arriving segment cannot fight a drag
+        // between the system's will-start and did-scroll notifications.
+        followsLiveEdge = false
+    }
+
+    private func updateFollowStateFromUserScroll() {
+        guard userIsLiveScrolling else { return }
+        followsLiveEdge = isAtBottom
+    }
+
+    private func endUserScroll() {
+        guard userIsLiveScrolling else { return }
+        followsLiveEdge = isAtBottom
+        userIsLiveScrolling = false
+    }
+
+    private func scrollToBottomIfFollowing() {
+        guard followsLiveEdge,
+              !userIsLiveScrolling,
+              let scrollView,
+              let documentView = scrollView.documentView else { return }
+
+        scrollView.layoutSubtreeIfNeeded()
+        documentView.layoutSubtreeIfNeeded()
+        let clipView = scrollView.contentView
+        let targetY: CGFloat
+        if documentView.isFlipped {
+            targetY = max(documentView.bounds.minY, documentView.bounds.maxY - clipView.bounds.height)
+        } else {
+            targetY = documentView.bounds.minY
+        }
+        clipView.scroll(to: NSPoint(x: clipView.bounds.minX, y: targetY))
+        scrollView.reflectScrolledClipView(clipView)
+    }
+
+    private var isAtBottom: Bool {
+        guard let scrollView, let documentView = scrollView.documentView else { return true }
+        let clipBounds = scrollView.contentView.bounds
+        if documentView.isFlipped {
+            return clipBounds.maxY >= documentView.bounds.maxY - 8
+        }
+        return clipBounds.minY <= documentView.bounds.minY + 8
+    }
+
+    private func stopObserving() {
+        let center = NotificationCenter.default
+        notificationObservers.forEach(center.removeObserver)
+        notificationObservers.removeAll()
+        scrollView = nil
+        scrollAfterLayoutIsScheduled = false
+    }
+}
+
+private struct LiveCaptionScrollPositionObserver: NSViewRepresentable {
+    let controller: LiveCaptionScrollFollowController
+
+    func makeNSView(context: Context) -> ProbeView {
+        ProbeView(controller: controller)
+    }
+
+    func updateNSView(_ nsView: ProbeView, context: Context) {
+        nsView.controller = controller
+        nsView.attachIfPossible()
+    }
+
+    final class ProbeView: NSView {
+        var controller: LiveCaptionScrollFollowController
+
+        init(controller: LiveCaptionScrollFollowController) {
+            self.controller = controller
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) is unsupported")
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            attachIfPossible()
+        }
+
+        override func viewDidMoveToSuperview() {
+            super.viewDidMoveToSuperview()
+            attachIfPossible()
+        }
+
+        func attachIfPossible() {
+            guard let scrollView = enclosingScrollView else { return }
+            controller.attach(to: scrollView)
         }
     }
 }

@@ -20,5 +20,39 @@ struct SettingsFeatureGroup<Content: View>: View {
         } label: {
             Label(title, systemImage: systemImage)
         }
+        .disclosureGroupStyle(SettingsFeatureGroupStyle())
+    }
+}
+
+private struct SettingsFeatureGroupStyle: DisclosureGroupStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    configuration.isExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(configuration.isExpanded ? 90 : 0))
+                        .accessibilityHidden(true)
+                    configuration.label
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(Text(configuration.isExpanded
+                ? L10n.string("settings.feature_group.expanded", fallback: "Expanded")
+                : L10n.string("settings.feature_group.collapsed", fallback: "Collapsed")))
+
+            if configuration.isExpanded {
+                configuration.content
+                    .padding(.leading, 20)
+            }
+        }
     }
 }

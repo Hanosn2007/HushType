@@ -14,6 +14,10 @@ enum SettingsSidebarScrollTestConfiguration {
 }
 
 struct SettingsDrawnSidebar: View {
+    @ObservedObject private var order = SettingsSidebarOrder.shared
+    @State private var editingOrder = false
+    @State private var dragging: HushTypeSettingsSection?
+    @State private var rowFrames: [HushTypeSettingsSection: CGRect] = [:]
     @AppStorage(SettingsOfficialSidebarConfiguration.styleKey) private var officialStyle =
         SettingsOfficialSidebarConfiguration.defaultStyle.rawValue
     @AppStorage(SettingsOfficialSidebarConfiguration.barHeightKey) private var officialBarHeight =
@@ -28,16 +32,23 @@ struct SettingsDrawnSidebar: View {
     @State private var showsScrollTestItems = SettingsSidebarScrollTestConfiguration.isEnabled()
 
     var body: some View {
+        Group {
         if #available(macOS 26.0, *), SettingsScrollBlurConfiguration.defaultIsPreview {
             officialEffectSidebar
         } else {
             legacySidebar
         }
+        }
+        .background(SidebarEditingOutsideClick(enabled: editingOrder, finish: finishOrdering))
+        .onDisappear { if editingOrder { finishOrdering() } }
     }
 
     private var legacySidebar: some View {
         ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+            sidebarHeading
             sidebarContent
+            }
             .padding(.top, topInset + 8)
             .padding(.horizontal, 8).padding(.bottom, 8)
         }
@@ -61,12 +72,7 @@ struct SettingsDrawnSidebar: View {
         .safeAreaBar(edge: .top, spacing: configuration.barSpacing) {
             // A Color.clear-only bar did not create the soft edge in the accepted
             // Preview demo, so retain fixed visible content here.
-            HStack {
-                Text("HushType")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-            }
+            sidebarHeading
             .padding(.horizontal, 12)
             .frame(height: configuration.barHeight, alignment: .bottom)
         }
@@ -75,8 +81,29 @@ struct SettingsDrawnSidebar: View {
 
     private var sidebarContent: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(sections) { section in
-                Label(section.title, systemImage: section.symbolName)
+            ForEach(orderedSections) { section in
+                HStack(spacing: 8) {
+                    SidebarReorderIcon(name: section.symbolName, editing: editingOrder,
+                        tint: selection == section && activeState != .inactive ? .white : (activeState == .inactive ? .secondaryLabelColor : .labelColor))
+                        .frame(width: 20, height: 20)
+                    Text(section.title)
+                    Spacer(minLength: 0)
+                    if editingOrder {
+                        Image(systemName: "line.3.horizontal")
+                            .foregroundStyle(.secondary)
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
+                            .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .named("sidebarOrder"))
+                                .onChanged { value in
+                                    guard editingOrder else { return }
+                                    dragging = section
+                                    if let target = orderedSections.first(where: { rowFrames[$0]?.contains(value.location) == true }), target != section {
+                                        withAnimation(.easeInOut(duration: 0.18)) { order.move(section, to: target) }
+                                    }
+                                }.onEnded { _ in dragging = nil })
+                            .help(L10n.string("settings.sidebar.reorder", fallback: "Drag to reorder"))
+                    }
+                }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 10).padding(.vertical, 8)
                     .foregroundStyle(selection == section && activeState != .inactive
@@ -85,7 +112,11 @@ struct SettingsDrawnSidebar: View {
                         ? (activeState == .inactive ? Color.gray.opacity(0.25) : Color.accentColor)
                         : .clear, in: RoundedRectangle(cornerRadius: 7))
                     .contentShape(Rectangle())
-                    .onTapGesture { selection = section; focused = true }
+                    .simultaneousGesture(LongPressGesture(minimumDuration: 0.45).onEnded { _ in editingOrder = true })
+                    .onTapGesture { if !editingOrder { selection = section; focused = true } }
+                    .background { if editingOrder { GeometryReader { geometry in
+                        Color.clear.preference(key: SidebarOrderFramesKey.self, value: [section: geometry.frame(in: .named("sidebarOrder"))])
+                    } } }
                     .accessibilityAddTraits(.isButton)
                     .accessibilityAddTraits(selection == section ? .isSelected : [])
                     .accessibilityAction { selection = section }
@@ -107,6 +138,22 @@ struct SettingsDrawnSidebar: View {
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
                 }
+            }
+        }
+        .coordinateSpace(name: "sidebarOrder")
+        .onPreferenceChange(SidebarOrderFramesKey.self) { if editingOrder { rowFrames = $0 } }
+    }
+
+    private var orderedSections: [HushTypeSettingsSection] { order.items.filter(sections.contains) }
+    private func finishOrdering() { editingOrder = false; dragging = nil; order.save() }
+    private var sidebarHeading: some View {
+        HStack {
+            Text("HushType").font(.caption).foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+            if editingOrder {
+                Button(action: finishOrdering) { Image(systemName: "checkmark").font(.caption.weight(.semibold)) }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L10n.string("settings.sidebar.reorder_done", fallback: "Finish arranging sidebar"))
             }
         }
     }
@@ -151,10 +198,10 @@ struct SettingsDrawnSidebar: View {
         }
     }
     private func move(_ direction: Int) -> KeyPress.Result {
-        guard let index = sections.firstIndex(of: selection) else { return .ignored }
-        let next = min(sections.count - 1, max(0, index + direction))
-        guard sections.indices.contains(next) else { return .ignored }
-        selection = sections[next]
+        guard !editingOrder, let index = orderedSections.firstIndex(of: selection) else { return .ignored }
+        let next = min(orderedSections.count - 1, max(0, index + direction))
+        guard orderedSections.indices.contains(next) else { return .ignored }
+        selection = orderedSections[next]
         return .handled
     }
 }

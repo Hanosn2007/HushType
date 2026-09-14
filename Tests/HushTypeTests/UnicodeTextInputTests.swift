@@ -1,9 +1,32 @@
 import AppKit
+import ApplicationServices
 import XCTest
 @testable import HushType
 
 @MainActor
 final class UnicodeTextInputTests: XCTestCase {
+    func testOwnApplicationAXFocusAcceptsUnicodeAndStillStopsOnFocusLoss() async {
+        var element: AXUIElement? = AXUIElementCreateApplication(ProcessInfo.processInfo.processIdentifier)
+        let validator = UnicodeTextInput.captureFocusValidator(focusedElementProvider: { element })
+        var dispatched: [UniChar] = []
+        let failure = await TextInserter.insert("历史搜索", configuration: .init(method: .unicode),
+            hasPostEventAccess: { true }, postUnicode: { dispatched += $0; return true },
+            isUnicodeTargetFocused: validator)
+        XCTAssertNil(failure)
+        XCTAssertEqual(String(decoding: dispatched, as: UTF16.self), "历史搜索")
+        element = nil
+        XCTAssertFalse(validator())
+    }
+
+    func testOwnApplicationWithoutAXUsesTheSameFallbackAsOtherApps() {
+        var current: NSRunningApplication? = .current
+        let validator = UnicodeTextInput.captureFocusValidator(
+            focusedElementProvider: { nil }, applicationProvider: { current })
+        XCTAssertTrue(validator())
+        current = nil
+        XCTAssertFalse(validator())
+    }
+
     func testDefaultsAndPreferencesAreNormalized() throws {
         let suite = "HushType.input-config.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

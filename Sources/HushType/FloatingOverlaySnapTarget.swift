@@ -38,7 +38,12 @@ final class FloatingOverlaySnapTargetWindow: NSPanel {
     @objc(_hasActiveAppearance)
     private func hasActiveMaterialAppearance() -> Bool { true }
 
-    func show(frame: NSRect, opacity: CGFloat) {
+    func show(frame: NSRect, opacity: CGFloat, enabled: Bool? = nil, maximumOpacity: CGFloat? = nil) {
+        guard enabled ?? FloatingOverlayDragPreferences.guideEnabled else {
+            hide()
+            return
+        }
+        let opacity = opacity * (maximumOpacity ?? FloatingOverlayDragPreferences.guideOpacity)
         if self.frame != frame {
             setFrame(frame, display: true)
         }

@@ -4,70 +4,42 @@ import os
 private let log = Logger(subsystem: "com.felix.hushtype", category: "dictionary")
 
 /// User-editable customized dictionary applied as the final post-processing
-/// step in the transcription pipeline. Pipeline order:
-///
-///     Qwen3-ASR → OpenCC s2twp → ITN → DictionaryReplacer → TextInserter
-///
-/// The dictionary is a plain text file at `~/Library/Application Support/HushType/dictionary.txt`,
-/// one rule per line in `source -> target` format. Lines starting with `#` are
-/// comments. The file is hot-reloaded on every transcription if its modification
-/// time changed (single stat() call — negligible cost).
-///
-/// Separator: `->` with optional surrounding whitespace. Unicode arrow `→` also
-/// accepted for users who paste it. The separator is intentionally visible
-/// (unlike tab) so the format is self-documenting in any text editor.
+/// step in the transcription pipeline. The on-disk format is one `source ->
+/// target` rule per line; comments and unknown lines are ignored by runtime
+/// replacement and preserved by the native editor.
 ///
 /// Matching semantics:
-///   - Longest match first (entries sorted by source length descending)
-///   - All non-overlapping occurrences replaced
-///   - Single pass — replacements do NOT cascade (rule A producing text that
-///     would match rule B will NOT trigger rule B)
-///   - **Case-insensitive on the source side, literal on the target side.**
-///     The ASR model's output case is unpredictable (sometimes "cloud code",
-///     sometimes "Cloud Code", sometimes "CLOUD CODE"), so source matching
-///     ignores case. The target string is inserted verbatim, so "Claude Code"
-///     always comes out exactly as "Claude Code". This uses Foundation's
-///     `caseInsensitiveCompare` which handles Unicode case folding correctly.
-///   - No regex, no wildcards — plain string matching only
-///
-/// Behavior on missing/empty/malformed file:
-///   - File missing → returns input unchanged, no entries loaded
-///   - Empty file (only comments/blank lines) → same as missing
-///   - Malformed line (no tab, empty source) → skipped with log warning
+/// - ASCII `->` is preferred over Unicode `→` when a legacy line has both.
+/// - Sources match case-insensitively and targets are emitted literally.
+/// - The longest source wins. Equal-length sources retain their file order.
+/// - A single left-to-right pass prevents replacement chains.
+/// - An empty target removes the matched source.
 enum DictionaryReplacer {
 
     private struct Entry {
         let source: String
         let target: String
+        let fileOrder: Int
     }
 
     private static let lock = NSLock()
 
-    /// Cached entries, sorted by source length descending (longest first).
-    /// Empty when no file or all lines are comments/malformed.
+    /// Cached, already ordered entries from the current on-disk file.
     private static var entries: [Entry] = []
-
-    /// Modification date of the file at last load. Used to detect external edits.
     private static var lastModified: Date?
-
-    /// Whether the file existed at last check. Tracked separately from
-    /// `lastModified` to detect file deletion.
-    private static var fileExisted: Bool = false
+    private static var fileExisted = false
 
     // MARK: - Public API
 
-    /// Reload entries from disk if the file has changed since last load.
-    /// Cheap to call before every transcription — does a single stat() and
-    /// returns immediately if mtime is unchanged.
+    /// Reload entries from disk if the file changed. This stays cheap enough
+    /// for the transcription path: it starts with a single `stat` lookup.
     static func reloadIfNeeded() {
         lock.lock()
         defer { lock.unlock() }
 
         let url = AppConfig.dictionaryFileURL
-        let fm = FileManager.default
-
-        guard fm.fileExists(atPath: url.path) else {
-            // File deleted since last check — clear entries
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: url.path) else {
             if fileExisted {
                 entries = []
                 lastModified = nil
@@ -77,26 +49,13 @@ enum DictionaryReplacer {
             return
         }
 
-        let attrs = try? fm.attributesOfItem(atPath: url.path)
-        let mtime = attrs?[.modificationDate] as? Date
-
-        // Skip reload if mtime is unchanged AND we already loaded the file
-        if let mtime, mtime == lastModified, fileExisted {
-            return
-        }
-
-        // (Re)load
-        load(from: url, mtime: mtime)
+        let attributes = try? fileManager.attributesOfItem(atPath: url.path)
+        let modificationDate = attributes?[.modificationDate] as? Date
+        guard !fileExisted || modificationDate != lastModified else { return }
+        load(from: url, modificationDate: modificationDate)
     }
 
-    /// Apply all replacements to the input. Returns the input unchanged if
-    /// no entries are loaded. Safe to call from any thread.
-    ///
-    /// Single-pass left-to-right scan: at each position, try to match the
-    /// longest entry that fits. If a match is found, emit the target and skip
-    /// past the source (so the inserted target text is NOT re-scanned —
-    /// prevents cascading rules and infinite loops). Otherwise emit one
-    /// character and advance.
+    /// Applies the currently saved dictionary. Safe from any thread.
     static func apply(_ text: String) -> String {
         reloadIfNeeded()
 
@@ -104,79 +63,58 @@ enum DictionaryReplacer {
         let currentEntries = entries
         lock.unlock()
 
-        guard !currentEntries.isEmpty else { return text }
-
-        var result = ""
-        result.reserveCapacity(text.count)
-
-        var index = text.startIndex
-        let end = text.endIndex
-        var anyReplaced = false
-
-        outer: while index < end {
-            // Try each entry (already sorted longest source first)
-            for entry in currentEntries {
-                let sourceCount = entry.source.count
-
-                // Cheap length guard before substring comparison
-                guard let sourceEndIndex = text.index(index, offsetBy: sourceCount, limitedBy: end) else {
-                    continue
-                }
-
-                // Case-insensitive comparison so the ASR model's unpredictable
-                // casing ("cloud code" vs "Cloud Code" vs "CLOUD CODE") still
-                // matches the user's source entry. Target is inserted literally.
-                let candidate = text[index..<sourceEndIndex]
-                if candidate.caseInsensitiveCompare(entry.source) == .orderedSame {
-                    result.append(entry.target)
-                    index = sourceEndIndex
-                    anyReplaced = true
-                    continue outer
-                }
-            }
-
-            // No rule matched at this position — emit one character
-            result.append(text[index])
-            index = text.index(after: index)
+        let output = apply(text, entries: currentEntries)
+        if output != text {
+            log.debug("Dictionary applied: \(text) → \(output)")
         }
-
-        if anyReplaced {
-            log.debug("Dictionary applied: \(text) → \(result)")
-        }
-        return result
+        return output
     }
 
-    /// Number of currently loaded entries. Used by the menu subtitle.
+    /// Applies an in-memory rule set with exactly the same parser-independent
+    /// matching path as saved transcription. Used by the editor preview so a
+    /// draft never needs to touch the user's real dictionary file.
+    static func apply(_ text: String, rules: [DictionaryRule]) -> String {
+        apply(text, entries: orderedEntries(from: rules))
+    }
+
+    /// Number of valid, currently saved entries.
     static var entryCount: Int {
         reloadIfNeeded()
         lock.lock()
-        let currentEntries = entries
+        let count = entries.count
         lock.unlock()
-        return currentEntries.count
+        return count
     }
 
-    /// Whether the dictionary file currently exists on disk.
-    /// Used by the menu to show "No dictionary file" vs "{N} entries loaded".
     static var fileExists: Bool {
         FileManager.default.fileExists(atPath: AppConfig.dictionaryFileURL.path)
     }
 
-    /// Create the dictionary file with a friendly template at the standard
-    /// location. Creates parent directories as needed. Idempotent: if the
-    /// file already exists, returns false without overwriting.
+    /// Allows a successful native-editor save to be visible to the next
+    /// dictation even on a filesystem with coarse modification timestamps.
+    static func invalidateCache() {
+        lock.lock()
+        entries = []
+        lastModified = nil
+        fileExisted = false
+        lock.unlock()
+    }
+
+    /// Create the historical starter file when it is explicitly requested by
+    /// a legacy call site. The native settings editor itself starts with an
+    /// empty draft and only creates a file after the user saves.
     @discardableResult
     static func createTemplateIfMissing() -> Bool {
         let url = AppConfig.dictionaryFileURL
-        let fm = FileManager.default
+        let fileManager = FileManager.default
 
-        if fm.fileExists(atPath: url.path) {
+        if fileManager.fileExists(atPath: url.path) {
             return false
         }
 
-        // Ensure parent directory exists
-        let dir = url.deletingLastPathComponent()
+        let directory = url.deletingLastPathComponent()
         do {
-            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         } catch {
             log.error("Failed to create dictionary directory: \(error.localizedDescription, privacy: .public)")
             return false
@@ -190,6 +128,7 @@ enum DictionaryReplacer {
 
         do {
             try template.write(to: url, atomically: true, encoding: .utf8)
+            invalidateCache()
             log.info("Created dictionary template at \(url.path, privacy: .public)")
             return true
         } catch {
@@ -200,7 +139,7 @@ enum DictionaryReplacer {
 
     // MARK: - Private
 
-    private static func load(from url: URL, mtime: Date?) {
+    private static func load(from url: URL, modificationDate: Date?) {
         guard let contents = try? String(contentsOf: url, encoding: .utf8) else {
             log.warning("Failed to read dictionary file at \(url.path, privacy: .public)")
             entries = []
@@ -209,48 +148,62 @@ enum DictionaryReplacer {
             return
         }
 
-        var loaded: [Entry] = []
-        for (lineNumber, rawLine) in contents.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
-            let line = String(rawLine).trimmingCharacters(in: .whitespaces)
-
-            // Skip blank lines and comments
-            if line.isEmpty || line.hasPrefix("#") {
-                continue
-            }
-
-            // Find separator: prefer ASCII "->", fall back to Unicode "→"
-            let separatorRange: Range<String.Index>?
-            if let asciiRange = line.range(of: "->") {
-                separatorRange = asciiRange
-            } else if let unicodeRange = line.range(of: "→") {
-                separatorRange = unicodeRange
-            } else {
-                separatorRange = nil
-            }
-
-            guard let range = separatorRange else {
-                log.warning("Dictionary line \(lineNumber + 1) has no separator (expected ' -> '): \(line, privacy: .public)")
-                continue
-            }
-
-            let source = String(line[..<range.lowerBound]).trimmingCharacters(in: .whitespaces)
-            let target = String(line[range.upperBound...]).trimmingCharacters(in: .whitespaces)
-
-            if source.isEmpty {
-                log.warning("Dictionary line \(lineNumber + 1) has empty source")
-                continue
-            }
-
-            loaded.append(Entry(source: source, target: target))
-        }
-
-        // Sort by source length descending — longest match first prevents
-        // partial replacement when one entry is a prefix of another
-        loaded.sort { $0.source.count > $1.source.count }
-
-        entries = loaded
-        lastModified = mtime
+        entries = orderedEntries(from: DictionaryDocument(contents: contents).rules)
+        lastModified = modificationDate
         fileExisted = true
-        log.info("Loaded \(loaded.count) dictionary entries")
+        log.info("Loaded \(entries.count) dictionary entries")
+    }
+
+    private static func orderedEntries(from rules: [DictionaryRule]) -> [Entry] {
+        rules.enumerated()
+            .compactMap { offset, rule in
+                guard !rule.source.isEmpty else { return nil }
+                return Entry(source: rule.source, target: rule.target, fileOrder: offset)
+            }
+            .sorted { left, right in
+                if left.source.count != right.source.count {
+                    return left.source.count > right.source.count
+                }
+                return left.fileOrder < right.fileOrder
+            }
+    }
+
+    private static func apply(_ text: String, entries: [Entry]) -> String {
+        guard !entries.isEmpty else { return text }
+
+        var result = ""
+        result.reserveCapacity(text.count)
+
+        var index = text.startIndex
+        let end = text.endIndex
+        while index < end {
+            var didMatch = false
+
+            for entry in entries {
+                guard let sourceEnd = text.index(
+                    index,
+                    offsetBy: entry.source.count,
+                    limitedBy: end
+                ) else {
+                    continue
+                }
+
+                let candidate = text[index..<sourceEnd]
+                guard candidate.caseInsensitiveCompare(entry.source) == .orderedSame else {
+                    continue
+                }
+
+                result.append(entry.target)
+                index = sourceEnd
+                didMatch = true
+                break
+            }
+
+            if !didMatch {
+                result.append(text[index])
+                index = text.index(after: index)
+            }
+        }
+        return result
     }
 }

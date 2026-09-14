@@ -20,6 +20,13 @@ enum AudioSourceKind: Equatable, Sendable {
     case system(bundleID: String)
 }
 
+struct LiveCaptionSessionSummary: Equatable, Sendable {
+    let text: String
+    let startedAt: Date
+    let endedAt: Date
+    let sourceLabel: String?
+}
+
 /// Top-level coordinator for the live caption pipeline.
 ///
 /// Lifecycle: constructed by `AppDelegate` at launch with the shared local
@@ -36,8 +43,9 @@ final class LiveCaptionManager {
     // MARK: - Wiring
 
     private let localEngine: Qwen3TranscriptionEngine
-    private weak var asrModel: Qwen3ASRModel?
-    private let captureService: AudioCaptureService
+    private var captureService: AudioCaptureService
+    private var profileSnapshot: ProcessingProfileSnapshot?
+    var activeProfile: ProcessingProfile? { profileSnapshot?.profile }
 
     /// Called whenever the active state flips. AppDelegate forwards to
     /// `statusBarController.setLiveCaptionState(mode:source:)` so the submenu
@@ -47,22 +55,36 @@ final class LiveCaptionManager {
     /// local "Live Caption" vs cloud "Live Translated Caption" — which share
     /// this manager but have separate menu submenus.
     var onStateChanged: ((AppConfig.CaptionMode?, AudioSourceKind?) -> Void)?
+    var onSessionFinished: ((LiveCaptionSessionSummary) -> Void)?
 
     // MARK: - State
 
     private(set) var isActive: Bool = false
+    private(set) var isStarting: Bool = false
+    private(set) var isFinishing: Bool = false
+    /// Shared microphone/model ownership includes startup and asynchronous drain.
+    var isBusy: Bool { isStarting || isActive || stopTeardownTask != nil }
     private(set) var isPanelVisible: Bool = false
     private(set) var currentSource: AudioSourceKind?
 
     private var vadModel: SileroVADModel?
     private var backend: (any TranscriptionBackend)?
     private var audioSource: (any AudioSource)?
+    private var audioIngress: LiveCaptionAudioIngress?
     private var panel: LiveCaptionWindow?
     private var viewModel: LiveCaptionViewModel?
+    private var sessionStartedAt: Date?
+    private var sessionSegmentOffset = 0
+    private var sessionSourceLabel: String?
+    private var translationQueue: LiveCaptionTranslationQueue?
 
     private var backendEventTask: Task<Void, Never>?
+    private var startupTask: Task<Void, Error>?
     private var stopTeardownTask: Task<Void, Never>?
+    private var teardownGeneration: UInt64 = 0
+    private var sessionGeneration: UInt64 = 0
     private var forceSplitTimer: DispatchSourceTimer?
+    private var forceSplitTask: Task<Void, Never>?
     private var flashHideWork: DispatchWorkItem?
 
     /// 1 Hz cost-ticker / auto-stop / daily-cap watcher. Active only when
@@ -90,12 +112,9 @@ final class LiveCaptionManager {
     private var liveTargetRawDirty: Bool = false
 
     /// Strictly-ordered post-processing of segments: OpenCC → FillerFilter →
-    /// DictionaryReplacer for local; OpenCC-only for cloud. Static caches
-    /// inside `DictionaryReplacer` have no lock today, so we serialize.
+    /// DictionaryReplacer for local; OpenCC-only for cloud. This queue keeps
+    /// committed caption segments in order through asynchronous processing.
     private let postProcessingQueue = DispatchQueue(label: "hushtype.liveCaption.postProcessing")
-
-    /// Rolling segments buffer cap — §9.b "last 50 segments".
-    private static let segmentBufferCap: Int = 50
 
     /// Tuning knobs loaded from `~/Library/Application Support/HushType/live_caption.json`
     /// at every `start()` so the user can edit and toggle to apply.
@@ -103,7 +122,6 @@ final class LiveCaptionManager {
 
     init(localEngine: Qwen3TranscriptionEngine, captureService: AudioCaptureService) {
         self.localEngine = localEngine
-        self.asrModel = localEngine.loadedModel
         self.captureService = captureService
     }
 
@@ -117,9 +135,48 @@ final class LiveCaptionManager {
 
     /// Turn live caption on with the requested audio source. Idempotent.
     /// Throws if permission is denied or the source fails to start.
-    func start(source requestedSource: AudioSourceKind) async throws {
-        guard !isActive else { return }
+    func start(source requestedSource: AudioSourceKind, profile: ProcessingProfileSnapshot? = nil) async throws {
+        guard !isActive, !isStarting, !isFinishing else { return }
+        sessionGeneration &+= 1
+        let generation = sessionGeneration
+        isStarting = true
+        let previousTeardown = stopTeardownTask
+        let task = Task { @MainActor in
+            await previousTeardown?.value
+            try self.checkSession(generation)
+            self.profileSnapshot = profile
+            if let profile { self.captureService = AudioCaptureService.shared(for: profile.profile.input) }
+            try await self.startSession(source: requestedSource, generation: generation)
+        }
+        startupTask = task
+        do {
+            try await task.value
+            guard sessionGeneration == generation else { return }
+            startupTask = nil
+            isStarting = false
+        } catch {
+            if sessionGeneration == generation {
+                startupTask = nil
+                stop()
+            }
+            throw error
+        }
+    }
+
+    private func checkSession(_ generation: UInt64) throws {
+        try Task.checkCancellation()
+        guard sessionGeneration == generation else { throw CancellationError() }
+    }
+
+    private func startSession(source requestedSource: AudioSourceKind, generation: UInt64) async throws {
         let engine = AppConfig.shared.liveCaptionEngine
+        if engine == .local, let profileSnapshot, localEngine.loadedModelID != profileSnapshot.profile.modelID {
+            throw ProfileError.modelBusy
+        }
+        currentSource = requestedSource
+        AppConfig.shared.liveCaptionEnabled = true
+        AppConfig.shared.liveCaptionUsesMicSource = requestedSource == .mic
+        onStateChanged?(engine == .local ? .local : .translated, requestedSource)
         log.info("LiveCaption start requested (source=\(String(describing: requestedSource), privacy: .public), engine=\(engine.rawValue, privacy: .public))")
 
         // Reload tuning at every start so editing the JSON file and toggling
@@ -128,7 +185,6 @@ final class LiveCaptionManager {
         log.info("Tuning: maxTokens=\(self.tuning.maxTokens, privacy: .public) cacheLimitMB=\(self.tuning.mlxCacheLimitMB, privacy: .public) vadOnset=\(self.tuning.vadOnset, privacy: .public) backpressure=\(self.tuning.backpressureMaxPending, privacy: .public)")
 
         if tuning.resetPanelOnNextStart {
-            UserDefaults.standard.removeObject(forKey: "hushtype.liveCaption.panelFrame")
             panel?.close()
             panel = nil
             LiveCaptionTuning.clearResetFlag()
@@ -153,6 +209,7 @@ final class LiveCaptionManager {
                         cont.resume(returning: granted)
                     }
                 }
+                try checkSession(generation)
                 if !granted {
                     showMicDeniedAlert()
                     throw NSError(domain: "LiveCaption", code: 10,
@@ -196,7 +253,15 @@ final class LiveCaptionManager {
         // the VAD model is loading (local) or the WS handshake fires (cloud).
         let vm = viewModel ?? LiveCaptionViewModel()
         viewModel = vm
-        vm.segments.removeAll()
+        if !OverviewPreferences.keepsCaptionText { vm.segments.removeAll() }
+        sessionSegmentOffset = vm.segments.count
+        sessionStartedAt = Date()
+        switch requestedSource {
+        case .mic:
+            sessionSourceLabel = L10n.string("settings.captions.status.microphone", fallback: "Microphone")
+        case .system(let bundleID):
+            sessionSourceLabel = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first?.localizedName ?? bundleID
+        }
         vm.currentSourceLine = nil
         vm.currentTargetLine = nil
         vm.cloudCostChip = nil
@@ -212,13 +277,19 @@ final class LiveCaptionManager {
                 viewModel: vm,
                 tuning: tuning,
                 onStop: { [weak self] in
-                    Task { @MainActor in self?.stop() }
+                    Task { @MainActor in
+                        guard let self else { return }
+                        if self.isActive || self.isStarting { self.finish() }
+                        else { self.hidePanel() }
+                    }
                 }
             )
         }
         if !isPanelVisible {
             panel?.show()
             isPanelVisible = true
+        } else {
+            vm.resetSizingForNewSession()
         }
 
         // VAD model is local-engine-only. The cloud endpoint owns its own
@@ -226,9 +297,8 @@ final class LiveCaptionManager {
         if engine == .local {
             // The dictation engine is the single owner/loader of Qwen. A
             // cloud-dictation launch intentionally arrives here with no
-            // model; local captions load it lazily and derive a weak handle.
-            asrModel = localEngine.loadedModel
-            if asrModel == nil {
+            // model; local captions load it lazily through the same owner.
+            if !localEngine.isLoaded {
                 vm.headerState = .loadingModel(0)
                 do {
                     try await localEngine.load { [weak self] progress, _ in
@@ -236,18 +306,17 @@ final class LiveCaptionManager {
                         // @Published write must explicitly return to main.
                         DispatchQueue.main.async { [weak self] in
                             guard let self,
+                                  self.sessionGeneration == generation,
                                   AppConfig.shared.liveCaptionEngine == .local,
                                   self.isPanelVisible else { return }
                             self.viewModel?.headerState = .loadingModel(progress)
                         }
                     }
-                    asrModel = localEngine.loadedModel
+                    try checkSession(generation)
                 } catch is CancellationError {
-                    asrModel = nil
-                    vm.headerState = .live
-                    hidePanel()
-                    return
+                    throw CancellationError()
                 } catch {
+                    try checkSession(generation)
                     log.error("Qwen model load failed: \(error.localizedDescription, privacy: .public)")
                     showASRLoadFailedAlert(error)
                     hidePanel()
@@ -258,8 +327,11 @@ final class LiveCaptionManager {
             if vadModel == nil {
                 vm.headerState = .loadingVAD
                 do {
-                    vadModel = try await SileroVADModel.fromPretrained(engine: .mlx)
+                    let loadedVAD = try await SileroVADModel.fromPretrained(engine: .mlx)
+                    try checkSession(generation)
+                    vadModel = loadedVAD
                 } catch {
+                    try checkSession(generation)
                     log.error("SileroVAD load failed: \(error.localizedDescription, privacy: .public)")
                     showVADLoadFailedAlert(error)
                     hidePanel()
@@ -267,13 +339,36 @@ final class LiveCaptionManager {
                 }
             }
         }
+        if engine == .local, profileSnapshot?.profile.llm.translate ?? LocalTextPreferences.translatesCaptions {
+            let target = profileSnapshot.flatMap { LocalTextLanguage(rawValue: $0.profile.llm.target) } ?? LocalTextPreferences.captionTarget
+            let queue = LiveCaptionTranslationQueue { text in
+                // Loading belongs to the text request queue. Capture and
+                // source captions start immediately, including a cold model.
+                try await LocalTextResources.transform(.translate(text, target: target))
+            }
+            queue.onResult = { [weak self] id, result in
+                guard let self, self.sessionGeneration == generation,
+                      let vm = self.viewModel,
+                      let index = vm.segments.firstIndex(where: { $0.id == id }) else { return }
+                switch result {
+                case .success(let translated): vm.segments[index].translatedText = translated
+                case .failure(let error): vm.segments[index].translationError = error.localizedDescription
+                }
+            }
+            queue.onPendingCountChanged = { [weak self] count in
+                guard let self, self.sessionGeneration == generation else { return }
+                self.viewModel?.translationPendingCount = count
+            }
+            translationQueue = queue
+            vm.translationStatusMessage = nil
+        }
         vm.headerState = .live
 
         // Build the backend per engine.
         let newBackend: any TranscriptionBackend
         switch engine {
         case .local:
-            guard let asrModel, let vadModel else {
+            guard localEngine.isLoaded, let vadModel else {
                 throw NSError(domain: "LiveCaption", code: 20,
                               userInfo: [NSLocalizedDescriptionKey: L10n.string(
                                 "error.caption.local_model_unavailable",
@@ -281,9 +376,9 @@ final class LiveCaptionManager {
                               )])
             }
             newBackend = LocalQwen3Backend(
-                asrModel: asrModel,
+                engine: localEngine,
                 vadModel: vadModel,
-                language: AppConfig.shared.language,
+                language: profileSnapshot.map { $0.profile.language == "auto" ? nil : $0.profile.language } ?? AppConfig.shared.language,
                 tuning: tuning
             )
         case .cloudTranslate:
@@ -306,7 +401,10 @@ final class LiveCaptionManager {
         // Start the backend (does the handshake for cloud, no-op for local).
         do {
             try await newBackend.start()
+            try checkSession(generation)
         } catch {
+            await newBackend.stop()
+            try checkSession(generation)
             log.error("Backend start failed: \(error.localizedDescription, privacy: .public)")
             showBackendStartFailedAlert(error, engine: engine)
             hidePanel()
@@ -314,44 +412,39 @@ final class LiveCaptionManager {
         }
 
         backend = newBackend
-        backendEventTask = makeBackendConsumerTask(for: newBackend)
+        backendEventTask = makeBackendConsumerTask(for: newBackend, generation: generation)
 
-        // Audio source.
-        let pendingFrames = BackpressureCounter()
-        let maxPendingFrames = tuning.backpressureMaxPending
-
+        // Audio source. The legacy `backpressureMaxPending` tuning field stays
+        // decodable for existing files, but local delivery is now lossless and
+        // ordered up to the explicit 120-second safety limit.
         let source: any AudioSource
-        switch requestedSource {
-        case .mic:
+        if profileSnapshot != nil {
             source = MicAudioSource(service: captureService)
-        case .system(let bundleID):
-            source = SystemAudioSource(bundleID: bundleID)
+        } else {
+            switch requestedSource {
+            case .mic: source = MicAudioSource(service: captureService)
+            case .system(let bundleID): source = SystemAudioSource(bundleID: bundleID)
+            }
         }
 
-        // The onSamples callback is captured against the manager (not the
-        // current backend) so engine swaps re-route audio to the new backend
-        // without rebuilding the source. The manager is `@MainActor`; reading
-        // `self.backend` from the IO thread needs a hop, so we read it inside
-        // the spawned Task.
-        source.onSamples = { [weak self] samples in
-            guard let self else { return }
-            if !pendingFrames.tryReserve(maxPending: maxPendingFrames) {
-                let dropped = pendingFrames.incrementDropped()
-                if dropped & 31 == 1 {
-                    log.warning("Live caption falling behind — dropped \(dropped, privacy: .public) audio buffers")
+        let ingress = LiveCaptionAudioIngress(
+            generation: generation,
+            consume: { samples in
+                await newBackend.feed(samples: samples)
+            },
+            onOverflow: { [weak self] metrics in
+                Task { @MainActor [weak self] in
+                    self?.handleAudioIngressOverflow(metrics, generation: generation)
                 }
-                return
             }
-            Task { [weak self] in
-                if let backend = await self?.currentBackend() {
-                    await backend.feed(samples: samples)
-                }
-                pendingFrames.release()
-            }
+        )
+        audioIngress = ingress
+        source.onSamples = { samples in
+            ingress.append(samples, generation: generation)
         }
         source.onError = { [weak self] error in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, self.sessionGeneration == generation else { return }
                 log.error("AudioSource error: \(error.localizedDescription, privacy: .public)")
                 let wasSystem: Bool
                 if case .system = self.currentSource { wasSystem = true } else { wasSystem = false }
@@ -376,8 +469,16 @@ final class LiveCaptionManager {
         }
         do {
             try await source.start()
+            try checkSession(generation)
             audioSource = source
         } catch {
+            source.stop()
+            if audioIngress === ingress {
+                audioIngress = nil
+                ingress.cancel()
+                await ingress.waitUntilStopped()
+            }
+            try checkSession(generation)
             log.error("AudioSource start failed: \(error.localizedDescription, privacy: .public)")
             await newBackend.stop()
             backendEventTask?.cancel()
@@ -420,40 +521,11 @@ final class LiveCaptionManager {
     ///
     /// Engine choice is not affected; only the audio source flips. Engine
     /// changes go through `switchEngine(to:)`.
-    func switchSource(to newSource: AudioSourceKind) async throws {
-        guard isActive else {
-            try await start(source: newSource)
-            return
-        }
-        guard currentSource != newSource else { return }
-        log.info("LiveCaption switching source \(String(describing: self.currentSource), privacy: .public) → \(String(describing: newSource), privacy: .public)")
-
-        // Tear down source-specific bits but keep panel visible.
-        forceSplitTimer?.cancel()
-        forceSplitTimer = nil
-        cloudWatchdogTimer?.cancel()
-        cloudWatchdogTimer = nil
-
-        audioSource?.stop()
-        audioSource = nil
-
-        // Drain the current backend cleanly; start() below will build a new
-        // one. We re-use the consumer-Task drain pattern from switchEngine
-        // so trailing segments land before we clear the panel.
-        if let backend {
-            await backend.stop()
-        }
-        await backendEventTask?.value
-        backendEventTask = nil
-        backend = nil
-
-        // start(source:) will re-instantiate everything. Panel content
-        // clears (matches today's behavior — `start(source:)` calls
-        // `vm.segments.removeAll()` first).
-        isActive = false
-        currentSource = nil
-
-        try await start(source: newSource)
+    func switchSource(to newSource: AudioSourceKind, profile: ProcessingProfileSnapshot? = nil) async throws {
+        guard currentSource != newSource || !isActive else { return }
+        stop()
+        await waitUntilStopped()
+        try await start(source: newSource, profile: profile)
     }
 
     /// Swap the cloud/local engine mid-session per spec §10. The audio source
@@ -471,7 +543,8 @@ final class LiveCaptionManager {
         AppConfig.shared.liveCaptionEngine = engine
         // The simplest correct path: stop the audio source + backend cleanly,
         // then call start(source:) — which picks up the new engine.
-        await teardown(stopAudio: true)
+        stop()
+        await waitUntilStopped()
         do {
             try await start(source: source)
         } catch {
@@ -485,22 +558,110 @@ final class LiveCaptionManager {
     /// Re-entrancy: the `isActive` flag is flipped synchronously BEFORE
     /// dispatching the async teardown, so a second `stop()` call before the
     /// teardown Task runs is a no-op (the guard catches it).
+    /// Normal user stop: release capture promptly, then commit the tail and history.
+    func finish() {
+        guard !isFinishing else { return }
+        guard isActive, !isStarting else { stop(); return }
+        isFinishing = true
+        isActive = false
+        viewModel?.headerState = .finishing
+        let ingress = audioIngress
+        audioIngress = nil
+        audioSource?.stop()
+        audioSource = nil
+        ingress?.finish()
+        forceSplitTimer?.cancel()
+        forceSplitTimer = nil
+        cloudWatchdogTimer?.cancel()
+        cloudWatchdogTimer = nil
+        currentSource = nil
+        AppConfig.shared.liveCaptionEnabled = false
+        AppConfig.shared.liveCaptionUsesMicSource = false
+        if !OverviewPreferences.keepsCaptionWindow { hidePanel() }
+        stopTeardownTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await ingress?.waitUntilStopped()
+            await self.forceSplitTask?.value
+            if let local = self.backend as? LocalQwen3Backend {
+                await local.finish()
+            } else {
+                await self.backend?.stop()
+            }
+            await self.backendEventTask?.value
+            await self.translationQueue?.waitUntilFinished()
+            self.saveSessionHistory()
+            self.stopLocalTranslation()
+            await self.teardown(stopAudio: true)
+            self.isFinishing = false
+            self.viewModel?.headerState = .stopped
+            self.stopTeardownTask = nil
+            self.onStateChanged?(nil, nil)
+        }
+        onStateChanged?(nil, nil)
+    }
+
+    private func saveSessionHistory() {
+        guard let startedAt = sessionStartedAt else { return }
+        sessionStartedAt = nil
+        let text = viewModel?.segments.dropFirst(sessionSegmentOffset)
+            .map(\.historyText).joined(separator: "\n") ?? ""
+        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            onSessionFinished?(.init(text: text, startedAt: startedAt, endedAt: Date(), sourceLabel: sessionSourceLabel))
+        }
+        sessionSourceLabel = nil
+    }
+
     func stop() {
-        guard isActive else { return }
+        // Model unload joins an existing normal drain instead of discarding its tail.
+        guard !isFinishing else { hidePanel(); return }
+        guard isActive || isStarting || isPanelVisible else { return }
         log.info("LiveCaption stop requested")
+        stopLocalTranslation()
+        sessionGeneration &+= 1
+        let starting = startupTask
+        let previousTeardown = stopTeardownTask
+        let ingress = audioIngress
+        audioIngress = nil
+        teardownGeneration &+= 1
+        let stoppingGeneration = teardownGeneration
+        starting?.cancel()
+        startupTask = nil
+        isStarting = false
         isActive = false
         currentSource = nil
         AppConfig.shared.liveCaptionEnabled = false
         AppConfig.shared.liveCaptionUsesMicSource = false
         onStateChanged?(nil, nil)
+        // Release visible state and microphone promptly, even while a model
+        // load or a final inference is still finishing asynchronously.
+        hidePanel()
+        ingress?.cancel()
+        audioSource?.stop()
+        audioSource = nil
+        saveSessionHistory()
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
+            await previousTeardown?.value
+            _ = await starting?.result
+            await ingress?.waitUntilStopped()
             await self.teardown(stopAudio: true)
-            self.hidePanel()
-            self.stopTeardownTask = nil
+            if self.teardownGeneration == stoppingGeneration {
+                self.stopTeardownTask = nil
+            }
             log.info("LiveCaption stopped, source released")
         }
         stopTeardownTask = task
+    }
+
+    func waitUntilStopped() async {
+        await stopTeardownTask?.value
+    }
+
+    func stopLocalTranslation() {
+        translationQueue?.cancel()
+        translationQueue = nil
+        viewModel?.translationPendingCount = 0
+        viewModel?.translationStatusMessage = nil
     }
 
     /// Release the manager's derived local-model handle. If a local caption
@@ -510,29 +671,24 @@ final class LiveCaptionManager {
     @discardableResult
     func releaseLocalModel() async -> Bool {
         let hasLocalBackend = backend is LocalQwen3Backend
-        let stoppedLocalSession = isActive && hasLocalBackend
+        let stoppedLocalSession = (isActive || isStarting)
+            && (hasLocalBackend || AppConfig.shared.liveCaptionEngine == .local)
 
         if stoppedLocalSession {
             // This is the awaited variant of stop(): synchronously publish the
             // off state, then fully drain audio/backend ownership before the
             // caller releases the engine or clears MLX memory.
             log.info("LiveCaption local stop requested for model unload")
-            isActive = false
-            currentSource = nil
-            AppConfig.shared.liveCaptionEnabled = false
-            AppConfig.shared.liveCaptionUsesMicSource = false
-            onStateChanged?(nil, nil)
-            await teardown(stopAudio: true)
-            hidePanel()
+            stop()
+            await waitUntilStopped()
             log.info("LiveCaption local backend released for model unload")
-        } else if hasLocalBackend, let stopTeardownTask {
+        } else if let stopTeardownTask {
             // A normal stop may already have flipped `isActive` and scheduled
             // teardown. Join it rather than racing a second teardown against
             // the same backend.
             await stopTeardownTask.value
         }
 
-        asrModel = nil
         return stoppedLocalSession
     }
 
@@ -561,14 +717,6 @@ final class LiveCaptionManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
     }
 
-    // MARK: - Internal: read backend from off-main contexts
-
-    /// Called from the audio IO Task to fetch the currently-installed
-    /// backend. `@MainActor`-isolated, accessed via `await self?...`.
-    private func currentBackend() -> (any TranscriptionBackend)? {
-        backend
-    }
-
     // MARK: - Teardown helper
 
     /// Stop tickers, backend, optionally audio source. Does not clear panel
@@ -589,10 +737,11 @@ final class LiveCaptionManager {
             audioSource = nil
         }
 
-        // Note the backend kind BEFORE we tear it down — we need it to decide
-        // whether MLX cache clearing is warranted, and `backend` is nil after
-        // the await below.
-        let backendUsedMLX = (backend is LocalQwen3Backend)
+        let ingress = audioIngress
+        audioIngress = nil
+        ingress?.cancel()
+        await ingress?.waitUntilStopped()
+        await forceSplitTask?.value
 
         if let backend {
             await backend.stop()
@@ -605,16 +754,9 @@ final class LiveCaptionManager {
         // MLX-backed weights, holding it cached after stop misleads the user.
         vadModel = nil
 
-        // Only clear the MLX buffer pool if the engine that just finished
-        // actually used it. Cloud translate is a pure WebSocket path that
-        // never touches MLX, so calling clearCache after a cloud session
-        // throws away dictation's warm cache for no benefit — and observably
-        // makes the next push-to-talk dictation slower. Local engine still
-        // clears as before because it just filled the pool with decoder KV
-        // and segment activations we no longer need.
-        if backendUsedMLX {
-            MLX.Memory.clearCache()
-        }
+        // Dictation and optional text generation may still be using MLX.
+        // Cache lifetime belongs to the shared resource owner, not a caption
+        // consumer finishing its own session.
 
         // Live-target raw accumulator and conversion gate clear regardless
         // of engine; they're cheap and stale state here would leak into the
@@ -626,18 +768,43 @@ final class LiveCaptionManager {
         viewModel?.cloudCostChip = nil
     }
 
+    private func handleAudioIngressOverflow(
+        _ metrics: LiveCaptionAudioIngress.Metrics,
+        generation: UInt64
+    ) {
+        guard sessionGeneration == generation else { return }
+        log.error(
+            "Stopping Live Caption after audio ingress overflow captured=\(metrics.capturedSamples, privacy: .public) enqueued=\(metrics.enqueuedSamples, privacy: .public) processed=\(metrics.processedSamples, privacy: .public) pendingSeconds=\(metrics.pendingSeconds, privacy: .public)"
+        )
+        stop()
+
+        let alert = NSAlert()
+        alert.messageText = L10n.string(
+            "alert.caption.processing_too_slow.title",
+            fallback: "Live Caption stopped"
+        )
+        alert.informativeText = L10n.format(
+            "alert.caption.processing_too_slow.message",
+            "Speech processing fell more than %1$d seconds behind. HushType stopped the session instead of silently skipping audio.",
+            arguments: [Int32(LiveCaptionAudioIngress.defaultMaximumPendingSeconds)]
+        )
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
+        alert.runModal()
+    }
+
     // MARK: - Backend event handling
 
-    private func makeBackendConsumerTask(for backend: any TranscriptionBackend) -> Task<Void, Never> {
+    private func makeBackendConsumerTask(for backend: any TranscriptionBackend, generation: UInt64) -> Task<Void, Never> {
         return Task { [weak self] in
             for await event in backend.events {
-                guard let self else { return }
-                await self.handleBackendEvent(event)
+                guard let self, !Task.isCancelled, self.sessionGeneration == generation else { return }
+                await self.handleBackendEvent(event, generation: generation)
             }
         }
     }
 
-    private func handleBackendEvent(_ event: BackendEvent) async {
+    private func handleBackendEvent(_ event: BackendEvent, generation: UInt64) async {
         switch event {
         case .sourceDelta(let text):
             guard let viewModel else { return }
@@ -677,7 +844,8 @@ final class LiveCaptionManager {
             }
 
         case .segmentComplete(let text):
-            await handleSegment(text)
+            await handleSegment(text, generation: generation)
+            guard sessionGeneration == generation else { return }
             // Clear both the target AND the source current-lines together.
             // The source-line clearing was previously owned only by
             // .sourceComplete, but that fires ~200ms before this event in
@@ -730,13 +898,28 @@ final class LiveCaptionManager {
 
     // MARK: - Segment handling
 
-    private func handleSegment(_ rawText: String) async {
+    private func handleSegment(_ rawText: String, generation: UInt64) async {
+        if let snapshot = profileSnapshot, AppConfig.shared.liveCaptionEngine == .local {
+            let text = snapshot.applyRules(rawText)
+            guard FillerFilter.keep(text) else { return }
+            do {
+                let polished = try await snapshot.polish(text)
+                guard sessionGeneration == generation else { return }
+                appendSegmentText(polished)
+            } catch {
+                guard sessionGeneration == generation else { return }
+                appendSegmentText(text)
+                viewModel?.translationStatusMessage = error.localizedDescription
+            }
+            return
+        }
         // Engine-branched post-processing. Local: OpenCC (if dictation toggle
         // on) → FillerFilter → DictionaryReplacer. Cloud: OpenCC iff target =
         // zh-Hant. Two different gates (§11) — easy to get wrong.
+        let engine = AppConfig.shared.liveCaptionEngine
         let processed: String? = await withCheckedContinuation { cont in
             postProcessingQueue.async {
-                switch AppConfig.shared.liveCaptionEngine {
+                switch engine {
                 case .local:
                     let script = ScriptDetector.detect(rawText)
                     let afterOpenCC = AppConfig.shared.chineseConversionEnabled
@@ -765,7 +948,7 @@ final class LiveCaptionManager {
             }
         }
 
-        guard let text = processed, !text.isEmpty else { return }
+        guard sessionGeneration == generation, let text = processed, !text.isEmpty else { return }
         appendSegmentText(text)
     }
 
@@ -791,10 +974,11 @@ final class LiveCaptionManager {
         }
         liveTargetConversionInFlight = true
         let snapshot = liveTargetRaw
+        let generation = sessionGeneration
         Task.detached(priority: .userInitiated) { [weak self] in
             let converted = ChineseConverter.convert(snapshot)
             await MainActor.run { [weak self] in
-                guard let self else { return }
+                guard let self, self.sessionGeneration == generation else { return }
                 // Only commit if the live target is still active. If the
                 // segment has been committed (raw cleared) in the meantime,
                 // skip the assign — the next delta will replace anyway, and
@@ -815,9 +999,7 @@ final class LiveCaptionManager {
         guard let viewModel else { return }
         let entry = LiveCaptionViewModel.SegmentEntry(text: text)
         viewModel.segments.append(entry)
-        if viewModel.segments.count > Self.segmentBufferCap {
-            viewModel.segments.removeFirst(viewModel.segments.count - Self.segmentBufferCap)
-        }
+        translationQueue?.enqueue(id: entry.id, text: text)
     }
 
     // MARK: - Force-split timer (local engine only)
@@ -826,15 +1008,20 @@ final class LiveCaptionManager {
         let timer = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
         timer.schedule(deadline: .now() + 1.0, repeating: 1.0)
         timer.setEventHandler { [weak self] in
-            guard let self else { return }
-            Task { await self.checkForceSplit() }
+            Task { @MainActor in
+                guard let self, self.isActive, self.forceSplitTask == nil else { return }
+                self.forceSplitTask = Task { @MainActor in
+                    defer { self.forceSplitTask = nil }
+                    await self.checkForceSplit()
+                }
+            }
         }
         timer.resume()
         forceSplitTimer = timer
     }
 
     private func checkForceSplit() async {
-        guard let local = backend as? LocalQwen3Backend else { return }
+        guard isActive, let local = backend as? LocalQwen3Backend else { return }
         guard let startedAt = await local.activeSpeechStartedAt() else { return }
         let elapsed = Date().timeIntervalSince(startedAt)
         if elapsed >= tuning.forceSplitSeconds {
@@ -1108,39 +1295,5 @@ final class LiveCaptionManager {
         }
         alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
         alert.runModal()
-    }
-}
-
-/// Lock-guarded counter shared between the audio IO thread (which reserves
-/// slots on `onSamples`) and the worker-task completion (which releases). The
-/// lock contention is negligible because each operation is a few instructions.
-final class BackpressureCounter: @unchecked Sendable {
-    private let lock = NSLock()
-    private var inFlight: Int = 0
-    private var dropped: Int = 0
-
-    /// Atomically increments `inFlight` if it is under `maxPending`. Returns
-    /// `true` if a slot was reserved (caller should `release()` later),
-    /// `false` if backpressure should kick in (caller should drop the frame).
-    func tryReserve(maxPending: Int) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        if inFlight >= maxPending { return false }
-        inFlight += 1
-        return true
-    }
-
-    func release() {
-        lock.lock()
-        if inFlight > 0 { inFlight -= 1 }
-        lock.unlock()
-    }
-
-    @discardableResult
-    func incrementDropped() -> Int {
-        lock.lock()
-        defer { lock.unlock() }
-        dropped += 1
-        return dropped
     }
 }

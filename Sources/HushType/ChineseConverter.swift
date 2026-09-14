@@ -17,8 +17,7 @@ struct ChineseConverter {
     }()
 
     private static let openccDataDir: String? = {
-        if let bundleDir = Bundle.main.executableURL?
-            .deletingLastPathComponent()
+        if let bundleDir = Bundle.main.resourceURL?
             .appendingPathComponent("opencc_data").path,
            FileManager.default.fileExists(atPath: bundleDir) {
             return bundleDir
@@ -29,8 +28,8 @@ struct ChineseConverter {
     /// Converts Simplified Chinese to Traditional Chinese (Taiwan phrasing) using OpenCC s2twp.
     /// English text and non-CJK characters pass through untouched.
     /// Falls back to original text if opencc is not installed or fails.
-    static func convert(_ text: String) -> String {
-        guard AppConfig.shared.chineseConversionEnabled else {
+    static func convert(_ text: String, enabled: Bool? = nil) -> String {
+        guard enabled ?? AppConfig.shared.chineseConversionEnabled else {
             return text
         }
 

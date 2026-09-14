@@ -412,13 +412,8 @@ final class AppConfig {
     /// applied as the final post-processing step (after OpenCC and ITN)
     /// to fix recurring transcription errors like proper nouns and jargon.
     /// If the file doesn't exist, no replacements happen — there's no separate
-    /// enable/disable toggle. Power users edit the file directly in their
-    /// default text editor; the menu item triggers `NSWorkspace.shared.open`.
-    ///
-    /// The extension is `.txt` (not `.tsv`) so macOS opens it in TextEdit,
-    /// which edits in place. `.tsv` defaults to Apple Numbers, which wraps the
-    /// file as a new Numbers document and saves to a different location —
-    /// breaking the file-is-the-UI contract.
+    /// enable/disable toggle. The native settings editor saves this same file;
+    /// direct text-editor changes remain supported and are hot-reloaded.
     static var dictionaryFileURL: URL {
         let appSupport = FileManager.default.urls(
             for: .applicationSupportDirectory,

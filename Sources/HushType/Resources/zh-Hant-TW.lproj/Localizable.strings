@@ -1,5 +1,90 @@
 /* Generated from the frozen Gate B manifest + decisions overlay. */
 
+"error.local_text.output_limit" = "結果超過本地處理長度上限，請選取較短的段落後重試。";
+
+/* Custom shortcuts, shared dictation, and session history. */
+"settings.sidebar.shortcuts" = "快速鍵";
+"shortcuts.action.dictation" = "聽寫";
+"shortcuts.action.captions" = "即時字幕";
+"shortcuts.action.translation" = "翻譯選取文字";
+"shortcuts.action.polish" = "校對選取文字";
+"shortcuts.trigger.press" = "短按";
+"shortcuts.trigger.hold" = "長按";
+"shortcuts.error.invalid" = "使用 F1–F20，或包含 Command、Option、Control 的組合鍵。";
+"shortcuts.error.conflict" = "此快速鍵與觸發方式已分配給其他操作。";
+"settings.shortcuts.subtitle" = "設定聽寫、字幕與文字處理的快速鍵。";
+"settings.shortcuts.restore_defaults" = "還原預設值";
+"settings.shortcuts.hold_duration" = "長按操作在 0.5 秒後觸發。";
+"settings.shortcuts.recording" = "請按下快速鍵…";
+"settings.shortcuts.not_set" = "未設定";
+"settings.shortcuts.trigger" = "觸發方式";
+"settings.shortcuts.clear" = "清除";
+"settings.history.filter.custom_range" = "自訂";
+"settings.history.date_range.start" = "開始日期";
+"settings.history.date_range.end" = "結束日期";
+"settings.history.date_range.help" = "包含所選開始日與結束日，依本地日期篩選。";
+"settings.history.type_filter" = "類型";
+"settings.history.type.all" = "全部";
+"settings.history.type.dictation" = "聽寫";
+"settings.history.type.caption" = "字幕";
+"settings.history.saving.enabled" = "儲存辨識記錄";
+"settings.history.saving.help" = "關閉後不儲存新的聽寫與字幕工作階段，既有記錄仍可查看。";
+"settings.history.expand" = "展開";
+"settings.history.collapse" = "收合";
+"settings.history.kind.dictation" = "聽寫";
+"settings.history.kind.caption" = "字幕工作階段";
+"settings.history.caption.session_details" = "%1$@，來源：%2$@，開始於 %3$@，結束於 %4$@。";
+"settings.history.caption.session_details.no_source" = "%1$@，開始於 %2$@，結束於 %3$@。";
+
+/* 可選本機文字模型、選取文字及字幕翻譯。 */
+"menu.permissions" = "開啟權限設定";
+"menu.settings" = "設定…";
+"error.local_text.title" = "文字模型無法使用";
+"error.local_text.download_first" = "請先在「模型」設定中下載可選文字模型。";
+"error.local_text.busy" = "本機文字模型忙碌中。";
+"error.local_text.invalid_repository" = "模型儲存庫 ID 無效：%1$@。";
+"error.local_text.not_installed" = "尚未下載本機文字模型。";
+"error.local_text.incomplete_installation" = "本機文字模型不完整：%1$@。";
+"error.local_text.download_incomplete" = "模型下載已結束，但缺少必要檔案：%1$@。";
+"error.local_text.not_loaded" = "本機文字模型尚未載入。";
+"error.local_text.empty_input" = "文字是空白的。";
+"error.local_text.input_too_long" = "文字超過本機處理上限（%1$d 個字元）。";
+"error.local_text.prompt_too_long" = "處理後的提示已占滿 %1$d token 上下文，沒有輸出空間。";
+"error.local_text.empty_response" = "本機文字模型傳回空白結果。";
+"error.local_text.unexpected_tool_call" = "本機文字模型傳回非預期的工具呼叫。";
+"polish.card.preview_title" = "校對預覽";
+"text.card.copy_result" = "複製結果";
+"caption.translation.preparing" = "正在準備翻譯模型…";
+"caption.translation.pending" = "正在翻譯… 剩餘 %1$d 句";
+"caption.translation.backlog_full" = "翻譯佇列已達 %1$d 項上限。";
+"settings.captions.translation.enabled" = "在本機翻譯字幕";
+"settings.captions.translation.help" = "需要先在「模型」設定中下載可選文字模型。原字幕會先顯示，翻譯隨後補上；已完成的翻譯會隨工作階段一併儲存。";
+"settings.engine.local_model" = "本機模型：";
+"settings.engine.local_model.apply_note" = "模型選擇會在下次載入本機模型時生效。";
+"settings.local_text.selected_text.title" = "選取的文字";
+"settings.local_text.polish.enabled" = "校對選取的文字";
+"settings.local_text.translation.enabled" = "翻譯選取的文字";
+"settings.local_text.selection_target" = "翻譯目標語言";
+"settings.local_text.target.automatic" = "自動";
+"settings.local_text.shortcuts.help" = "請在左側「快速鍵」中設定校對及翻譯快速鍵。";
+"settings.local_text.model.title" = "本機文字模型";
+"settings.local_text.model.detail" = "可選的 4 位元模型，供文字校對、選取文字翻譯及字幕翻譯共用。下載約 2.3 GB。執行時的記憶體用量會隨輸入長度變化，可能高於下載大小。";
+"settings.local_text.model.manual_help" = "此頁面不會自動下載或載入模型。使用文字功能時，可以視需要載入已下載的模型。";
+"settings.local_text.model.download" = "下載 2.3 GB";
+"settings.local_text.model.resume_download" = "繼續下載";
+"settings.local_text.model.load" = "載入模型";
+"settings.local_text.model.unload" = "從記憶體卸載";
+"settings.local_text.model.downloading" = "正在下載";
+"settings.local_text.model.loading" = "正在載入記憶體";
+"settings.local_text.model.in_use" = "正在處理文字";
+"settings.local_text.model.unloading" = "正在卸載";
+"settings.local_text.model.loaded" = "已載入記憶體";
+"settings.local_text.model.installed" = "已下載";
+"settings.local_text.model.not_installed" = "未下載";
+"settings.local_text.model.incomplete" = "下載不完整 · 缺少 %1$d 個檔案";
+"settings.local_text.model.download_percent" = "%1$d%%";
+"settings.local_text.model.download_progress" = "%1$d%% · %2$@ / %3$@";
+
 /* Default acknowledgement button used by HushType alerts. */
 
 "common.button.ok" = "好";
@@ -163,7 +248,7 @@
 
 /* Text Polish feature and activation hint. */
 
-"menu.text_polish" = "文字校對（連按兩下 ⌥）";
+"menu.text_polish" = "啟用文字校對";
 
 /* Temporary validation state after enabling Text Polish. */
 
@@ -214,7 +299,7 @@
 
 /* Privacy/cost subtitle for local Live Caption. */
 
-"menu.live_caption.subtitle" = "本機轉錄 — 免費、在裝置上執行";
+"menu.live_caption.subtitle" = "本機辨識 · 使用字幕快速鍵";
 
 /* Cloud/provider/cost marker subtitle; dollar glyph is retained. */
 
@@ -254,7 +339,7 @@
 
 /* Provider/framework subtitle for selected-text translation. */
 
-"menu.text_translation.subtitle" = "透過 Apple Translation Framework";
+"menu.text_translation.subtitle" = "使用 Qwen3 4B 在本機翻譯";
 
 /* Toggle for selected-text translation. */
 
@@ -266,7 +351,7 @@
 
 /* Disabled activation hint; preserve shortcut glyph. */
 
-"menu.translation_hint" = "輕按右側 ⌥ 以翻譯選取的文字";
+"menu.translation_hint" = "請在設定中選擇快速鍵";
 
 /* Automatic target/detection choice in translation and speech-to-text language menus. */
 
@@ -390,7 +475,7 @@
 
 /* Argument 1 is an app-owned localized or system-provided availability reason. */
 
-"alert.text_polish.unavailable.message" = "文字校對需要 macOS 26 + Apple Intelligence。\n\n%1$@";
+"alert.text_polish.unavailable.message" = "文字校對需要可選的本機文字模型。\n\n%1$@";
 
 /* About alert title; argument is the app version. */
 
@@ -526,7 +611,7 @@
 
 /* Preserve approximate three-second cold-start semantics and shortcut glyph. */
 
-"alert.model_unloaded.local.message" = "語音辨識模型已從記憶體移除。\n\n下次按下 F5 使用語音輸入時，需要冷啟動（約 3 秒）。";
+"alert.model_unloaded.local.message" = "語音辨識模型已從記憶體移除。\n\n下次使用聽寫快速鍵時，需要冷啟動（約 3 秒）。";
 
 /* Cloud-upload gate title; this is HushType's local warning, not provider billing enforcement. */
 
@@ -770,7 +855,7 @@
 
 /* Permission-purpose summary for the local-only F5 build. */
 
-"onboarding.intro" = "允許 HushType 監聽 F5，並在本機錄下你的語音。";
+"onboarding.intro" = "允許 HushType 監聽你的快速鍵，並在本機錄下語音。";
 
 /* Apple permission category name. */
 
@@ -778,7 +863,7 @@
 
 /* Explains why Accessibility is required. */
 
-"permission.accessibility.subtitle" = "全域 F5 快速鍵需要這項權限。";
+"permission.accessibility.subtitle" = "全域快速鍵及在游標處插入文字需要這項權限。";
 
 /* Permission row state after opening relevant settings. */
 
@@ -942,7 +1027,7 @@
 
 /* Permission-revocation guidance; permission label needs OS verification. */
 
-"alert.system_audio_revoked.message" = "「螢幕與系統音訊錄製」權限已撤銷。\n\n請在系統設定中重新啟用這項權限，以使用系統音訊即時字幕。";
+"alert.system_audio_revoked.message" = "「螢幕與系統音訊錄製」權限已撤銷。\n\n請開啟權限頁，恢復應用程式音訊擷取。";
 
 /* Closes a warning without opening settings. */
 
@@ -1014,7 +1099,7 @@
 
 /* Temporary gate message when Right Option dictation conflicts with caption capture. */
 
-"caption.stop_to_dictate" = "請停止即時字幕後再使用語音輸入";
+"caption.stop_to_dictate" = "字幕結束後可使用聽寫";
 
 /* Arguments are current reconnect attempt and maximum attempts. */
 
@@ -1031,6 +1116,24 @@
 /* Help text for caption panel close button. */
 
 "caption.stop.help" = "停止即時字幕（Esc）";
+"caption.restore_automatic_size.accessibility" = "恢復字幕自動尺寸";
+"caption.restore_automatic_size.help" = "恢復自動寬度和高度";
+"caption.more.accessibility" = "更多字幕選項";
+"caption.more.help" = "更多選項";
+"caption.timestamps" = "時間戳記";
+"alert.caption.processing_too_slow.title" = "字幕已停止";
+"alert.caption.processing_too_slow.message" = "辨識積壓已超過 %1$d 秒。字幕已停止，未繼續跳過音訊。";
+"settings.feature_group.expanded" = "已展開";
+"settings.feature_group.collapsed" = "已收起";
+"settings.debug.glass.enabled" = "顯示佔位玻璃";
+"settings.debug.glass.opacity" = "佔位透明度";
+"settings.debug.glass.restore" = "恢復佔位預設值";
+"settings.debug.live_caption.title" = "字幕浮窗";
+"settings.debug.live_caption.sentences" = "自動高度最大句數";
+"settings.debug.live_caption.width" = "自動最大寬度";
+"settings.debug.live_caption.height" = "自動最大高度";
+"settings.debug.live_caption.restore" = "恢復字幕預設值";
+"settings.debug.live_caption.description" = "僅限制自動尺寸，完整字幕仍可捲動查看。";
 
 /* Empty caption panel state while awaiting speech. */
 
@@ -1218,7 +1321,7 @@
 
 /* Privacy disclosure; preserve 'may connect' uncertainty. */
 
-"translation.card.privacy" = "由 Apple Translation Framework 提供支援，可能會連線至 Apple 伺服器。";
+"translation.card.privacy" = "使用 Qwen3 4B 在本機翻譯。";
 
 /* PolishError disabled state. */
 
@@ -1226,7 +1329,7 @@
 
 /* Argument 1 is localized app reason or system-provided availability reason. */
 
-"error.polish.unavailable" = "文字校對需要 macOS 26 + Apple Intelligence。\n\n%1$@";
+"error.polish.unavailable" = "文字校對需要可選的本機文字模型。\n\n%1$@";
 
 /* Guardrail result; selected user content remains untouched. */
 
@@ -1234,7 +1337,7 @@
 
 /* Model result validation error. */
 
-"error.polish.empty_output" = "Apple Intelligence 傳回空白結果。";
+"error.polish.empty_output" = "本機文字模型傳回空白結果。";
 
 /* Safety validation; explicitly says original text remains untouched. */
 
@@ -1250,11 +1353,11 @@
 
 /* Model refusal validation error. */
 
-"error.polish.refusal_guard" = "Apple Intelligence 傳回拒絕回應，未校對選取的文字。";
+"error.polish.refusal_guard" = "本機文字模型傳回拒絕回應，未校對選取的文字。";
 
 /* Initial cached availability reason. */
 
-"error.polish.apple_unavailable" = "無法使用 Apple Intelligence。";
+"error.polish.apple_unavailable" = "無法使用本機文字模型。";
 
 /* Availability reason on pre-macOS-26 systems. */
 
@@ -1262,7 +1365,7 @@
 
 /* Preserve exact 30-second timeout. */
 
-"error.polish.timeout" = "Apple Intelligence 在 30 秒後逾時。";
+"error.polish.timeout" = "本機文字模型在 30 秒後逾時。";
 
 /* Unknown future FoundationModels availability case. */
 
@@ -1286,7 +1389,7 @@
 
 /* High-risk privacy claim for on-device Text Polish. */
 
-"polish.card.privacy" = "在裝置上使用 Apple Intelligence — 任何內容都不會離開你的 Mac。";
+"polish.card.privacy" = "使用 Qwen3 4B 在本機校對，原文字保持不變。";
 
 /* Track-changes deletion legend. */
 
@@ -1500,6 +1603,40 @@
 "settings.navigation.forward" = "前進";
 "settings.sidebar.overview" = "概覽";
 "settings.sidebar.dictation" = "聽寫";
+"settings.sidebar.captions" = "字幕";
+"settings.captions.status" = "狀態";
+"settings.captions.status.stopped" = "已停止";
+"settings.captions.status.microphone" = "麥克風";
+"settings.captions.status.app_audio" = "App 音訊";
+"settings.captions.status.starting" = "正在啟動…";
+"settings.captions.stop" = "停止";
+"settings.captions.microphone.active" = "正在使用麥克風";
+"settings.captions.microphone.switch" = "切換至麥克風";
+"settings.captions.microphone.start" = "麥克風字幕";
+"settings.captions.app_audio.active" = "選擇 App…";
+"settings.captions.app_audio.switch" = "切換至 App 音訊…";
+"settings.captions.app_audio.start" = "App 音訊字幕…";
+"settings.captions.display" = "顯示";
+"settings.captions.timestamps" = "顯示時間戳記";
+"settings.captions.max_sentences" = "自動高度最大句數";
+"settings.captions.max_width" = "自動最大寬度";
+"settings.captions.max_height" = "自動最大高度";
+"settings.captions.display.description" = "僅限制自動視窗尺寸，完整字幕仍可捲動查看。";
+"settings.captions.display.restore" = "回復顯示預設值";
+"settings.captions.drag_snap" = "拖移與吸附";
+"settings.captions.snapping" = "啟用吸附";
+"settings.captions.haptics" = "吸附觸覺回饋";
+"settings.captions.snap_radius" = "吸附半徑";
+"settings.captions.drag_snap.restore" = "回復拖移預設值";
+"settings.captions.glass" = "佔位玻璃";
+"settings.captions.glass.guide" = "顯示佔位玻璃";
+"settings.captions.glass.opacity" = "佔位不透明度";
+"settings.captions.glass.fade" = "淡出加速程度";
+"settings.captions.glass.restore" = "回復佔位預設值";
+"settings.debug.overlay.drag_and_snap" = "拖移與吸附";
+"settings.debug.overlay.snapping_enabled" = "啟用吸附";
+"settings.debug.overlay.haptics_enabled" = "吸附觸覺回饋";
+"settings.debug.overlay.drag_restore" = "回復拖移預設值";
 "settings.sidebar.history" = "辨識記錄";
 "settings.sidebar.model" = "模型";
 "settings.sidebar.dictionary" = "字典";
@@ -1536,11 +1673,11 @@
 "settings.history.day.today" = "今天";
 "settings.history.day.yesterday" = "昨天";
 "settings.overview.title" = "概覽";
-"settings.overview.subtitle" = "快速查看 HushType 和本機語音模型的狀態。";
+"settings.overview.subtitle" = "查看任務狀態、輸入來源和已載入的模型。";
 "settings.overview.permissions_needed.title" = "需要處理權限";
 "settings.overview.permissions_needed.detail" = "請在「權限」中允許輔助使用和麥克風權限，才能使用語音輸入。";
 "settings.overview.how_to.title" = "如何聽寫";
-"settings.overview.how_to.detail" = "按 F5 開始錄音，再按一次 F5 進行轉錄並將文字插入游標位置。";
+"settings.overview.how_to.detail" = "使用已設定的快速鍵開始或結束聽寫與字幕；可在「快速鍵」中修改。";
 "settings.overview.running_model" = "正在執行的模型：";
 "settings.overview.loading_model" = "正在載入的模型：";
 "settings.overview.next_model" = "下次準備載入：";
@@ -1553,7 +1690,7 @@
 "settings.dictation.local_privacy" = "語音辨識在這部 Mac 本機執行，音訊不會上傳。";
 "settings.dictation.traditional_chinese" = "將簡體中文輸出轉換為繁體中文";
 "settings.model.title" = "本機模型";
-"settings.model.subtitle" = "管理載入記憶體中、用於本機聽寫的 Qwen3-ASR 模型。";
+"settings.model.subtitle" = "安裝和管理本機語音模型與文字模型。";
 "settings.model.stop" = "停止下載";
 "settings.model.unload" = "從記憶體卸載";
 "settings.model.load" = "載入模型";
@@ -1590,27 +1727,53 @@
 "settings.model.loading_audio" = "正在載入音訊編碼器";
 "settings.model.loading_text" = "正在載入文字解碼器";
 "settings.dictionary.title" = "字典";
-"settings.dictionary.subtitle" = "修正人名、技術術語和反覆出現的轉錄錯誤。";
+"settings.dictionary.subtitle" = "管理詞庫，替換反覆出現的辨識錯誤。";
 "settings.dictionary.entries" = "自訂字典";
 "settings.dictionary.open" = "開啟字典…";
 "settings.dictionary.help" = "每行使用一條規則：你說的內容 -> 實際輸入的內容。變更會在下次轉錄時生效。";
 "settings.dictionary.empty" = "尚未建立字典檔案。";
+
+/* Native dictionary editor. */
+"settings.dictionary.editor.source" = "辨識結果";
+"settings.dictionary.editor.target" = "取代為";
+"settings.dictionary.editor.empty" = "還沒有取代規則。新增一個經常辨識錯誤的詞試試。";
+"settings.dictionary.editor.add" = "新增規則";
+"settings.dictionary.editor.remove" = "移除規則";
+"settings.dictionary.editor.reload" = "重新載入";
+"settings.dictionary.editor.save" = "儲存";
+"settings.dictionary.editor.unsaved" = "有尚未儲存的修改";
+"settings.dictionary.editor.saved" = "已儲存，下次使用此詞庫的任務生效。";
+"settings.dictionary.editor.help" = "比對不區分大小寫，長詞優先，取代結果不會再次參與取代。右側留空可刪除符合的文字。修改後請儲存。";
+"settings.dictionary.editor.preview" = "輸入文字測試效果";
+"settings.dictionary.editor.preview_input" = "測試文字";
+"settings.dictionary.editor.preview_result" = "取代結果";
+"settings.dictionary.editor.preview_help" = "使用目前頁面的規則，包含尚未儲存的修改。這裡只預覽字典取代效果。";
+"settings.dictionary.editor.discard_title" = "放棄尚未儲存的修改並重新載入？";
+"settings.dictionary.editor.discard_reload" = "放棄修改並重新載入";
+"settings.dictionary.editor.validation.empty_source" = "辨識結果不能留空。";
+"settings.dictionary.editor.validation.newline" = "每條字典規則只能寫在一行中。";
+"settings.dictionary.editor.validation.unserializable_source" = "辨識結果不能以 # 開頭，也不能包含 ->。";
+"settings.dictionary.editor.validation.duplicate_source" = "存在重複的辨識結果，將採用檔案中最先符合的規則。";
+"settings.dictionary.editor.error.external_change" = "字典檔案已被其他程式修改。請先重新載入；尚未儲存的內容仍保留在頁面中。";
+"settings.dictionary.editor.error.invalid_encoding" = "字典不是有效的 UTF-8 文字。請用文字編輯器修正後重新載入。";
+"settings.dictionary.editor.error.read" = "無法讀取字典：%1$@";
+"settings.dictionary.editor.error.save" = "無法儲存字典：%1$@";
 "settings.permissions.title" = "權限";
-"settings.permissions.subtitle" = "HushType 需要這些權限來使用全域快速鍵和麥克風輸入。";
+"settings.permissions.subtitle" = "管理全域快速鍵、麥克風輸入和應用程式音訊擷取所需的權限。";
 "settings.permissions.accessibility_restart" = "變更輔助使用權限後請重新啟動 HushType；macOS 會在新處理程序中套用此權限。";
 "settings.permissions.finish_setup" = "完成設定後即可啟動 HushType";
 "settings.permissions.onboarding_detail" = "啟用輔助使用後請重新啟動 HushType，讓 macOS 套用變更。麥克風權限不需要重新啟動。";
 "settings.permissions.restart_required.title" = "重新啟動 HushType 以套用權限";
 "settings.permissions.restart_required.detail" = "權限現在已允許。請重新啟動 HushType，讓 macOS 將輔助使用權限套用到此 App。";
 "settings.general.title" = "一般";
-"settings.general.subtitle" = "調整 HushType 的顯示方式和聽寫文字清理方式。";
+"settings.general.subtitle" = "管理介面、更新和開發者設定。";
 "settings.general.input_device" = "輸入裝置";
 "settings.general.input_device.follow_system" = "跟隨系統";
 "settings.general.input_device.automatic" = "自動選擇";
 "settings.general.input_device.current" = "目前裝置：%1$@";
 "settings.general.input_device.unavailable" = "無法使用";
 "settings.general.floating_overlay" = "顯示浮動錄音提示";
-"settings.general.release_f5_when_unloaded" = "卸載模型後，將 F5 交還給 macOS 原生功能";
+"settings.general.release_f5_when_unloaded" = "卸載語音模型後，將聽寫快速鍵交還給 macOS";
 "settings.general.text_polish" = "啟用文字潤飾";
 "settings.general.number_conversion" = "將中文數字轉換為阿拉伯數字";
 "settings.general.punctuation" = "標點清理";
@@ -1622,10 +1785,10 @@
 "settings.status.checking_model" = "正在檢查這部 Mac 上已有的模型檔案。";
 "settings.status.verifying_model" = "正在驗證模型檔案。";
 "settings.status.loading_model" = "正在將模型載入記憶體。";
-"settings.status.ready_detail" = "按 F5 開始聽寫。";
-"settings.status.connecting_detail" = "正在等待麥克風音訊，再按一次 F5 可取消。";
+"settings.status.ready_detail" = "使用聽寫快速鍵開始。";
+"settings.status.connecting_detail" = "正在等待麥克風音訊，再按一次聽寫快速鍵可取消。";
 "settings.general.input_device.selected_unavailable" = "所選裝置暫不可用";
-"settings.status.recording_detail" = "說完後再按一次 F5。";
+"settings.status.recording_detail" = "說完後再按一次聽寫快速鍵。";
 "settings.status.transcribing_detail" = "正在將語音轉換為文字。";
 "settings.status.polishing_detail" = "正在套用你的文字偏好。";
 "settings.status.unloaded_detail" = "模型仍保留在這部 Mac 上；載入記憶體後即可開始本機聽寫。";
@@ -1714,7 +1877,7 @@
 "settings.debug.overlay.opacity" = "佔位玻璃不透明度";
 "settings.debug.overlay.curve" = "淡出加速程度";
 "settings.debug.overlay.curve_help" = "1 為線性。數值越大，前段淡化越慢，接近中心時淡化越快。調整立即生效。";
-"settings.debug.glass.title" = "佔位玻璃材質";
+"settings.debug.glass.title" = "佔位玻璃";
 "settings.debug.glass.variant" = "玻璃樣式";
 "settings.debug.glass.system" = "系統清澈";
 "settings.debug.glass.tint" = "底色染色強度";
@@ -1723,4 +1886,119 @@
 "settings.debug.glass.help" = "這些數值是遠離目標時的最大值。拖動重疊後，折射、模糊和底色隨淡出曲線同步減弱；圓角不變。染色為零時不疊加底色。";
 "settings.debug.glass.refraction" = "內部折射強度";
 "settings.debug.glass.control_center" = "控制中心材質";
-"settings.debug.glass.control_center_help" = "吸附目標使用系統控制中心材質，並隨聆聽浮窗靠近而淡出。";
+"settings.debug.glass.control_center_help" = "聆聽與字幕浮窗共用控制中心玻璃佔位，靠近預設位置時淡出。";
+"overview.dictation_failed" = "聽寫失敗";
+"overview.keep_caption_window" = "結束後保留字幕視窗";
+"overview.keep_caption_text" = "再次開始時保留已有字幕";
+"overview.finishing" = "正在收尾";
+"overview.developer_mode" = "開發者模式";
+"overview.none" = "無";
+"overview.input_sources" = "輸入來源";
+"overview.microphone" = "麥克風";
+"overview.loaded_models" = "已載入模型";
+"overview.app_memory" = "HushType 記憶體用量";
+"overview.runtime_details" = "執行詳情";
+"overview.configuration" = "設定：";
+"overview.in_use" = "使用中";
+"overview.idle" = "閒置";
+"overview.running" = "正在執行";
+"overview.start" = "開始";
+"profiles.title" = "處理設定";
+"profiles.initial_dictation" = "預設設定";
+"profiles.initial_caption" = "設定 2";
+"profiles.new_name" = "新增設定";
+"profiles.copy_suffix" = "副本";
+"profiles.error.invalid" = "請檢查設定名稱、音訊來源、模型與處理選項。";
+"profiles.error.conflict" = "設定檔已被其他操作修改，請取消編輯後重新開啟。";
+"profiles.error.unsaved" = "請先儲存或取消目前修改。";
+"profiles.error.model_busy" = "另一個工作正在使用不同的語音模型，請先結束該工作再切換型號。";
+"profiles.cannot_start" = "無法啟動這份設定";
+"profiles.follow_system" = "跟隨系統輸入裝置";
+"profiles.automatic" = "自動選擇輸入裝置";
+"profiles.unavailable_device" = "輸入裝置無法使用";
+"profiles.back" = "設定列表";
+"profiles.unsaved" = "尚未儲存";
+"profiles.save" = "儲存";
+"profiles.name" = "名稱";
+"profiles.save_help" = "變更自動儲存，用於下一次任務；執行中的任務保留啟動時的設定。";
+"profiles.new" = "新增設定";
+"profiles.rename" = "重新命名";
+"profiles.duplicate" = "複製設定";
+"profiles.delete" = "刪除";
+"profiles.delete_title" = "將這份設定移到垃圾桶？";
+"profiles.source_kind" = "來源類型";
+"profiles.microphone" = "輸入裝置";
+"profiles.application_audio" = "應用程式音訊";
+"profiles.device" = "裝置";
+"profiles.application" = "應用程式";
+"profiles.choose_application" = "選擇應用程式";
+"profiles.group.input" = "1. 輸入來源";
+"profiles.group.recognition" = "2. 辨識";
+"profiles.group.rules" = "3. 規則整理";
+"profiles.group.llm" = "4. LLM 處理";
+"profiles.asr" = "語音模型";
+"profiles.language" = "辨識語言";
+"profiles.dictionary" = "套用替換詞典";
+"profiles.edit_dictionary" = "編輯詞典";
+"profiles.polish" = "校對";
+"profiles.polish_backend" = "校對後端";
+"profiles.correction" = "修正程度";
+"profiles.correction.light" = "輕度";
+"profiles.correction.standard" = "標準";
+"profiles.correction.fluent" = "流暢";
+"profiles.translate" = "翻譯";
+"profiles.translation_backend" = "翻譯後端";
+"profiles.target" = "目標語言";
+"profiles.llm_help" = "同時啟用時先校對、後翻譯。文字模型需在模型頁下載，其他後端尚未接入。";
+"profiles.configuration" = "設定";
+"profiles.edit" = "編輯設定";
+"profiles.selection_help" = "所選設定用於下一次工作。";
+"profiles.start_dictation" = "開始／停止聽寫";
+"profiles.output_settings" = "文字輸入與浮動視窗設定";
+// Dictionary library selection
+"dictionary.libraries" = "詞庫";
+"dictionary.library" = "詞庫";
+"dictionary.new" = "新增詞庫";
+"dictionary.selection_help" = "可不選、單選或多選。不選時不套用詞典替換。";
+"dictionary.management_help" = "在處理設定中勾選需要的詞庫。預設詞庫保留原有詞典；刪除其他詞庫前，需先在設定中取消勾選。";
+"dictionary.delete_title" = "將這個詞庫及其詞條移到垃圾桶？";
+"dictionary.priority_help" = "詞條重複時，優先採用列表靠前的詞庫。長詞優先，替換不連鎖。";
+"dictionary.default_name" = "預設詞庫";
+"dictionary.error.invalid_name" = "詞庫名稱需為 1–100 個字元。";
+"dictionary.error.invalid_metadata" = "詞庫清單檔案無效，請檢查檔案後重新啟動 HushType。";
+"dictionary.error.changed_on_disk" = "詞庫清單已被其他程式修改。請重新啟動 HushType 後再編輯。";
+"dictionary.error.not_found" = "此詞庫已不存在。";
+"dictionary.error.create_file" = "無法建立詞庫檔案。";
+"profiles.import" = "匯入";
+"profiles.export" = "匯出";
+"profiles.used_by" = "被%1$@佔用";
+"profiles.error.invalid_import" = "此檔案不是有效的 HushType 處理設定。";
+"profiles.error.missing_library" = "此設定引用了本機沒有的詞庫，請還原原詞庫檔案後再匯入。";
+"profiles.error.not_found" = "此處理設定已不存在。";
+"profiles.export_help" = "僅匯出設定選項，不包含模型和詞庫檔案。";
+"permission.system_audio.allow" = "允許系統音訊錄製";
+"common.button.open_permissions" = "開啟權限頁";
+"profiles.delete_in_use" = "設定正在使用";
+"settings.shortcuts.legacy_polish" = "舊雙擊手勢的文字潤飾";
+"profiles.subtitle" = "管理輸入來源、語音辨識、規則整理與 AI 處理的設定。";
+"profiles.unavailable" = "（無法使用）";
+"profiles.error.model_unavailable" = "%1$@ 模型無法使用。";
+"profiles.inspector.close" = "收合設定詳細內容";
+"profiles.inspector.saving" = "正在儲存…";
+"profiles.inspector.saved" = "已儲存";
+"profiles.autosave" = "自動儲存";
+"profiles.manual_save_help" = "按下儲存後套用至下一次工作。收起面板會保留尚未儲存的草稿。";
+"dictionary.back" = "詞庫列表";
+"dictionary.inspector.close" = "收起詞庫詳細資料";
+"settings.sidebar.reorder" = "拖移調整順序";
+"settings.sidebar.reorder_done" = "完成側邊欄排序";
+"inspector.open" = "展開設定面板";
+"inspector.choose" = "選擇設定";
+"inspector.search" = "搜尋設定";
+"inspector.filter" = "篩選";
+"inspector.all" = "全部";
+"inspector.profiles" = "流程設定";
+"inspector.dictionaries" = "詞典設定";
+"inspector.no_results" = "沒有符合的設定";
+"inspector.edge_style" = "右側面板頂端捲動邊緣效果";
+"inspector.edge_none" = "關閉";

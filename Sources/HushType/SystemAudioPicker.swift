@@ -16,6 +16,14 @@ private let log = Logger(subsystem: "com.felix.hushtype", category: "systemAudio
 @MainActor
 enum SystemAudioPicker {
     private static var window: NSWindow?
+    private static var completionHandler: ((String?) -> Void)?
+    private static var windowDelegate: PickerWindowDelegate?
+
+    private final class PickerWindowDelegate: NSObject, NSWindowDelegate {
+        func windowWillClose(_ notification: Notification) {
+            SystemAudioPicker.finish(nil)
+        }
+    }
 
     static func present(completion: @escaping (String?) -> Void) {
         // If a picker is already showing, bring it forward and abort.
@@ -24,16 +32,10 @@ enum SystemAudioPicker {
             return
         }
 
+        completionHandler = completion
         let view = SystemAudioPickerView(
-            onPick: { bundleID in
-                LiveCaptionTuning.setSystemAudioBundleID(bundleID)
-                dismiss()
-                completion(bundleID)
-            },
-            onCancel: {
-                dismiss()
-                completion(nil)
-            }
+            onPick: { finish($0) },
+            onCancel: { finish(nil) }
         )
 
         let hosting = NSHostingController(rootView: view)
@@ -49,6 +51,9 @@ enum SystemAudioPicker {
         )
         panel.contentViewController = hosting
         panel.isReleasedWhenClosed = false
+        let delegate = PickerWindowDelegate()
+        windowDelegate = delegate
+        panel.delegate = delegate
         panel.center()
         panel.level = .floating
         panel.makeKeyAndOrderFront(nil)
@@ -56,9 +61,21 @@ enum SystemAudioPicker {
         window = panel
     }
 
-    private static func dismiss() {
+    static func cancel() {
+        finish(nil)
+    }
+
+    private static func finish(_ bundleID: String?) {
+        guard let completion = completionHandler else { return }
+        completionHandler = nil
+        if let bundleID {
+            LiveCaptionTuning.setSystemAudioBundleID(bundleID)
+        }
         window?.orderOut(nil)
+        window?.delegate = nil
         window = nil
+        windowDelegate = nil
+        completion(bundleID)
     }
 }
 

@@ -168,7 +168,13 @@ enum L10n {
 
     /// Test-only: re-resolve `launchTag` after mutating the persisted
     /// preference in UserDefaults.
-    static func resetLaunchStateForTests() { launchState.reset() }
+    static func resetLaunchStateForTests() {
+        launchState.reset()
+        lookupLock.withLock {
+            lookupCache.removeAll()
+            uncachedLookupCount = 0
+        }
+    }
 
     // MARK: Lookup
 
@@ -306,6 +312,19 @@ enum L10n {
 
     // MARK: Low-level lookup
 
+    private struct LookupKey: Hashable {
+        let bundleURL: URL
+        let key: String
+        let table: String
+        let tag: String
+        let legacy: Bool
+    }
+    private struct CachedLookup { let value: String? }
+    private static let lookupLock = NSLock()
+    private static var lookupCache: [LookupKey: CachedLookup] = [:]
+    private static var uncachedLookupCount = 0
+    static var uncachedLookupCountForTests: Int { lookupLock.withLock { uncachedLookupCount } }
+
     /// Strategy-isolated exact lookup for one tag (SPEC §5.4):
     /// - macOS 15.4+: `Bundle.localizedString(forKey:value:table:localizations:)`
     ///   with the effective `Locale.Language` passed explicitly;
@@ -315,13 +334,25 @@ enum L10n {
     /// a malformed/missing key surfaces as the key itself and callers apply
     /// the returned-key test.
     private static func exactLookup(_ key: String, table: String, tag: String, in base: Bundle) -> String? {
-        if forceLegacyLookupForTests {
-            return legacyLookup(key, table: table, tag: tag, in: base)
+        let identity = LookupKey(bundleURL: base.bundleURL, key: key, table: table,
+                                 tag: tag, legacy: forceLegacyLookupForTests)
+        // Explicit-localization Bundle queries repeatedly parse the strings
+        // table on macOS 26. Cache raw results (including misses), not caller
+        // fallbacks. Bundle resources are immutable for the process lifetime.
+        return lookupLock.withLock {
+            if let cached = lookupCache[identity] { return cached.value }
+            let result: String?
+            if forceLegacyLookupForTests {
+                result = legacyLookup(key, table: table, tag: tag, in: base)
+            } else if #available(macOS 15.4, *) {
+                result = newLookup(key, table: table, tag: tag, in: base)
+            } else {
+                result = legacyLookup(key, table: table, tag: tag, in: base)
+            }
+            uncachedLookupCount += 1
+            lookupCache[identity] = CachedLookup(value: result)
+            return result
         }
-        if #available(macOS 15.4, *) {
-            return newLookup(key, table: table, tag: tag, in: base)
-        }
-        return legacyLookup(key, table: table, tag: tag, in: base)
     }
 
     @available(macOS 15.4, *)

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Card view displaying the source text and its translation.
@@ -5,6 +6,7 @@ struct TranslationCardView: View {
     let sourceLanguage: String
     let sourceText: String
     let translatedText: String
+    @State private var copied = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -16,12 +18,17 @@ struct TranslationCardView: View {
 
                 Spacer()
 
-                Label(
-                    L10n.string("translation.card.copied", fallback: "Copied to clipboard"),
-                    systemImage: "checkmark.circle.fill"
-                )
-                    .font(.caption)
-                    .foregroundStyle(.green)
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(translatedText, forType: .string)
+                    copied = true
+                } label: {
+                    Label(
+                        copied ? L10n.string("translation.card.copied", fallback: "Copied to clipboard")
+                            : L10n.string("text.card.copy_result", fallback: "Copy result"),
+                        systemImage: copied ? "checkmark" : "doc.on.doc"
+                    )
+                }
             }
 
             Divider()
@@ -57,7 +64,7 @@ struct TranslationCardView: View {
 
                 Text(L10n.string(
                     "translation.card.privacy",
-                    fallback: "Powered by Apple Translation Framework. May connect to Apple servers."
+                    fallback: "Translated locally with Qwen3 4B."
                 ))
                     .font(.system(size: 9))
                     .foregroundStyle(.tertiary)

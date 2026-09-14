@@ -9,6 +9,7 @@ enum PolishResult {
 }
 
 enum PolishError: LocalizedError {
+    case cancelled
     case disabled
     case unavailable(String)
     case emptySelection
@@ -22,6 +23,8 @@ enum PolishError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case .cancelled:
+            return L10n.string("common.button.cancel", fallback: "Cancel")
         case .disabled:
             return L10n.string("error.polish.disabled", fallback: "Text Polish is turned off.")
         case .unavailable(let reason):
@@ -93,43 +96,23 @@ enum TextPolisher {
 
     @MainActor
     static func refreshAvailabilityCache() {
-        guard #available(macOS 26.0, *) else {
-            isAvailableCached = false
-            unavailableReasonCached = L10n.string(
-                "error.polish.macos_too_old",
-                fallback: "This Mac is running an earlier version of macOS."
-            )
-            return
-        }
-
-        if let reason = FoundationModelsPolisher.availabilityReason() {
-            isAvailableCached = false
-            unavailableReasonCached = reason
-        } else {
+        if let catalog = try? LocalTextModelCatalog(), case .installed = catalog.installation() {
             isAvailableCached = true
             unavailableReasonCached = ""
+        } else {
+            isAvailableCached = false
+            unavailableReasonCached = L10n.string(
+                "error.local_text.download_first",
+                fallback: "Download the optional text model in Model settings first."
+            )
         }
         log.info("Availability cache refreshed: \(self.isAvailableCached, privacy: .public)")
     }
 
     @MainActor
     static func validate() async -> ValidationResult {
-        guard #available(macOS 26.0, *) else {
-            refreshAvailabilityCache()
-            return .unavailable(reason: unavailableReasonCached)
-        }
-
-        let result = await FoundationModelsPolisher.validate()
-        switch result {
-        case .ok:
-            isAvailableCached = true
-            unavailableReasonCached = ""
-            return .ok
-        case .unavailable(let reason):
-            isAvailableCached = false
-            unavailableReasonCached = reason
-            return .unavailable(reason: reason)
-        }
+        refreshAvailabilityCache()
+        return isAvailableCached ? .ok : .unavailable(reason: unavailableReasonCached)
     }
 
     static func polish(_ text: String) async -> PolishResult {
@@ -144,77 +127,13 @@ enum TextPolisher {
         guard !looksLikeCode(text) else {
             return .failure(.codeDetected)
         }
-        guard isAvailableCached else {
-            return .failure(.unavailable(unavailableReasonCached))
-        }
-        guard #available(macOS 26.0, *) else {
-            return .failure(.unavailable(L10n.string(
-                "error.polish.macos_too_old",
-                fallback: "This Mac is running an earlier version of macOS."
-            )))
-        }
-
-        // Race the FM call against a wall-clock deadline: a hung generation
-        // would otherwise wedge state at .polishing and the idle guards on all
-        // three tap sites would drop every hotkey press until relaunch. The
-        // abandoned task ends on its own; only the state machine is protected.
-        let modelResult = await withDeadline(seconds: 30) {
-            if #available(macOS 26.0, *) {
-                return await FoundationModelsPolisher.polish(text)
-            }
-            return .failure(PolishError.unavailable(L10n.string(
-                "error.polish.macos_too_old",
-                fallback: "This Mac is running an earlier version of macOS."
-            )))
-        }
-        guard let modelResult else {
-            return .failure(.generationFailed(L10n.string(
-                "error.polish.timeout",
-                fallback: "Apple Intelligence timed out after 30 seconds."
-            )))
-        }
-        switch modelResult {
-        case .failure(let error):
+        do {
+            let polished = try await LocalTextResources.transform(.polish(text))
+            return validateOutput(polished, input: text)
+        } catch is CancellationError {
+            return .failure(.cancelled)
+        } catch {
             return .failure(.generationFailed(error.localizedDescription))
-        case .success(let polished):
-            let validated = validateOutput(polished, input: text)
-            // The model has a translation attractor on mixed-language
-            // selections. A single retry with an explicit keep-the-mix
-            // reminder rescues a good share of them; the retry result must
-            // clear every guard or the original guard error stands.
-            if case .failure(let guardError) = validated,
-               guardError.isLanguageGuard {
-                let retryResult = await withDeadline(seconds: 30) {
-                    if #available(macOS 26.0, *) {
-                        return await FoundationModelsPolisher.polish(text, mixRetry: true)
-                    }
-                    return .failure(PolishError.unavailable(L10n.string(
-                        "error.polish.macos_too_old",
-                        fallback: "This Mac is running an earlier version of macOS."
-                    )))
-                }
-                if case .success(let retried) = retryResult ?? .failure(PolishError.emptyOutput),
-                   case .success(let polished, let changed) = validateOutput(retried, input: text) {
-                    return .success(polished: polished, changed: changed)
-                }
-            }
-            return validated
-        }
-    }
-
-    private static func withDeadline<T: Sendable>(
-        seconds: UInt64,
-        _ work: @escaping @Sendable () async -> T
-    ) async -> T? {
-        await withTaskGroup(of: T?.self) { group in
-            group.addTask { await work() }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
-                return nil
-            }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
         }
     }
 

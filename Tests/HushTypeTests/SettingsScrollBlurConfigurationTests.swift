@@ -73,9 +73,10 @@ final class SettingsScrollBlurConfigurationTests: XCTestCase {
         )
     }
 
-    func testDebugSectionIsPreviewOnlyAndOnboardingStillWins() {
-        XCTAssertTrue(HushTypeSettingsSection.visibleSections(onboardingRequired: false, isPreview: true).contains(.debug))
-        XCTAssertFalse(HushTypeSettingsSection.visibleSections(onboardingRequired: false, isPreview: false).contains(.debug))
+    func testDebugIsInlineAndOnboardingStillWins() {
+        XCTAssertEqual(HushTypeSettingsSection.visibleSections(onboardingRequired: false, isPreview: true),
+                       HushTypeSettingsSection.visibleSections(onboardingRequired: false, isPreview: false))
+        XCTAssertFalse(HushTypeSettingsSection.allCases.map(\.rawValue).contains("debug"))
         XCTAssertEqual(
             HushTypeSettingsSection.visibleSections(onboardingRequired: true, isPreview: true),
             [.permissions]

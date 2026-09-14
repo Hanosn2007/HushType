@@ -1,6 +1,5 @@
 import Foundation
 import SpeechVAD
-import Qwen3ASR
 import os
 
 private let log = Logger(subsystem: "com.felix.hushtype", category: "backendLocal")
@@ -29,7 +28,7 @@ final class LocalQwen3Backend: TranscriptionBackend, @unchecked Sendable {
     private var consumerTask: Task<Void, Never>?
 
     init(
-        asrModel: Qwen3ASRModel,
+        engine: Qwen3TranscriptionEngine,
         vadModel: SileroVADModel,
         language: String?,
         tuning: LiveCaptionTuning
@@ -38,7 +37,7 @@ final class LocalQwen3Backend: TranscriptionBackend, @unchecked Sendable {
         let (segStream, segCont) = AsyncStream.makeStream(of: LiveCaptionSegment.self)
         self.workerSegmentStream = segStream
         self.worker = LiveCaptionWorker(
-            asrModel: asrModel,
+            engine: engine,
             vadModel: vadModel,
             segmentContinuation: segCont,
             language: language,
@@ -75,6 +74,13 @@ final class LocalQwen3Backend: TranscriptionBackend, @unchecked Sendable {
         await worker.reset()
         eventsContinuation.finish()
         log.info("LocalQwen3Backend stopped")
+    }
+
+    func finish() async {
+        await worker.finish()
+        await consumerTask?.value
+        consumerTask = nil
+        eventsContinuation.finish()
     }
 
     /// Local-only: force-emit whatever's in the worker's in-flight buffer.

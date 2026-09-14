@@ -32,6 +32,22 @@ final class LocalizationTests: XCTestCase {
 
     // MARK: - Bundle selection
 
+    func testRepeatedLookupsDoNotReenterBundleParsing() {
+        let expected = L10n.string("profiles.name", fallback: "Name")
+        let initial = L10n.uncachedLookupCountForTests
+        for _ in 0..<1000 {
+            XCTAssertEqual(L10n.string("profiles.name", fallback: "Name"), expected)
+        }
+        XCTAssertEqual(L10n.uncachedLookupCountForTests, initial)
+    }
+
+    func testCachedMissPreservesEachCallersFallback() {
+        XCTAssertEqual(L10n.string("test.cache.absent", fallback: "First"), "First")
+        let initial = L10n.uncachedLookupCountForTests
+        XCTAssertEqual(L10n.string("test.cache.absent", fallback: "Second"), "Second")
+        XCTAssertEqual(L10n.uncachedLookupCountForTests, initial)
+    }
+
     func testBaseBundleIsModuleForNonAppBundle() {
         // Under swift test the main bundle is .xctest, not .app — the
         // runtime rule must select Bundle.module, which carries our tables.

@@ -3,12 +3,22 @@ import Foundation
 /// The drag path reads this value on each move so Preview tuning applies live.
 enum FloatingOverlayDragPreferences {
     static let radiusKey = "hushtype.overlay.snapRadius"
+    static let snappingEnabledKey = "hushtype.overlay.snappingEnabled"
+    static let hapticsEnabledKey = "hushtype.overlay.hapticsEnabled"
+    static var snappingEnabled: Bool { (UserDefaults.standard.object(forKey: snappingEnabledKey) as? Bool) ?? true }
+    static var hapticsEnabled: Bool { (UserDefaults.standard.object(forKey: hapticsEnabledKey) as? Bool) ?? true }
     static let defaultRadius: CGFloat = 10
     static let allowedRadius: ClosedRange<CGFloat> = 2...40
 
     static var snapRadius: CGFloat { load() }
     static let fadeExponentKey = "hushtype.overlay.fadeExponent"
     static var fadeExponent: CGFloat { value(fadeExponentKey, fallback: 2, range: 1...4) }
+    static let guideEnabledKey = "hushtype.overlay.guideEnabled"
+    static let guideOpacityKey = "hushtype.overlay.guideOpacity"
+    static var guideEnabled: Bool {
+        (UserDefaults.standard.object(forKey: guideEnabledKey) as? Bool) ?? true
+    }
+    static var guideOpacity: CGFloat { value(guideOpacityKey, fallback: 1, range: 0.1...1) }
 
     private static func value(_ key: String, fallback: CGFloat, range: ClosedRange<CGFloat>) -> CGFloat {
         guard let number = UserDefaults.standard.object(forKey: key) as? NSNumber,

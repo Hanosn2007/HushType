@@ -278,8 +278,26 @@ enum TranscriptionError: Error, Equatable, Sendable {
 // MARK: - Qwen3 Implementation
 
 final class Qwen3TranscriptionEngine: TranscriptionEngine {
+    private final class InferenceModelBox: @unchecked Sendable {
+        let model: Qwen3ASRModel
+
+        init(model: Qwen3ASRModel) {
+            self.model = model
+        }
+
+        func transcribe(audio: [Float], language: String?, maxTokens: Int) -> String {
+            model.transcribe(
+                audio: audio,
+                sampleRate: 16_000,
+                language: language,
+                maxTokens: maxTokens
+            )
+        }
+    }
+
     private let loadLock = NSLock()
     private var model: Qwen3ASRModel?
+    private var inferenceCoordinator: QwenASRInferenceCoordinator?
     private var loadedModelIdentifier: String?
     private var inFlightLoad: Task<Qwen3ASRModel, Error>?
     private var inFlightModelIdentifier: String?
@@ -305,9 +323,9 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         return model != nil
     }
 
-    /// Read-only handle for the live-caption pipeline. Returns the loaded
-    /// model instance so `LiveCaptionManager` can call `transcribe()` directly
-    /// without going through the dictation post-processing chain.
+    /// Transitional inspection handle retained for existing tests. Production
+    /// inference must use `transcribeRaw` so the non-thread-safe model never
+    /// bypasses the shared coordinator.
     var loadedModel: Qwen3ASRModel? {
         loadLock.lock()
         defer { loadLock.unlock() }
@@ -476,6 +494,12 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
             if let detailHandlerID { detailProgressHandlers.removeValue(forKey: detailHandlerID) }
             return false
         }
+        if model !== loadedModel || inferenceCoordinator == nil {
+            let box = InferenceModelBox(model: loadedModel)
+            inferenceCoordinator = QwenASRInferenceCoordinator { audio, language, maxTokens in
+                box.transcribe(audio: audio, language: language, maxTokens: maxTokens)
+            }
+        }
         model = loadedModel
         loadedModelIdentifier = modelIdentifier
         if inFlightLoad != nil && inFlightGeneration == generation {
@@ -632,15 +656,20 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         }
     }
 
-    func transcribe(audio: [Float], language: String?) async throws -> String {
-        guard let model = loadedModel else {
-            log.error("Model not loaded")
-            return ""
-        }
-
+    func transcribeRaw(
+        audio: [Float],
+        language: String?,
+        maxTokens: Int = 448,
+        client: QwenASRInferenceClient
+    ) async throws -> String {
         guard !audio.isEmpty else {
             log.warning("Empty audio buffer")
             return ""
+        }
+
+        guard let coordinator = currentInferenceCoordinator() else {
+            log.error("Model not loaded")
+            throw QwenASRInferenceCoordinatorError.modelUnavailable
         }
 
         let duration = Double(audio.count) / 16000.0
@@ -648,14 +677,27 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
 
         let startTime = CFAbsoluteTimeGetCurrent()
 
-        let rawText = model.transcribe(
+        let rawText = try await coordinator.transcribe(
             audio: audio,
-            sampleRate: 16000,
-            language: language
+            language: language,
+            maxTokens: maxTokens,
+            client: client
         )
 
         let asrElapsed = CFAbsoluteTimeGetCurrent() - startTime
         log.info("Raw transcription (\(String(format: "%.2f", asrElapsed))s): \(rawText)")
+
+        return rawText
+    }
+
+    func transcribe(audio: [Float], language: String?) async throws -> String {
+        let startTime = CFAbsoluteTimeGetCurrent()
+        let rawText = try await transcribeRaw(
+            audio: audio,
+            language: language,
+            client: .dictation
+        )
+        let asrElapsed = CFAbsoluteTimeGetCurrent() - startTime
 
         let finalText = DictationPostProcessor.apply(rawText)
 
@@ -670,10 +712,48 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         return finalText
     }
 
+    /// Non-blocking compatibility path for load cancellation and callers that
+    /// already know no inference is active. It immediately rejects new work,
+    /// while the detached coordinator keeps an in-flight model alive until its
+    /// synchronous call returns. Use `unloadAndWait()` before clearing MLX's
+    /// process-wide cache or starting a replacement model lifecycle.
     func unload() {
+        let detached = detachForUnload()
+        detached.coordinator?.shutdown()
+        detached.monitor?.stop()
+        log.info("Model unload requested")
+    }
+
+    func unloadAndWait() async {
+        let detached = detachForUnload()
+        detached.monitor?.stop()
+        await detached.coordinator?.shutdownAndWait()
+        // Cancellation is cooperative. Qwen's loader may already be inside a
+        // synchronous tokenizer or weight-loading phase, so wait for the task
+        // itself before a caller clears MLX cache or begins a replacement load.
+        if let loadTask = detached.loadTask {
+            _ = await loadTask.result
+        }
+        log.info("Model unloaded")
+    }
+
+    private struct DetachedInferenceState {
+        let coordinator: QwenASRInferenceCoordinator?
+        let loadTask: Task<Qwen3ASRModel, Error>?
+        let monitor: ModelDownloadMonitor?
+    }
+
+    private func currentInferenceCoordinator() -> QwenASRInferenceCoordinator? {
+        loadLock.lock()
+        defer { loadLock.unlock() }
+        return inferenceCoordinator
+    }
+
+    private func detachForUnload() -> DetachedInferenceState {
         loadLock.lock()
         loadGeneration &+= 1
-        inFlightLoad?.cancel()
+        let loadTask = inFlightLoad
+        loadTask?.cancel()
         inFlightLoad = nil
         inFlightModelIdentifier = nil
         progressHandlers.removeAll()
@@ -682,10 +762,15 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         latestDetailProgress = nil
         let monitor = downloadMonitor
         downloadMonitor = nil
+        let coordinator = inferenceCoordinator
+        inferenceCoordinator = nil
         model = nil
         loadedModelIdentifier = nil
         loadLock.unlock()
-        monitor?.stop()
-        log.info("Model unloaded")
+        return DetachedInferenceState(
+            coordinator: coordinator,
+            loadTask: loadTask,
+            monitor: monitor
+        )
     }
 }

@@ -6,6 +6,7 @@ import os
 private let log = Logger(subsystem: "com.felix.hushtype", category: "systemAudio")
 
 enum SystemAudioError: Error, LocalizedError {
+    case noApplicationSelected
     case appNotRunning(bundleID: String)
     case noDisplay
     case converterSetupFailed
@@ -13,6 +14,11 @@ enum SystemAudioError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case .noApplicationSelected:
+            return L10n.string(
+                "profiles.choose_application",
+                fallback: "Choose an application"
+            )
         case .appNotRunning(let id):
             return L10n.format(
                 "error.system_audio.app_not_running",
@@ -78,6 +84,13 @@ final class SystemAudioSource: NSObject, AudioSource, SCStreamOutput, SCStreamDe
     }
 
     func start() async throws {
+        // Do not touch ScreenCaptureKit for the valid, saved "no application"
+        // profile state. The product entry points treat this as a no-op; this
+        // guard keeps lower-level callers from prompting for permission too.
+        guard !bundleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw SystemAudioError.noApplicationSelected
+        }
+
         let content: SCShareableContent
         do {
             content = try await SCShareableContent.excludingDesktopWindows(
@@ -127,12 +140,16 @@ final class SystemAudioSource: NSObject, AudioSource, SCStreamOutput, SCStreamDe
     }
 
     func stop() {
+        Task { await stopAndWait() }
+    }
+
+    func stopAndWait() async {
         let toStop = stream
         stream = nil
-        converter = nil
-        inputFormat = nil
-        Task { [toStop] in
-            try? await toStop?.stopCapture()
+        try? await toStop?.stopCapture()
+        sampleQueue.sync {
+            self.converter = nil
+            self.inputFormat = nil
         }
         log.info("System audio capture stopped")
     }

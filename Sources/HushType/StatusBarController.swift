@@ -284,6 +284,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         liveCaptionMenuItem = NSMenuItem(title: liveCaptionTitle, action: nil, keyEquivalent: "")
         updateToggleAppearance(liveCaptionMenuItem, title: liveCaptionTitle, checked: false)
         liveCaptionMenuItem.submenu = buildLiveCaptionSubmenu()
+        menu.addItem(liveCaptionMenuItem)
 
         // ───────── Live Translated Caption (cloud OpenAI translate) ─────────
         let liveTranslatedTitle = L10n.string(
@@ -542,28 +543,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             attributes: subtitleAttributes
         )
         sub.addItem(liveCaptionChangeSourceItem)
-
-        sub.addItem(.separator())
-
-        // Shared tuning file — applies to BOTH caption products, lives here
-        // because the local product is the primary one.
-        let tuningItem = NSMenuItem(
-            title: L10n.string(
-                "menu.live_caption.edit_settings",
-                fallback: "Edit Live Caption Settings"
-            ),
-            action: #selector(editLiveCaptionSettings),
-            keyEquivalent: ""
-        )
-        tuningItem.target = self
-        tuningItem.attributedTitle = NSAttributedString(
-            string: L10n.string(
-                "menu.live_caption.edit_settings",
-                fallback: "Edit Live Caption Settings"
-            ),
-            attributes: subtitleAttributes
-        )
-        sub.addItem(tuningItem)
 
         return sub
     }
@@ -1346,9 +1325,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                     checked: true
                 )
                 self.textPolishMenuItem.isEnabled = true
-                if #available(macOS 26.0, *) {
-                    FoundationModelsPolisher.warmup()
-                }
             case .unavailable(let reason):
                 self.textPolishMenuItem.isEnabled = false
                 self.showAlert(
@@ -1432,27 +1408,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func editDictionary() {
-        // Create the file with the friendly template if it doesn't exist yet,
-        // so first-time users immediately see the format documented inline.
-        DictionaryReplacer.createTemplateIfMissing()
-
-        let url = AppConfig.dictionaryFileURL
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            // Template creation failed — show error
-            showAlert(
-                title: L10n.string("alert.file_create.dictionary.title", fallback: "Could not open dictionary"),
-                message: L10n.format(
-                    "alert.file_create.dictionary.message",
-                    "Failed to create the dictionary file at:\n%1$@",
-                    arguments: [url.path]
-                )
-            )
-            return
-        }
-
-        // Open in the user's default text editor
-        NSWorkspace.shared.open(url)
-        log.info("Opened dictionary file in default editor")
+        onOpenSettings?(.dictionary)
     }
 
     // MARK: - Polish Instructions

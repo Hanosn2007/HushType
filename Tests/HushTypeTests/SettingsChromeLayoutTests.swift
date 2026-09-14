@@ -3,6 +3,33 @@ import XCTest
 @testable import HushType
 
 final class SettingsChromeLayoutTests: XCTestCase {
+    func testLeadingFadeCompositesBothOutputLayersWithoutAHardEdge() throws {
+        let stage = CALayer()
+        stage.frame = CGRect(x: 0, y: 0, width: 100, height: 8)
+        for color in [CGColor(gray: 0, alpha: 1), CGColor(gray: 1, alpha: 0.35)] {
+            let child = CALayer()
+            child.frame = stage.bounds
+            child.backgroundColor = color
+            stage.addSublayer(child)
+        }
+        let fade = settingsMakeBackdropLeadingFade()
+        fade.frame = stage.bounds
+        fade.endPoint = CGPoint(x: 0.24, y: 0.5)
+        stage.mask = fade
+        let context = try XCTUnwrap(CGContext(data: nil, width: 100, height: 8,
+            bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        stage.render(in: context)
+        let bitmap = NSBitmapImageRep(cgImage: try XCTUnwrap(context.makeImage()))
+        func alpha(_ x: Int) -> CGFloat { bitmap.colorAt(x: x, y: 4)!.alphaComponent }
+        XCTAssertLessThan(alpha(0), 0.02)
+        XCTAssertGreaterThan(alpha(12), 0.4)
+        XCTAssertLessThan(alpha(12), 0.65)
+        XCTAssertGreaterThan(alpha(24), 0.99)
+        XCTAssertGreaterThan(alpha(90), 0.99)
+        for x in 1..<25 { XCTAssertGreaterThanOrEqual(alpha(x), alpha(x - 1)) }
+    }
+
     func testScrollBlurOwnershipSeparatesPanelsAndAllowsNestedEditors() {
         let sidebar = CGRect(x: 8, y: 8, width: 180, height: 600)
         let detail = CGRect(x: 196, y: 0, width: 600, height: 608)
@@ -376,6 +403,7 @@ final class SettingsChromeLayoutTests: XCTestCase {
 
         XCTAssertEqual(wide.detail, CGRect(x: 188, y: 64, width: 912, height: 636))
         XCTAssertEqual(wide.header, CGRect(x: 206, y: 10, width: 884, height: 36))
+        XCTAssertEqual(1_100 - wide.header.maxX, wide.header.minY)
         XCTAssertEqual(minimum.detail, CGRect(x: 188, y: 64, width: 22, height: 0))
         XCTAssertEqual(minimum.header, CGRect(x: 206, y: 10, width: 0, height: 36))
         XCTAssertGreaterThanOrEqual(minimum.sidebar.height, 0)

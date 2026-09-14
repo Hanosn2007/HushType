@@ -7,12 +7,14 @@ import CoreBluetooth
 enum HushTypeSettingsSection: String, CaseIterable, Identifiable {
     case overview
     case dictation
+    case captions
+    case profiles
+    case shortcuts
     case history
     case model
     case dictionary
     case permissions
     case general
-    case debug
 
     var id: String { rawValue }
 
@@ -20,12 +22,14 @@ enum HushTypeSettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .overview: L10n.string("settings.sidebar.overview", fallback: "Overview")
         case .dictation: L10n.string("settings.sidebar.dictation", fallback: "Dictation")
+        case .captions: L10n.string("settings.sidebar.captions", fallback: "Captions")
+        case .profiles: L10n.string("profiles.title", fallback: "Processing Configurations")
+        case .shortcuts: L10n.string("settings.sidebar.shortcuts", fallback: "Shortcuts")
         case .history: L10n.string("settings.sidebar.history", fallback: "Recognition History")
         case .model: L10n.string("settings.sidebar.model", fallback: "Model")
         case .dictionary: L10n.string("settings.sidebar.dictionary", fallback: "Dictionary")
         case .permissions: L10n.string("settings.sidebar.permissions", fallback: "Permissions")
         case .general: L10n.string("settings.sidebar.general", fallback: "General")
-        case .debug: L10n.string("settings.sidebar.debug", fallback: "Debug")
         }
     }
 
@@ -33,18 +37,20 @@ enum HushTypeSettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .overview: "rectangle.3.group"
         case .dictation: "mic.fill"
+        case .captions: "captions.bubble"
+        case .profiles: "slider.horizontal.3"
+        case .shortcuts: "keyboard"
         case .history: "clock.arrow.circlepath"
         case .model: "cpu"
         case .dictionary: "text.book.closed"
         case .permissions: "checklist"
         case .general: "gearshape"
-        case .debug: "wrench.and.screwdriver"
         }
     }
 
     static func visibleSections(onboardingRequired: Bool, isPreview: Bool) -> [Self] {
         guard !onboardingRequired else { return [.permissions] }
-        return isPreview ? allCases : allCases.filter { $0 != .debug }
+        return allCases
     }
 }
 
@@ -63,8 +69,13 @@ struct HushTypeSettingsActions {
     var reloadModel: () -> Void = {}
     var unloadModel: () -> Void = {}
     var stopModelDownload: () -> Void = {}
+    var cancelRecording: () -> Void = {}
+    var toggleDictation: () -> Void = {}
+    var startCaptions: () -> Void = {}
     var switchDictationEngine: (AppConfig.DictationEngine) -> Void = { _ in }
-    var openDictionary: () -> Void = {}
+    var startCaptionMic: () -> Void = {}
+    var startCaptionSystem: () -> Void = {}
+    var stopCaptions: () -> Void = {}
     var openAccessibilitySettings: () -> Void = {}
     var resetOldAccessibilityEntry: () -> Bool = { false }
     var requestMicrophone: (@escaping (Bool) -> Void) -> Void = { completion in completion(false) }
@@ -80,8 +91,13 @@ struct HushTypeSettingsActions {
         reloadModel: @escaping () -> Void = {},
         unloadModel: @escaping () -> Void = {},
         stopModelDownload: @escaping () -> Void = {},
+        cancelRecording: @escaping () -> Void = {},
+        toggleDictation: @escaping () -> Void = {},
+        startCaptions: @escaping () -> Void = {},
         switchDictationEngine: @escaping (AppConfig.DictationEngine) -> Void = { _ in },
-        openDictionary: @escaping () -> Void = {},
+        startCaptionMic: @escaping () -> Void = {},
+        startCaptionSystem: @escaping () -> Void = {},
+        stopCaptions: @escaping () -> Void = {},
         openAccessibilitySettings: @escaping () -> Void = {},
         resetOldAccessibilityEntry: @escaping () -> Bool = { false },
         requestMicrophone: @escaping (@escaping (Bool) -> Void) -> Void = { completion in completion(false) },
@@ -96,8 +112,13 @@ struct HushTypeSettingsActions {
         self.reloadModel = reloadModel
         self.unloadModel = unloadModel
         self.stopModelDownload = stopModelDownload
+        self.cancelRecording = cancelRecording
+        self.toggleDictation = toggleDictation
+        self.startCaptions = startCaptions
         self.switchDictationEngine = switchDictationEngine
-        self.openDictionary = openDictionary
+        self.startCaptionMic = startCaptionMic
+        self.startCaptionSystem = startCaptionSystem
+        self.stopCaptions = stopCaptions
         self.openAccessibilitySettings = openAccessibilitySettings
         self.resetOldAccessibilityEntry = resetOldAccessibilityEntry
         self.requestMicrophone = requestMicrophone
@@ -113,11 +134,63 @@ struct HushTypeSettingsActions {
 final class HushTypeSettingsModel: ObservableObject {
     let modelLibrary = LocalModelLibrary()
     let recognitionHistory: RecognitionHistoryStore
-    @Published var selection: HushTypeSettingsSection = .overview
+    // Keep unsaved dictionary edits when navigating or closing the settings window.
+    let dictionaryEditor = DictionaryEditorModel()
+    lazy var dictionaryLibraryEditors = DictionaryLibraryEditorSession(defaultEditor: dictionaryEditor)
+    private var navigationHistory = SettingsNavigationHistory()
+    @Published var isProfileInspectorPresented = false
+    @Published var isDictionaryInspectorPresented = false
+    func openDictionaryInspector(id: UUID) {
+        let store = ProcessingProfileStore.shared
+        if ProfileEditorPreferences.autosaveEnabled, store.isDirty, !store.save() {
+            isProfileInspectorPresented = true
+            return
+        }
+        dictionaryLibraryEditors.selectedID = id
+        isProfileInspectorPresented = false
+        isDictionaryInspectorPresented = true
+    }
+    func openProfileInspector(_ profile: ProcessingProfile) {
+        let store = ProcessingProfileStore.shared
+        if store.draft?.id != profile.id {
+            if store.isDirty, !ProfileEditorPreferences.autosaveEnabled {
+                store.errorMessage = ProfileError.unsaved.localizedDescription
+                isDictionaryInspectorPresented = false
+                isProfileInspectorPresented = true
+                return
+            }
+            if store.isDirty, !store.save() {
+                isProfileInspectorPresented = true
+                return
+            }
+            store.edit(profile)
+        } else if !store.isDirty {
+            store.edit(profile)
+        }
+        isDictionaryInspectorPresented = false
+        isProfileInspectorPresented = store.draft != nil
+    }
+    @Published var selection: HushTypeSettingsSection = .overview {
+        didSet { navigationHistory.visit(selection) }
+    }
+    var canNavigateBack: Bool { !onboardingRequired && navigationHistory.canGoBack }
+    var canNavigateForward: Bool { !onboardingRequired && navigationHistory.canGoForward }
+    func navigateBack() {
+        guard canNavigateBack, let target = navigationHistory.back() else { return }
+        selection = target
+    }
+    func navigateForward() {
+        guard canNavigateForward, let target = navigationHistory.forward() else { return }
+        selection = target
+    }
     @Published private(set) var appState: StatusBarController.State = .setupRequired
     @Published private(set) var accessibilityGranted = AXIsProcessTrusted()
     @Published private(set) var microphoneStatus = AVCaptureDevice.authorizationStatus(for: .audio)
     @Published private(set) var isRequestingMicrophone = false
+    @Published private(set) var systemAudioGranted = SystemAudioPermissionFlow.isGranted
+    @Published private(set) var didRequestSystemAudio = false
+    @Published private(set) var systemAudioSettingsOpened = false
+    @Published private(set) var didResetSystemAudio = false
     @Published private(set) var bluetoothStatus = CBManager.authorization
     @Published private(set) var isRequestingBluetooth = false
     private let bluetoothPermissionRequest = BluetoothPermissionRequest()
@@ -130,6 +203,15 @@ final class HushTypeSettingsModel: ObservableObject {
     @Published private(set) var needsPermissionRestart = false
     @Published var onboardingRequired = false
     @Published private(set) var currentDictationEngine = AppConfig.shared.dictationEngine
+    @Published private(set) var captionMode: AppConfig.CaptionMode?
+    @Published private(set) var captionSource: AudioSourceKind?
+    @Published private(set) var isCaptionActive = false
+    @Published private(set) var isCaptionStarting = false
+    @Published private(set) var isCaptionFinishing = false
+    @Published private(set) var dictationTaskState: OverviewTaskState = .stopped
+    @Published var activeDictationProfile: ProcessingProfile?
+    @Published var activeCaptionProfile: ProcessingProfile?
+    private var isDictationPreparing = false
     @Published private(set) var loadedModelID: String?
     @Published var modelID = AppConfig.shared.modelId {
         didSet { AppConfig.shared.modelId = modelID }
@@ -159,6 +241,9 @@ final class HushTypeSettingsModel: ObservableObject {
     }
     @Published var textPolishEnabled = AppConfig.shared.textPolishEnabled {
         didSet { AppConfig.shared.textPolishEnabled = textPolishEnabled }
+    }
+    @Published var textTranslationEnabled = AppConfig.shared.textTranslationEnabled {
+        didSet { AppConfig.shared.textTranslationEnabled = textTranslationEnabled }
     }
     @Published var punctuationMode = AppConfig.shared.punctuationMode {
         didSet { AppConfig.shared.punctuationMode = punctuationMode }
@@ -282,6 +367,16 @@ final class HushTypeSettingsModel: ObservableObject {
 
     func updateAppState(_ state: StatusBarController.State) {
         appState = state
+        switch state {
+        case .connecting, .recording:
+            dictationTaskState = .running
+        case .transcribing, .polishing:
+            if dictationTaskState != .stopped { dictationTaskState = .finishing }
+        case .loading, .loadingDetailed:
+            dictationTaskState = isDictationPreparing ? .running : .stopped
+        default:
+            dictationTaskState = .stopped
+        }
         loadedModelID = actions.loadedModelID()
         modelLibrary.updateEngineState(
             state,
@@ -290,10 +385,94 @@ final class HushTypeSettingsModel: ObservableObject {
         )
     }
 
+    /// Active dictation and captions share one loaded speech model and queue
+    /// recognition work. Model loading and caption teardown remain exclusive.
+    static func canStartCaptions(
+        for appState: StatusBarController.State,
+        isCaptionStarting: Bool = false,
+        hasLoadedModel: Bool = false
+    ) -> Bool {
+        guard !isCaptionStarting else { return false }
+        return switch appState {
+        case .idle, .unloaded:
+            true
+        case .connecting, .recording, .transcribing, .polishing:
+            hasLoadedModel
+        case .setupRequired, .loading, .loadingDetailed, .error:
+            false
+        }
+    }
+
+    var canStartCaptions: Bool {
+        !isCaptionFinishing && Self.canStartCaptions(
+            for: appState, isCaptionStarting: isCaptionStarting,
+            hasLoadedModel: loadedModelID != nil
+        )
+    }
+
+    func startCaptionMic() {
+        guard canStartCaptions else { return }
+        actions.startCaptionMic()
+    }
+
+    func startCaptionSystem() {
+        guard canStartCaptions else { return }
+        actions.startCaptionSystem()
+    }
+
+    func stopCaptions() {
+        guard isCaptionActive || isCaptionStarting else { return }
+        actions.stopCaptions()
+    }
+
+    var captionTaskState: OverviewTaskState {
+        if isCaptionFinishing { return .finishing }
+        return isCaptionActive || isCaptionStarting ? .running : .stopped
+    }
+
+    var canToggleDictation: Bool {
+        if dictationTaskState == .finishing { return false }
+        if dictationTaskState == .running { return true }
+        switch appState {
+        case .idle, .unloaded, .error: return true
+        default: return false
+        }
+    }
+
+    func setDictationPreparing(_ preparing: Bool) {
+        isDictationPreparing = preparing
+        if preparing { dictationTaskState = .running }
+        else { updateAppState(appState) }
+    }
+
+    func toggleDictation() {
+        guard canToggleDictation else { return }
+        actions.toggleDictation()
+    }
+
+    func toggleCaptions() {
+        if captionTaskState == .running { stopCaptions() }
+        else if captionTaskState == .stopped, canStartCaptions { actions.startCaptions() }
+    }
+
+    func updateCaptionState(
+        mode: AppConfig.CaptionMode?,
+        source: AudioSourceKind?,
+        isStarting: Bool = false,
+        isFinishing: Bool = false
+    ) {
+        captionMode = mode
+        captionSource = source
+        isCaptionActive = mode != nil
+        isCaptionStarting = isStarting
+        isCaptionFinishing = isFinishing
+    }
+
     func refresh() {
         isRefreshing = true
         defer { isRefreshing = false }
         refreshBluetoothPermission()
+        systemAudioGranted = SystemAudioPermissionFlow.isGranted
         updatePermissionState(
             accessibilityGranted: AXIsProcessTrusted(),
             microphoneStatus: AVCaptureDevice.authorizationStatus(for: .audio)
@@ -307,6 +486,7 @@ final class HushTypeSettingsModel: ObservableObject {
         releaseF5WhenModelUnloaded = AppConfig.shared.releaseF5WhenModelUnloaded
         numberConversionEnabled = AppConfig.shared.numberConversionEnabled
         textPolishEnabled = AppConfig.shared.textPolishEnabled
+        textTranslationEnabled = AppConfig.shared.textTranslationEnabled
         punctuationMode = AppConfig.shared.punctuationMode
         speechLanguage = AppConfig.shared.language ?? "auto"
         chineseConversionEnabled = AppConfig.shared.chineseConversionEnabled
@@ -326,7 +506,35 @@ final class HushTypeSettingsModel: ObservableObject {
     func loadOrReloadModel() { actions.reloadModel() }
     func unloadModel() { actions.unloadModel() }
     func stopModelDownload() { actions.stopModelDownload() }
-    func openDictionary() { actions.openDictionary() }
+
+    static func canCancelRecording(for appState: StatusBarController.State) -> Bool {
+        if case .recording = appState { return true }
+        return false
+    }
+
+    static func forwardRecordingCancellation(
+        for appState: StatusBarController.State,
+        action: () -> Void
+    ) {
+        guard canCancelRecording(for: appState) else { return }
+        action()
+    }
+
+    var canCancelRecording: Bool {
+        Self.canCancelRecording(for: appState)
+    }
+
+    /// The overview control is only an escape hatch for an active recording;
+    /// finishing or cancelling any other workflow stays outside this UI.
+    func cancelRecording() {
+        Self.forwardRecordingCancellation(for: appState, action: actions.cancelRecording)
+    }
+
+    func refreshOverviewResources() {
+        let currentModelID = actions.loadedModelID()
+        if loadedModelID != currentModelID { loadedModelID = currentModelID }
+        refreshAudioInputDevices()
+    }
 
     func refreshAudioInputDevices() {
         guard !isAudioDeviceRefreshInFlight else { return }
@@ -356,6 +564,26 @@ final class HushTypeSettingsModel: ObservableObject {
     func appendRecognitionHistory(_ text: String) throws {
         do {
             try recognitionHistory.append(text)
+            historyErrorMessage = nil
+        } catch {
+            historyErrorMessage = error.localizedDescription
+            throw error
+        }
+    }
+
+    func appendCaptionHistory(
+        _ text: String,
+        startedAt: Date,
+        endedAt: Date,
+        sourceLabel: String?
+    ) throws {
+        do {
+            try recognitionHistory.appendCaption(
+                text,
+                startedAt: startedAt,
+                endedAt: endedAt,
+                sourceLabel: sourceLabel
+            )
             historyErrorMessage = nil
         } catch {
             historyErrorMessage = error.localizedDescription
@@ -448,6 +676,24 @@ final class HushTypeSettingsModel: ObservableObject {
 
     func openMicrophoneSettings() {
         actions.openMicrophoneSettings()
+    }
+
+    func requestSystemAudio() {
+        didRequestSystemAudio = true
+        _ = SystemAudioPermissionFlow.requestAccess()
+        systemAudioGranted = SystemAudioPermissionFlow.isGranted
+    }
+
+    func openSystemAudioSettings() {
+        systemAudioSettingsOpened = true
+        SystemAudioPermissionFlow.openScreenCaptureSettings()
+    }
+
+    func resetOldSystemAudioEntry() {
+        guard SystemAudioPermissionFlow.resetStaleScreenCaptureEntries() else { return }
+        didResetSystemAudio = true
+        systemAudioGranted = false
+        openSystemAudioSettings()
     }
 
     func requestBluetooth() {

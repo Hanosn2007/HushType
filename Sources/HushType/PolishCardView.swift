@@ -1,9 +1,11 @@
+import AppKit
 import SwiftUI
 
 struct PolishCardView: View {
     let originalText: String
     let polishedText: String
     let changed: Bool
+    @State private var copied = false
 
     /// Track-changes rendering; nil when the selection exceeds the diff
     /// token cap, in which case the card shows the polished text plain.
@@ -22,19 +24,24 @@ struct PolishCardView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text(changed
-                     ? L10n.string("polish.card.changed_title", fallback: "Text Polished")
+                     ? L10n.string("polish.card.preview_title", fallback: "Proofreading Preview")
                      : L10n.string("polish.card.no_changes_title", fallback: "No changes needed"))
                     .font(.headline)
 
                 Spacer()
 
                 if changed {
-                    Label(
-                        L10n.string("translation.card.copied", fallback: "Copied to clipboard"),
-                        systemImage: "checkmark.circle.fill"
-                    )
-                        .font(.caption)
-                        .foregroundStyle(.green)
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(polishedText, forType: .string)
+                        copied = true
+                    } label: {
+                        Label(
+                            copied ? L10n.string("translation.card.copied", fallback: "Copied to clipboard")
+                                : L10n.string("text.card.copy_result", fallback: "Copy result"),
+                            systemImage: copied ? "checkmark" : "doc.on.doc"
+                        )
+                    }
                 }
             }
 
@@ -73,7 +80,7 @@ struct PolishCardView: View {
 
                 Text(L10n.string(
                     "polish.card.privacy",
-                    fallback: "On-device Apple Intelligence — nothing leaves your Mac."
+                    fallback: "Proofread locally with Qwen3 4B. The source text is unchanged."
                 ))
                     .font(.system(size: 9))
                     .foregroundStyle(.tertiary)

@@ -28,9 +28,8 @@ private final class PolishHoverHostingView<V: View>: NSHostingView<V> {
     override func mouseExited(with event: NSEvent) { onMouseExited?() }
 }
 
-/// The polish card is deliberately non-key. It is shown only after
-/// `TextInserter.insert` has completed, and can never steal the source app's
-/// focus around the simulated paste.
+/// Proofreading is a preview. Copying the accepted result is an explicit
+/// action, and the source application retains its original selection.
 final class PolishCardWindow {
     private static let autoDismissSeconds: TimeInterval = 10
 
@@ -65,7 +64,6 @@ final class PolishCardWindow {
         ))
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         hostingView.onMouseEntered = { [weak self] in self?.cancelAutoDismiss() }
-        hostingView.onMouseExited = { [weak self] in self?.scheduleAutoDismiss() }
         panel.contentView = hostingView
 
         let fittingSize = hostingView.fittingSize
@@ -94,7 +92,6 @@ final class PolishCardWindow {
         globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) {
             [weak self] _ in self?.dismiss()
         }
-        scheduleAutoDismiss()
         log.info("Polish card shown")
     }
 

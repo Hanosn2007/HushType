@@ -2,20 +2,44 @@ import AppKit
 import Combine
 import SwiftUI
 
+/// One shared boundary between normal settings and developer-only controls.
+struct SettingsDebugDivider: View {
+    var body: some View {
+        Label(L10n.string("settings.sidebar.debug", fallback: "Debug"),
+              systemImage: "wrench.and.screwdriver")
+            .font(.headline)
+            .textCase(nil)
+            .padding(.top, 12)
+            .padding(.bottom, 4)
+    }
+}
+
 /// Preview-only controls for the small set of runtime settings that are otherwise
 /// intentionally hidden from normal settings pages.
-struct SettingsDebugView: View {
+struct SettingsDebugSections: View {
+    @AppStorage(InspectorEdgeStyle.key) private var inspectorEdgeStyle = InspectorEdgeStyle.hard.rawValue
+    enum Scope { case dictation, general }
+    let scope: Scope
+    @AppStorage(OverviewPreferences.developerModeKey) private var developerMode = false
     @ObservedObject var model: HushTypeSettingsModel
     @Environment(\.displayScale) private var displayScale
     @State private var configuration = SettingsScrollBlurConfiguration.current
     @State private var officialSidebarConfiguration = SettingsOfficialSidebarConfiguration.current
     @State private var inputConfiguration = TextInsertionConfiguration.load()
     @State private var sidebarScrollTestEnabled = SettingsSidebarScrollTestConfiguration.isEnabled()
+    @State private var overlaySnappingEnabled = FloatingOverlayDragPreferences.snappingEnabled
+    @State private var overlayHapticsEnabled = FloatingOverlayDragPreferences.hapticsEnabled
     @State private var overlaySnapRadius = Double(FloatingOverlayDragPreferences.snapRadius)
     @State private var fadeExponent = Double(FloatingOverlayDragPreferences.fadeExponent)
+    @State private var overlayGuideEnabled = FloatingOverlayDragPreferences.guideEnabled
+    @State private var overlayGuideOpacity = Double(FloatingOverlayDragPreferences.guideOpacity)
 
     var body: some View {
-        SettingsDebugForm { sections }
+        Group {
+            if developerMode {
+                sections
+            }
+        }
         .onAppear { reloadConfiguration() }
         .onReceive(
             NotificationCenter.default.publisher(
@@ -29,52 +53,151 @@ struct SettingsDebugView: View {
 
     @ViewBuilder
     private var sections: some View {
+        if scope == .dictation {
         Section {
-            VStack(alignment: .leading, spacing: 5) {
-                HStack {
-                    Text(L10n.string("settings.debug.overlay.snap_radius", fallback: "Snap radius"))
-                    Spacer()
-                    Text(String(format: "%.0f pt", overlaySnapRadius))
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
+            SettingsFeatureGroup(
+                title: L10n.string("settings.debug.overlay.title", fallback: "Listening panel"),
+                systemImage: "move.3d"
+            ) {
+                SettingsFeatureGroup(
+                    title: L10n.string(
+                        "settings.debug.overlay.drag_and_snap",
+                        fallback: "Drag and snapping"
+                    ),
+                    systemImage: "arrow.up.and.down.and.arrow.left.and.right"
+                ) {
+                    Toggle(
+                        L10n.string(
+                            "settings.debug.overlay.snapping_enabled",
+                            fallback: "Enable snapping"
+                        ),
+                        isOn: overlaySnappingEnabledBinding
+                    )
+                    Toggle(
+                        L10n.string(
+                            "settings.debug.overlay.haptics_enabled",
+                            fallback: "Snap haptic feedback"
+                        ),
+                        isOn: overlayHapticsEnabledBinding
+                    )
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack {
+                            Text(L10n.string("settings.debug.overlay.snap_radius", fallback: "Snap radius"))
+                            Spacer()
+                            Text(String(format: "%.0f pt", overlaySnapRadius))
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                        Slider(value: overlaySnapRadiusBinding, in: 2...40, step: 1)
+                        .accessibilityLabel(Text(L10n.string("settings.debug.overlay.snap_radius", fallback: "Snap radius")))
+                    }
+                    Button(L10n.string(
+                        "settings.debug.overlay.drag_restore",
+                        fallback: "Restore drag defaults"
+                    )) {
+                        restoreOverlayDragDefaults()
+                    }
                 }
-                Slider(value: Binding(
-                    get: { overlaySnapRadius },
-                    set: { overlaySnapRadius = Double(FloatingOverlayDragPreferences.save(CGFloat($0))) }
-                ), in: 2...40, step: 1)
-                .accessibilityLabel(Text(L10n.string("settings.debug.overlay.snap_radius", fallback: "Snap radius")))
-            }
-            Text(L10n.string("settings.debug.overlay.description", fallback: "Snap when the panel center enters this radius around the default position. Changes apply immediately; snapping gives one trackpad haptic cue."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Button(L10n.string("settings.debug.overlay.reset", fallback: "Reset to 10 pt")) {
-                overlaySnapRadius = Double(FloatingOverlayDragPreferences.save(FloatingOverlayDragPreferences.defaultRadius))
-            }
-            overlayGuideSlider(
-                label: L10n.string("settings.debug.overlay.curve", fallback: "Fade acceleration"),
-                value: $fadeExponent, range: 1...4, step: 0.1,
-                key: FloatingOverlayDragPreferences.fadeExponentKey,
-                display: String(format: "%.1f", fadeExponent)
-            )
-            Text(L10n.string("settings.debug.overlay.curve_help", fallback: "1 is linear. Higher values retain the guide longer, then fade faster near the center. Changes apply immediately."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        } header: {
-            Label(L10n.string("settings.debug.overlay.title", fallback: "Listening panel"), systemImage: "move.3d")
-        }
 
-        overlayGlassSection
+                overlayGlassGroup
+            }
+        } header: { SettingsDebugDivider() }
 
         Section {
-            Text(
-                L10n.string(
-                    "settings.debug.subtitle",
-                    fallback: "Inspect Preview-only settings and diagnostics."
-                )
-            )
-            .foregroundStyle(.secondary)
+            SettingsFeatureGroup(
+                title: L10n.string("settings.input_method.unicode", fallback: "Unicode keyboard input"),
+                systemImage: "keyboard"
+            ) {
+                Picker(
+                    L10n.string(
+                        "settings.debug.unicode_batch_size",
+                        fallback: "UTF-16 code units per batch"
+                    ),
+                    selection: unicodeBatchSizeBinding
+                ) {
+                    ForEach(TextInsertionConfiguration.batchSizes, id: \.self) { size in
+                        Text(
+                            L10n.format(
+                                "settings.debug.unicode_batch_size.value",
+                                "%1$d UTF-16 units",
+                                arguments: [size]
+                            )
+                        )
+                        .tag(size)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                Picker(
+                    L10n.string(
+                        "settings.debug.unicode_interval_milliseconds",
+                        fallback: "Unicode batch interval"
+                    ),
+                    selection: unicodeIntervalBinding
+                ) {
+                    ForEach(TextInsertionConfiguration.intervals, id: \.self) { interval in
+                        Text(
+                            L10n.format(
+                                "settings.debug.milliseconds.value",
+                                "%1$d ms",
+                                arguments: [interval]
+                            )
+                        )
+                        .tag(interval)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
         }
 
+        Section {
+            SettingsFeatureGroup(
+                title: L10n.string(
+                    "settings.debug.temporary_clipboard", fallback: "Temporary clipboard"),
+                systemImage: "clipboard"
+            ) {
+                Picker(
+                    L10n.string(
+                        "settings.debug.clipboard_restore_milliseconds",
+                        fallback: "Clipboard restore delay"
+                    ),
+                    selection: clipboardRestoreDelayBinding
+                ) {
+                    ForEach(TextInsertionConfiguration.restoreDelays, id: \.self) { delay in
+                        Text(
+                            L10n.format(
+                                "settings.debug.milliseconds.value",
+                                "%1$d ms",
+                                arguments: [delay]
+                            )
+                        )
+                        .tag(delay)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                Toggle(
+                    L10n.string(
+                        "settings.debug.temporary_clipboard_markers",
+                        fallback: "Add temporary clipboard marker"
+                    ),
+                    isOn: temporaryMarkersBinding
+                )
+
+                Text(
+                    L10n.string(
+                        "settings.debug.temporary_clipboard_markers.description",
+                        fallback:
+                            "Helps clipboard history tools that support this convention ignore automatic input. Turn it off to investigate compatibility; not every manager supports it."
+                    )
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+
+        }
+        if scope == .general {
         Section {
             LabeledContent(
                 L10n.string("settings.debug.version", fallback: "Current version"),
@@ -91,10 +214,16 @@ struct SettingsDebugView: View {
                 value: radiusRangeDescription
             )
         } header: {
-            Label(
-                L10n.string("settings.debug.status", fallback: "Current Status"),
-                systemImage: "info.circle"
-            )
+            SettingsDebugDivider()
+        }
+
+        Section {
+            Picker(L10n.string("inspector.edge_style", fallback: "Inspector top scroll edge"), selection: $inspectorEdgeStyle) {
+                ForEach(InspectorEdgeStyle.allCases) { style in
+                    Text(style == .none ? L10n.string("inspector.edge_none", fallback: "Off") : style.rawValue.capitalized)
+                        .tag(style.rawValue)
+                }
+            }
         }
 
         Section {
@@ -289,112 +418,6 @@ struct SettingsDebugView: View {
         }
 
         Section {
-            Picker(
-                L10n.string("settings.debug.input_method", fallback: "Input method"),
-                selection: inputMethodBinding
-            ) {
-                inputMethodChoices
-            }
-            .pickerStyle(.menu)
-        } header: {
-            Label(
-                L10n.string("settings.debug.input", fallback: "Text input"), systemImage: "text.cursor")
-        }
-
-        Section {
-            SettingsFeatureGroup(
-                title: L10n.string("settings.input_method.unicode", fallback: "Unicode keyboard input"),
-                systemImage: "keyboard"
-            ) {
-                Picker(
-                    L10n.string(
-                        "settings.debug.unicode_batch_size",
-                        fallback: "UTF-16 code units per batch"
-                    ),
-                    selection: unicodeBatchSizeBinding
-                ) {
-                    ForEach(TextInsertionConfiguration.batchSizes, id: \.self) { size in
-                        Text(
-                            L10n.format(
-                                "settings.debug.unicode_batch_size.value",
-                                "%1$d UTF-16 units",
-                                arguments: [size]
-                            )
-                        )
-                        .tag(size)
-                    }
-                }
-                .pickerStyle(.menu)
-
-                Picker(
-                    L10n.string(
-                        "settings.debug.unicode_interval_milliseconds",
-                        fallback: "Unicode batch interval"
-                    ),
-                    selection: unicodeIntervalBinding
-                ) {
-                    ForEach(TextInsertionConfiguration.intervals, id: \.self) { interval in
-                        Text(
-                            L10n.format(
-                                "settings.debug.milliseconds.value",
-                                "%1$d ms",
-                                arguments: [interval]
-                            )
-                        )
-                        .tag(interval)
-                    }
-                }
-                .pickerStyle(.menu)
-            }
-        }
-
-        Section {
-            SettingsFeatureGroup(
-                title: L10n.string(
-                    "settings.debug.temporary_clipboard", fallback: "Temporary clipboard"),
-                systemImage: "clipboard"
-            ) {
-                Picker(
-                    L10n.string(
-                        "settings.debug.clipboard_restore_milliseconds",
-                        fallback: "Clipboard restore delay"
-                    ),
-                    selection: clipboardRestoreDelayBinding
-                ) {
-                    ForEach(TextInsertionConfiguration.restoreDelays, id: \.self) { delay in
-                        Text(
-                            L10n.format(
-                                "settings.debug.milliseconds.value",
-                                "%1$d ms",
-                                arguments: [delay]
-                            )
-                        )
-                        .tag(delay)
-                    }
-                }
-                .pickerStyle(.menu)
-
-                Toggle(
-                    L10n.string(
-                        "settings.debug.temporary_clipboard_markers",
-                        fallback: "Add temporary clipboard marker"
-                    ),
-                    isOn: temporaryMarkersBinding
-                )
-
-                Text(
-                    L10n.string(
-                        "settings.debug.temporary_clipboard_markers.description",
-                        fallback:
-                            "Helps clipboard history tools that support this convention ignore automatic input. Turn it off to investigate compatibility; not every manager supports it."
-                    )
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-        }
-
-        Section {
             Text(
                 L10n.string(
                     "settings.debug.logs.description",
@@ -413,6 +436,7 @@ struct SettingsDebugView: View {
                 L10n.string("settings.debug.logs", fallback: "System Logs"),
                 systemImage: "doc.text.magnifyingglass"
             )
+        }
         }
     }
 
@@ -475,15 +499,55 @@ struct SettingsDebugView: View {
         )
     }
 
-    private var inputMethodBinding: Binding<TextInsertionConfiguration.Method> {
+    private var overlaySnappingEnabledBinding: Binding<Bool> {
         Binding(
-            get: { inputConfiguration.method },
-            set: { method in
-                UserDefaults.standard.set(method.rawValue, forKey: TextInsertionConfiguration.methodKey)
-                inputConfiguration = TextInsertionConfiguration.load()
+            get: { overlaySnappingEnabled },
+            set: { enabled in
+                UserDefaults.standard.set(
+                    enabled,
+                    forKey: FloatingOverlayDragPreferences.snappingEnabledKey
+                )
+                reloadOverlayConfiguration()
             }
         )
     }
+
+    private var overlayHapticsEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { overlayHapticsEnabled },
+            set: { enabled in
+                UserDefaults.standard.set(
+                    enabled,
+                    forKey: FloatingOverlayDragPreferences.hapticsEnabledKey
+                )
+                reloadOverlayConfiguration()
+            }
+        )
+    }
+
+    private var overlayGuideEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { overlayGuideEnabled },
+            set: { enabled in
+                UserDefaults.standard.set(
+                    enabled,
+                    forKey: FloatingOverlayDragPreferences.guideEnabledKey
+                )
+                reloadOverlayConfiguration()
+            }
+        )
+    }
+
+    private var overlaySnapRadiusBinding: Binding<Double> {
+        Binding(
+            get: { overlaySnapRadius },
+            set: { value in
+                FloatingOverlayDragPreferences.save(CGFloat(value))
+                reloadOverlayConfiguration()
+            }
+        )
+    }
+
 
     private var unicodeBatchSizeBinding: Binding<Int> {
         Binding(
@@ -525,21 +589,44 @@ struct SettingsDebugView: View {
         )
     }
 
-    @ViewBuilder
-    private var inputMethodChoices: some View {
-        Text(L10n.string("settings.input_method.clipboard", fallback: "Temporary clipboard"))
-            .tag(TextInsertionConfiguration.Method.clipboard)
-        Text(L10n.string("settings.input_method.unicode", fallback: "Unicode keyboard input"))
-            .tag(TextInsertionConfiguration.Method.unicode)
-    }
 
-    private var overlayGlassSection: some View {
-        Section {
-            Text(L10n.string("settings.debug.glass.control_center", fallback: "ControlCenter material"))
-            Text(L10n.string("settings.debug.glass.control_center_help", fallback: "The snap guide uses the system ControlCenter material and fades as the listening panel approaches."))
-                .font(.caption).foregroundStyle(.secondary)
-        } header: {
-            Label(L10n.string("settings.debug.glass.title", fallback: "Guide glass material"), systemImage: "drop")
+    private var overlayGlassGroup: some View {
+        SettingsFeatureGroup(
+            title: L10n.string("settings.debug.glass.title", fallback: "Guide glass"),
+            systemImage: "drop"
+        ) {
+            Toggle(
+                L10n.string("settings.debug.glass.enabled", fallback: "Show snap guide"),
+                isOn: overlayGuideEnabledBinding
+            )
+            overlayGuideSlider(
+                label: L10n.string("settings.debug.glass.opacity", fallback: "Guide opacity"),
+                value: $overlayGuideOpacity,
+                range: 0.1...1,
+                step: 0.05,
+                key: FloatingOverlayDragPreferences.guideOpacityKey,
+                display: String(format: "%.0f%%", overlayGuideOpacity * 100)
+            )
+            overlayGuideSlider(
+                label: L10n.string("settings.debug.overlay.curve", fallback: "Fade acceleration"),
+                value: $fadeExponent,
+                range: 1...4,
+                step: 0.1,
+                key: FloatingOverlayDragPreferences.fadeExponentKey,
+                display: String(format: "%.1f", fadeExponent)
+            )
+            Text(L10n.string(
+                "settings.debug.glass.control_center_help",
+                fallback: "The system ControlCenter guide fades as the listening panel approaches."
+            ))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            Button(L10n.string(
+                "settings.debug.glass.restore",
+                fallback: "Restore guide defaults"
+            )) {
+                restoreOverlayGuideDefaults()
+            }
         }
     }
 
@@ -551,8 +638,8 @@ struct SettingsDebugView: View {
                 Text(display).monospacedDigit().foregroundStyle(.secondary)
             }
             Slider(value: Binding(get: { value.wrappedValue }, set: {
-                value.wrappedValue = $0
                 UserDefaults.standard.set($0, forKey: key)
+                reloadOverlayConfiguration()
             }), in: range, step: step)
             .accessibilityLabel(Text(label))
         }
@@ -687,38 +774,53 @@ struct SettingsDebugView: View {
         officialSidebarConfiguration = .current
     }
 
+    private func restoreOverlayDragDefaults() {
+        UserDefaults.standard.set(
+            true,
+            forKey: FloatingOverlayDragPreferences.snappingEnabledKey
+        )
+        UserDefaults.standard.set(
+            true,
+            forKey: FloatingOverlayDragPreferences.hapticsEnabledKey
+        )
+        FloatingOverlayDragPreferences.save(FloatingOverlayDragPreferences.defaultRadius)
+        reloadOverlayConfiguration()
+    }
+
+    private func restoreOverlayGuideDefaults() {
+        UserDefaults.standard.set(
+            true,
+            forKey: FloatingOverlayDragPreferences.guideEnabledKey
+        )
+        UserDefaults.standard.set(
+            1.0,
+            forKey: FloatingOverlayDragPreferences.guideOpacityKey
+        )
+        UserDefaults.standard.set(
+            2.0,
+            forKey: FloatingOverlayDragPreferences.fadeExponentKey
+        )
+        reloadOverlayConfiguration()
+    }
+
+    private func reloadOverlayConfiguration() {
+        overlaySnappingEnabled = FloatingOverlayDragPreferences.snappingEnabled
+        overlayHapticsEnabled = FloatingOverlayDragPreferences.hapticsEnabled
+        overlaySnapRadius = Double(FloatingOverlayDragPreferences.snapRadius)
+        fadeExponent = Double(FloatingOverlayDragPreferences.fadeExponent)
+        overlayGuideEnabled = FloatingOverlayDragPreferences.guideEnabled
+        overlayGuideOpacity = Double(FloatingOverlayDragPreferences.guideOpacity)
+    }
+
     private func reloadConfiguration() {
         configuration = SettingsScrollBlurConfiguration.current
         officialSidebarConfiguration = SettingsOfficialSidebarConfiguration.current
         inputConfiguration = TextInsertionConfiguration.load()
         sidebarScrollTestEnabled = SettingsSidebarScrollTestConfiguration.isEnabled()
+        reloadOverlayConfiguration()
     }
 }
 
-/// Keep the large form's content outside the GeometryReader closure. Sidebar
-/// animation changes the proposed width every frame; only margins need to be
-/// recomputed, not every localized label, binding, picker and disclosure group.
-private struct SettingsDebugForm<Content: View>: View {
-    @Environment(\.settingsTopBarHeight) private var topBarHeight
-    private let content: Content
-
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-
-    var body: some View {
-        GeometryReader { geometry in
-            Form { content }
-                .formStyle(.grouped)
-                .scrollContentBackground(.hidden)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentMargins(.top, topBarHeight, for: .scrollContent)
-                .contentMargins(.horizontal, max(0, (geometry.size.width - 736) / 2), for: .scrollContent)
-                .focusSection()
-                .accessibilityElement(children: .contain)
-        }
-    }
-}
 
 enum SettingsDebugPreferences {
     @discardableResult

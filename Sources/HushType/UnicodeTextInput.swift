@@ -43,19 +43,27 @@ enum UnicodeTextInput {
         return (value as! AXUIElement)
     }
 
-    @MainActor static func captureFocusValidator() -> @MainActor () -> Bool {
-        if let original = focusedElement() {
-            var pid: pid_t = 0
-            guard AXUIElementGetPid(original, &pid) == .success,
-                  pid != ProcessInfo.processInfo.processIdentifier else { return { false } }
+    /// Spotlight and similar panels can own keyboard focus while Workspace still
+    /// reports the application underneath them as frontmost.
+    @MainActor static func focusedApplication() -> NSRunningApplication? {
+        guard let element = focusedElement() else { return nil }
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(element, &pid) == .success, pid > 0 else { return nil }
+        return NSRunningApplication(processIdentifier: pid)
+    }
+
+    @MainActor static func captureFocusValidator(
+        focusedElementProvider: @escaping @MainActor () -> AXUIElement? = { focusedElement() },
+        applicationProvider: @escaping @MainActor () -> NSRunningApplication? = { NSWorkspace.shared.frontmostApplication }
+    ) -> @MainActor () -> Bool {
+        if let original = focusedElementProvider() {
             return {
-                guard let current = focusedElement() else { return false }
+                guard let current = focusedElementProvider() else { return false }
                 return CFEqual(original, current)
             }
         }
         // Some editable controls accept keyboard input without exposing AX.
-        guard let application = NSWorkspace.shared.frontmostApplication,
-              application.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return { false } }
-        return { NSWorkspace.shared.frontmostApplication?.processIdentifier == application.processIdentifier }
+        guard let application = applicationProvider() else { return { false } }
+        return { applicationProvider()?.processIdentifier == application.processIdentifier }
     }
 }

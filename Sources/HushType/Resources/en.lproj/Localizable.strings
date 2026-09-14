@@ -1,5 +1,90 @@
 /* Generated from the frozen Gate B manifest + decisions overlay. */
 
+"error.local_text.output_limit" = "The result exceeded the local length limit. Select a shorter passage and try again.";
+
+/* Custom shortcuts, shared dictation, and session history. */
+"settings.sidebar.shortcuts" = "Shortcuts";
+"shortcuts.action.dictation" = "Dictation";
+"shortcuts.action.captions" = "Live captions";
+"shortcuts.action.translation" = "Translate selection";
+"shortcuts.action.polish" = "Proofread selection";
+"shortcuts.trigger.press" = "Press";
+"shortcuts.trigger.hold" = "Hold";
+"shortcuts.error.invalid" = "Use F1–F20, or a key with Command, Option, or Control.";
+"shortcuts.error.conflict" = "This shortcut and trigger are already assigned to another action.";
+"settings.shortcuts.subtitle" = "Set shortcuts for dictation and live captions.";
+"settings.shortcuts.restore_defaults" = "Restore Defaults";
+"settings.shortcuts.hold_duration" = "Hold actions activate after 0.5 seconds.";
+"settings.shortcuts.recording" = "Press shortcut…";
+"settings.shortcuts.not_set" = "Not Set";
+"settings.shortcuts.trigger" = "Trigger";
+"settings.shortcuts.clear" = "Clear";
+"settings.history.filter.custom_range" = "Custom";
+"settings.history.date_range.start" = "From";
+"settings.history.date_range.end" = "To";
+"settings.history.date_range.help" = "Includes both selected local calendar days.";
+"settings.history.type_filter" = "Type";
+"settings.history.type.all" = "All";
+"settings.history.type.dictation" = "Dictation";
+"settings.history.type.caption" = "Captions";
+"settings.history.saving.enabled" = "Save recognition history";
+"settings.history.saving.help" = "When off, new dictation and caption sessions are not saved. Existing history stays available.";
+"settings.history.expand" = "Expand";
+"settings.history.collapse" = "Collapse";
+"settings.history.kind.dictation" = "Dictation";
+"settings.history.kind.caption" = "Caption session";
+"settings.history.caption.session_details" = "%1$@ from %2$@, started %3$@, ended %4$@.";
+"settings.history.caption.session_details.no_source" = "%1$@, started %2$@, ended %3$@.";
+
+/* Optional local text model, selected text, and translated captions. */
+"menu.permissions" = "Open Permissions";
+"menu.settings" = "Settings…";
+"error.local_text.title" = "Text Model Unavailable";
+"error.local_text.download_first" = "Download the optional text model in Model settings first.";
+"error.local_text.busy" = "The local text model is busy.";
+"error.local_text.invalid_repository" = "Invalid model repository ID: %1$@.";
+"error.local_text.not_installed" = "The local text model has not been downloaded.";
+"error.local_text.incomplete_installation" = "The local text model is incomplete: %1$@.";
+"error.local_text.download_incomplete" = "The model download finished without all required files: %1$@.";
+"error.local_text.not_loaded" = "The local text model is not loaded.";
+"error.local_text.empty_input" = "The text is empty.";
+"error.local_text.input_too_long" = "The text is longer than the %1$d-character local limit.";
+"error.local_text.prompt_too_long" = "The prepared prompt leaves no output room in the %1$d-token context limit.";
+"error.local_text.empty_response" = "The local text model returned an empty response.";
+"error.local_text.unexpected_tool_call" = "The local text model returned an unexpected tool call.";
+"polish.card.preview_title" = "Proofreading Preview";
+"text.card.copy_result" = "Copy Result";
+"caption.translation.preparing" = "Preparing the translation model…";
+"caption.translation.pending" = "Translating… %1$d remaining";
+"caption.translation.backlog_full" = "Translation backlog is full at %1$d items.";
+"settings.captions.translation.enabled" = "Translate captions locally";
+"settings.captions.translation.help" = "Requires the optional text model in Model settings. Original captions appear first; translations follow. Completed translations are saved with the session.";
+"settings.engine.local_model" = "Local model:";
+"settings.engine.local_model.apply_note" = "The model choice applies the next time the local model loads.";
+"settings.local_text.selected_text.title" = "Selected Text";
+"settings.local_text.polish.enabled" = "Proofread selected text";
+"settings.local_text.translation.enabled" = "Translate selected text";
+"settings.local_text.selection_target" = "Translation target";
+"settings.local_text.target.automatic" = "Automatic";
+"settings.local_text.shortcuts.help" = "Choose the proofreading and translation shortcuts in Shortcuts on the left.";
+"settings.local_text.model.title" = "Local Text Model";
+"settings.local_text.model.detail" = "Optional 4-bit model shared by proofreading, selected-text translation, and translated captions. The download is about 2.3 GB. Runtime memory changes with input length and can be higher than the download size.";
+"settings.local_text.model.manual_help" = "This page never downloads or loads the model automatically. Text operations can load an installed model when needed.";
+"settings.local_text.model.download" = "Download 2.3 GB";
+"settings.local_text.model.resume_download" = "Resume Download";
+"settings.local_text.model.load" = "Load Model";
+"settings.local_text.model.unload" = "Unload from Memory";
+"settings.local_text.model.downloading" = "Downloading";
+"settings.local_text.model.loading" = "Loading into memory";
+"settings.local_text.model.in_use" = "Processing text";
+"settings.local_text.model.unloading" = "Unloading";
+"settings.local_text.model.loaded" = "Loaded in memory";
+"settings.local_text.model.installed" = "Downloaded";
+"settings.local_text.model.not_installed" = "Not downloaded";
+"settings.local_text.model.incomplete" = "Incomplete download · %1$d files missing";
+"settings.local_text.model.download_percent" = "%1$d%%";
+"settings.local_text.model.download_progress" = "%1$d%% · %2$@ / %3$@";
+
 /* Default acknowledgement button used by HushType alerts. */
 
 "common.button.ok" = "OK";
@@ -161,7 +246,7 @@
 
 /* Text Polish feature and activation hint. */
 
-"menu.text_polish" = "Text Polish (double-tap ⌥)";
+"menu.text_polish" = "Enable Text Proofreading";
 
 /* Temporary validation state after enabling Text Polish. */
 
@@ -212,7 +297,7 @@
 
 /* Privacy/cost subtitle for local Live Caption. */
 
-"menu.live_caption.subtitle" = "Local transcription — free, on-device";
+"menu.live_caption.subtitle" = "Local transcription · Uses your caption shortcut";
 
 /* Cloud/provider/cost marker subtitle; dollar glyph is retained. */
 
@@ -252,7 +337,7 @@
 
 /* Provider/framework subtitle for selected-text translation. */
 
-"menu.text_translation.subtitle" = "via Apple Translation Framework";
+"menu.text_translation.subtitle" = "Locally with Qwen3 4B";
 
 /* Toggle for selected-text translation. */
 
@@ -264,7 +349,7 @@
 
 /* Disabled activation hint; preserve shortcut glyph. */
 
-"menu.translation_hint" = "Tap Right ⌥ to translate selection";
+"menu.translation_hint" = "Choose a shortcut in Settings";
 
 /* Automatic target/detection choice in translation and speech-to-text language menus. */
 
@@ -388,7 +473,7 @@
 
 /* Argument 1 is an app-owned localized or system-provided availability reason. */
 
-"alert.text_polish.unavailable.message" = "Text Polish requires macOS 26 + Apple Intelligence.\n\n%1$@";
+"alert.text_polish.unavailable.message" = "Text proofreading needs the optional local text model.\n\n%1$@";
 
 /* About alert title; argument is the app version. */
 
@@ -524,7 +609,7 @@
 
 /* Preserve approximate three-second cold-start semantics and shortcut glyph. */
 
-"alert.model_unloaded.local.message" = "The speech recognition model has been removed from memory.\n\nVoice input will require a cold start (~3 seconds) the next time you press F5.";
+"alert.model_unloaded.local.message" = "The speech recognition model has been removed from memory.\n\nVoice input will require a cold start (~3 seconds) the next time you use your dictation shortcut.";
 
 /* Cloud-upload gate title; this is HushType's local warning, not provider billing enforcement. */
 
@@ -768,7 +853,7 @@
 
 /* Permission-purpose summary for the local-only F5 build. */
 
-"onboarding.intro" = "Allow HushType to listen for F5 and record your voice locally.";
+"onboarding.intro" = "Allow HushType to listen for your shortcuts and record your voice locally.";
 
 /* Apple permission category name. */
 
@@ -776,7 +861,7 @@
 
 /* Explains why Accessibility is required. */
 
-"permission.accessibility.subtitle" = "Required for the global F5 hotkey.";
+"permission.accessibility.subtitle" = "Required for global shortcuts and inserting text at the cursor.";
 
 /* Permission row state after opening relevant settings. */
 
@@ -940,7 +1025,7 @@
 
 /* Permission-revocation guidance; permission label needs OS verification. */
 
-"alert.system_audio_revoked.message" = "Screen & System Audio Recording permission was revoked.\n\nRe-enable it in System Settings to use system-audio Live Caption.";
+"alert.system_audio_revoked.message" = "Screen & System Audio Recording permission was revoked.\n\nOpen Permissions to restore audio capture from applications.";
 
 /* Closes a warning without opening settings. */
 
@@ -1029,6 +1114,24 @@
 /* Help text for caption panel close button. */
 
 "caption.stop.help" = "Stop live caption (Esc)";
+"caption.restore_automatic_size.accessibility" = "Restore automatic caption size";
+"caption.restore_automatic_size.help" = "Restore automatic size";
+"caption.more.accessibility" = "More caption options";
+"caption.more.help" = "More options";
+"caption.timestamps" = "Timestamps";
+"alert.caption.processing_too_slow.title" = "Live Caption stopped";
+"alert.caption.processing_too_slow.message" = "Speech processing fell more than %1$d seconds behind. HushType stopped the session instead of silently skipping audio.";
+"settings.feature_group.expanded" = "Expanded";
+"settings.feature_group.collapsed" = "Collapsed";
+"settings.debug.glass.enabled" = "Show snap guide";
+"settings.debug.glass.opacity" = "Guide opacity";
+"settings.debug.glass.restore" = "Restore guide defaults";
+"settings.debug.live_caption.title" = "Live caption panel";
+"settings.debug.live_caption.sentences" = "Maximum automatic sentences";
+"settings.debug.live_caption.width" = "Maximum automatic width";
+"settings.debug.live_caption.height" = "Maximum automatic height";
+"settings.debug.live_caption.restore" = "Restore caption defaults";
+"settings.debug.live_caption.description" = "Only limits automatic sizing. The full transcript remains scrollable.";
 
 /* Empty caption panel state while awaiting speech. */
 
@@ -1216,7 +1319,7 @@
 
 /* Privacy disclosure; preserve 'may connect' uncertainty. */
 
-"translation.card.privacy" = "Powered by Apple Translation Framework. May connect to Apple servers.";
+"translation.card.privacy" = "Translated locally with Qwen3 4B.";
 
 /* PolishError disabled state. */
 
@@ -1224,7 +1327,7 @@
 
 /* Argument 1 is localized app reason or system-provided availability reason. */
 
-"error.polish.unavailable" = "Text Polish requires macOS 26 + Apple Intelligence.\n\n%1$@";
+"error.polish.unavailable" = "Text proofreading needs the optional local text model.\n\n%1$@";
 
 /* Guardrail result; selected user content remains untouched. */
 
@@ -1232,7 +1335,7 @@
 
 /* Model result validation error. */
 
-"error.polish.empty_output" = "Apple Intelligence returned an empty result.";
+"error.polish.empty_output" = "The local text model returned an empty result.";
 
 /* Safety validation; explicitly says original text remains untouched. */
 
@@ -1248,11 +1351,11 @@
 
 /* Model refusal validation error. */
 
-"error.polish.refusal_guard" = "Apple Intelligence returned a refusal instead of proofreading the selection.";
+"error.polish.refusal_guard" = "The local text model returned a refusal instead of proofreading the selection.";
 
 /* Initial cached availability reason. */
 
-"error.polish.apple_unavailable" = "Apple Intelligence is unavailable.";
+"error.polish.apple_unavailable" = "The local text model is unavailable.";
 
 /* Availability reason on pre-macOS-26 systems. */
 
@@ -1260,7 +1363,7 @@
 
 /* Preserve exact 30-second timeout. */
 
-"error.polish.timeout" = "Apple Intelligence timed out after 30 seconds.";
+"error.polish.timeout" = "The local text model timed out after 30 seconds.";
 
 /* Unknown future FoundationModels availability case. */
 
@@ -1284,7 +1387,7 @@
 
 /* High-risk privacy claim for on-device Text Polish. */
 
-"polish.card.privacy" = "On-device Apple Intelligence — nothing leaves your Mac.";
+"polish.card.privacy" = "Proofread locally with Qwen3 4B. The source text is unchanged.";
 
 /* Track-changes deletion legend. */
 
@@ -1498,6 +1601,40 @@
 "settings.navigation.forward" = "Forward";
 "settings.sidebar.overview" = "Overview";
 "settings.sidebar.dictation" = "Dictation";
+"settings.sidebar.captions" = "Captions";
+"settings.captions.status" = "Status";
+"settings.captions.status.stopped" = "Stopped";
+"settings.captions.status.microphone" = "Microphone";
+"settings.captions.status.app_audio" = "App audio";
+"settings.captions.status.starting" = "Starting…";
+"settings.captions.stop" = "Stop";
+"settings.captions.microphone.active" = "Using microphone";
+"settings.captions.microphone.switch" = "Switch to microphone";
+"settings.captions.microphone.start" = "Start microphone captions";
+"settings.captions.app_audio.active" = "Choose app…";
+"settings.captions.app_audio.switch" = "Switch to app audio…";
+"settings.captions.app_audio.start" = "Start app captions…";
+"settings.captions.display" = "Display";
+"settings.captions.timestamps" = "Show timestamps";
+"settings.captions.max_sentences" = "Maximum sentences for automatic height";
+"settings.captions.max_width" = "Automatic maximum width";
+"settings.captions.max_height" = "Automatic maximum height";
+"settings.captions.display.description" = "These limits apply to automatic sizing. The full transcript remains scrollable.";
+"settings.captions.display.restore" = "Restore display defaults";
+"settings.captions.drag_snap" = "Drag and snapping";
+"settings.captions.snapping" = "Enable snapping";
+"settings.captions.haptics" = "Snap haptic feedback";
+"settings.captions.snap_radius" = "Snap radius";
+"settings.captions.drag_snap.restore" = "Restore drag defaults";
+"settings.captions.glass" = "Snap guide glass";
+"settings.captions.glass.guide" = "Show snap guide";
+"settings.captions.glass.opacity" = "Guide opacity";
+"settings.captions.glass.fade" = "Fade acceleration";
+"settings.captions.glass.restore" = "Restore guide defaults";
+"settings.debug.overlay.drag_and_snap" = "Drag and snapping";
+"settings.debug.overlay.snapping_enabled" = "Enable snapping";
+"settings.debug.overlay.haptics_enabled" = "Snap haptic feedback";
+"settings.debug.overlay.drag_restore" = "Restore drag defaults";
 "settings.sidebar.history" = "Recognition History";
 "settings.sidebar.model" = "Model";
 "settings.sidebar.dictionary" = "Dictionary";
@@ -1534,11 +1671,11 @@
 "settings.history.day.today" = "Today";
 "settings.history.day.yesterday" = "Yesterday";
 "settings.overview.title" = "Overview";
-"settings.overview.subtitle" = "A quick view of HushType and its local speech model.";
+"settings.overview.subtitle" = "View active tasks, input sources, loaded models, and items that need attention.";
 "settings.overview.permissions_needed.title" = "Permissions need attention";
 "settings.overview.permissions_needed.detail" = "Allow Accessibility and Microphone in Permissions to use voice input.";
 "settings.overview.how_to.title" = "How to dictate";
-"settings.overview.how_to.detail" = "Press F5 to start recording, then press F5 again to transcribe and insert at the cursor.";
+"settings.overview.how_to.detail" = "Use your configured shortcuts to start or finish dictation and captions. Change them in Shortcuts.";
 "settings.overview.running_model" = "Running model:";
 "settings.overview.loading_model" = "Loading model:";
 "settings.overview.next_model" = "Next model to load:";
@@ -1551,7 +1688,7 @@
 "settings.dictation.local_privacy" = "Speech recognition runs locally on this Mac. Audio is not uploaded.";
 "settings.dictation.traditional_chinese" = "Convert Simplified Chinese output to Traditional Chinese";
 "settings.model.title" = "Local Model";
-"settings.model.subtitle" = "Manage the Qwen3-ASR model stored in memory for local dictation.";
+"settings.model.subtitle" = "Install and manage local speech and text models.";
 "settings.model.stop" = "Stop Download";
 "settings.model.unload" = "Unload from Memory";
 "settings.model.load" = "Load Model";
@@ -1588,27 +1725,53 @@
 "settings.model.loading_audio" = "Loading audio encoder";
 "settings.model.loading_text" = "Loading text decoder";
 "settings.dictionary.title" = "Dictionary";
-"settings.dictionary.subtitle" = "Correct names, technical terms, and recurring transcription mistakes.";
+"settings.dictionary.subtitle" = "Manage word libraries that replace recurring recognition mistakes.";
 "settings.dictionary.entries" = "Customized Dictionary";
 "settings.dictionary.open" = "Open Dictionary…";
 "settings.dictionary.help" = "Use one rule per line: what you say -> what gets typed. Changes apply to the next transcription.";
 "settings.dictionary.empty" = "No dictionary file yet.";
+
+/* Native dictionary editor. */
+"settings.dictionary.editor.source" = "Recognized text";
+"settings.dictionary.editor.target" = "Replace with";
+"settings.dictionary.editor.empty" = "No replacement rules yet. Add a word that is often transcribed incorrectly.";
+"settings.dictionary.editor.add" = "Add Rule";
+"settings.dictionary.editor.remove" = "Remove Rule";
+"settings.dictionary.editor.reload" = "Reload";
+"settings.dictionary.editor.save" = "Save";
+"settings.dictionary.editor.unsaved" = "Unsaved changes";
+"settings.dictionary.editor.saved" = "Saved. Applies to the next task using this library.";
+"settings.dictionary.editor.help" = "Matching ignores case and prefers longer phrases. Replacements do not cascade. Leave the replacement empty to remove matched text. Save to apply changes.";
+"settings.dictionary.editor.preview" = "Enter Text to Test Replacements";
+"settings.dictionary.editor.preview_input" = "Test text";
+"settings.dictionary.editor.preview_result" = "Replacement result";
+"settings.dictionary.editor.preview_help" = "Uses the rules currently shown, including unsaved edits. Only dictionary replacement is previewed.";
+"settings.dictionary.editor.discard_title" = "Discard unsaved changes and reload?";
+"settings.dictionary.editor.discard_reload" = "Discard and Reload";
+"settings.dictionary.editor.validation.empty_source" = "Recognized text cannot be empty.";
+"settings.dictionary.editor.validation.newline" = "A dictionary rule cannot contain a line break.";
+"settings.dictionary.editor.validation.unserializable_source" = "Recognized text cannot start with # or contain ->.";
+"settings.dictionary.editor.validation.duplicate_source" = "Some recognized text is repeated. The first matching rule in file order is used.";
+"settings.dictionary.editor.error.external_change" = "The dictionary file changed outside HushType. Reload before saving; your draft is still here.";
+"settings.dictionary.editor.error.invalid_encoding" = "The dictionary is not valid UTF-8. Fix it in a text editor, then reload.";
+"settings.dictionary.editor.error.read" = "Could not read the dictionary: %1$@";
+"settings.dictionary.editor.error.save" = "Could not save the dictionary: %1$@";
 "settings.permissions.title" = "Permissions";
-"settings.permissions.subtitle" = "HushType needs these permissions for its global hotkey and microphone input.";
+"settings.permissions.subtitle" = "Manage permissions for global shortcuts, microphone input, and app-audio capture.";
 "settings.permissions.accessibility_restart" = "Restart HushType after changing Accessibility; macOS applies this permission to a new process.";
 "settings.permissions.finish_setup" = "Finish setup to start HushType";
 "settings.permissions.onboarding_detail" = "After enabling Accessibility, restart HushType so macOS can apply it. Microphone permission does not require a restart.";
 "settings.permissions.restart_required.title" = "Restart HushType to apply permissions";
 "settings.permissions.restart_required.detail" = "Permissions are now allowed. Restart HushType so macOS can apply Accessibility to this app.";
 "settings.general.title" = "General";
-"settings.general.subtitle" = "Adjust how HushType presents and cleans up dictation.";
+"settings.general.subtitle" = "Manage the interface, updates, and developer settings.";
 "settings.general.input_device" = "Input Device";
 "settings.general.input_device.follow_system" = "Follow System";
 "settings.general.input_device.automatic" = "Automatic";
 "settings.general.input_device.current" = "Current: %1$@";
 "settings.general.input_device.unavailable" = "Unavailable";
 "settings.general.floating_overlay" = "Show the floating recording overlay";
-"settings.general.release_f5_when_unloaded" = "Return F5 to macOS after unloading the model";
+"settings.general.release_f5_when_unloaded" = "Return the dictation shortcut to macOS after unloading the speech model";
 "settings.general.text_polish" = "Enable text polishing";
 "settings.general.number_conversion" = "Convert Chinese numbers to digits";
 "settings.general.punctuation" = "Punctuation cleanup";
@@ -1620,10 +1783,10 @@
 "settings.status.checking_model" = "Checking the model files already on this Mac.";
 "settings.status.verifying_model" = "Verifying model files before loading them.";
 "settings.status.loading_model" = "Loading the model into memory.";
-"settings.status.ready_detail" = "Press F5 to start dictation.";
-"settings.status.connecting_detail" = "Waiting for microphone audio. Press F5 again to cancel.";
+"settings.status.ready_detail" = "Use your dictation shortcut to start.";
+"settings.status.connecting_detail" = "Waiting for microphone audio. Use your dictation shortcut again to cancel.";
 "settings.general.input_device.selected_unavailable" = "Selected device unavailable";
-"settings.status.recording_detail" = "Press F5 again when you finish speaking.";
+"settings.status.recording_detail" = "Use your dictation shortcut again when you finish speaking.";
 "settings.status.transcribing_detail" = "Turning your voice into text.";
 "settings.status.polishing_detail" = "Applying your text preferences.";
 "settings.status.unloaded_detail" = "The model remains on this Mac. Load it into memory to start local dictation.";
@@ -1712,7 +1875,7 @@
 "settings.debug.overlay.opacity" = "Guide opacity";
 "settings.debug.overlay.curve" = "Fade acceleration";
 "settings.debug.overlay.curve_help" = "1 is linear. Higher values retain the guide longer, then fade faster near the center. Changes apply immediately.";
-"settings.debug.glass.title" = "Guide glass material";
+"settings.debug.glass.title" = "Snap guide glass";
 "settings.debug.glass.variant" = "Glass variant";
 "settings.debug.glass.system" = "System clear";
 "settings.debug.glass.tint" = "Tint strength";
@@ -1721,4 +1884,119 @@
 "settings.debug.glass.help" = "These are maximum values away from the target. After overlap begins, refraction, blur and tint decrease with the fade curve; corner radius stays unchanged. Zero tint removes the added color layer.";
 "settings.debug.glass.refraction" = "Refraction strength";
 "settings.debug.glass.control_center" = "ControlCenter material";
-"settings.debug.glass.control_center_help" = "The snap guide uses the system ControlCenter material and fades as the listening panel approaches.";
+"settings.debug.glass.control_center_help" = "Listening and caption panels share the ControlCenter glass guide. It fades as the panel approaches its default position.";
+"overview.dictation_failed" = "Dictation failed";
+"overview.keep_caption_window" = "Keep caption window after stopping";
+"overview.keep_caption_text" = "Keep existing captions when restarting";
+"overview.finishing" = "Finishing";
+"overview.developer_mode" = "Developer mode";
+"overview.none" = "None";
+"overview.input_sources" = "Input sources";
+"overview.microphone" = "Microphone";
+"overview.loaded_models" = "Loaded models";
+"overview.app_memory" = "HushType memory";
+"overview.runtime_details" = "Runtime details";
+"overview.configuration" = "Configuration:";
+"overview.in_use" = "In use";
+"overview.idle" = "Idle";
+"overview.running" = "Running";
+"overview.start" = "Start";
+"profiles.title" = "Processing Configurations";
+"profiles.initial_dictation" = "Default configuration";
+"profiles.initial_caption" = "Configuration 2";
+"profiles.new_name" = "New configuration";
+"profiles.copy_suffix" = "Copy";
+"profiles.error.invalid" = "Check the name, audio source, model, and processing options.";
+"profiles.error.conflict" = "This configuration changed on disk. Cancel editing and reopen it before saving.";
+"profiles.error.unsaved" = "Save or cancel the current changes first.";
+"profiles.error.model_busy" = "Another task is using a different speech model. Finish that task before switching models.";
+"profiles.cannot_start" = "Cannot start this configuration";
+"profiles.follow_system" = "System input device";
+"profiles.automatic" = "Automatic input device";
+"profiles.unavailable_device" = "Unavailable input device";
+"profiles.back" = "Configurations";
+"profiles.unsaved" = "Unsaved changes";
+"profiles.save" = "Save";
+"profiles.name" = "Name";
+"profiles.save_help" = "Changes save automatically and apply to the next task. Running tasks keep their starting configuration.";
+"profiles.new" = "New configuration";
+"profiles.rename" = "Rename";
+"profiles.duplicate" = "Duplicate";
+"profiles.delete" = "Delete";
+"profiles.delete_title" = "Move this configuration to Trash?";
+"profiles.source_kind" = "Source";
+"profiles.microphone" = "Input device";
+"profiles.application_audio" = "App audio";
+"profiles.device" = "Device";
+"profiles.application" = "Application";
+"profiles.choose_application" = "Choose an application";
+"profiles.group.input" = "1. Input source";
+"profiles.group.recognition" = "2. Recognition";
+"profiles.group.rules" = "3. Rule-based cleanup";
+"profiles.group.llm" = "4. LLM processing";
+"profiles.asr" = "Speech model";
+"profiles.language" = "Recognition language";
+"profiles.dictionary" = "Apply replacement dictionary";
+"profiles.edit_dictionary" = "Edit dictionary";
+"profiles.polish" = "Proofread";
+"profiles.polish_backend" = "Proofreading backend";
+"profiles.correction" = "Correction level";
+"profiles.correction.light" = "Light";
+"profiles.correction.standard" = "Standard";
+"profiles.correction.fluent" = "Fluent";
+"profiles.translate" = "Translate";
+"profiles.translation_backend" = "Translation backend";
+"profiles.target" = "Target language";
+"profiles.llm_help" = "Proofreading runs before translation when both are enabled. Other backends are not yet available.";
+"profiles.configuration" = "Configuration";
+"profiles.edit" = "Edit configuration";
+"profiles.selection_help" = "This selection applies to the next task.";
+"profiles.start_dictation" = "Start / stop dictation";
+"profiles.output_settings" = "Text input and overlay settings";
+// Dictionary library selection
+"dictionary.libraries" = "Word libraries";
+"dictionary.library" = "Word library";
+"dictionary.new" = "New library";
+"dictionary.selection_help" = "Select none, one, or several. With none selected, no dictionary replacements are applied.";
+"dictionary.management_help" = "Choose libraries in each processing configuration. The default library keeps your existing dictionary. Deselect a library in configurations before deleting it.";
+"dictionary.delete_title" = "Move this library and its rules to Trash?";
+"dictionary.priority_help" = "When sources repeat, the first library in the list wins. Longer matches take priority; replacements do not cascade.";
+"dictionary.default_name" = "Default library";
+"dictionary.error.invalid_name" = "Dictionary names must contain 1 to 100 characters.";
+"dictionary.error.invalid_metadata" = "The dictionary library list is invalid.";
+"dictionary.error.changed_on_disk" = "The dictionary library list changed outside HushType. Restart HushType before making changes.";
+"dictionary.error.not_found" = "The dictionary library no longer exists.";
+"dictionary.error.create_file" = "The dictionary file could not be created.";
+"profiles.import" = "Import";
+"profiles.export" = "Export";
+"profiles.used_by" = "Used by %1$@";
+"profiles.error.invalid_import" = "This file is not a valid HushType processing configuration.";
+"profiles.error.missing_library" = "This configuration references word libraries not available on this Mac. Restore the original libraries before importing.";
+"profiles.error.not_found" = "This processing configuration no longer exists.";
+"profiles.export_help" = "Exports configuration options only. Model and word-library files are not included.";
+"permission.system_audio.allow" = "Allow System Audio";
+"common.button.open_permissions" = "Open Permissions";
+"profiles.delete_in_use" = "Configuration in use";
+"settings.shortcuts.legacy_polish" = "Text polishing for the legacy double-tap gesture";
+"profiles.subtitle" = "Create reusable configurations for input, recognition, cleanup, and AI processing.";
+"profiles.unavailable" = "(Unavailable)";
+"profiles.error.model_unavailable" = "%1$@ is unavailable.";
+"profiles.inspector.close" = "Close configuration editor";
+"profiles.inspector.saving" = "Saving…";
+"profiles.inspector.saved" = "Saved";
+"profiles.autosave" = "Automatically save";
+"profiles.manual_save_help" = "Click Save to apply changes to the next task. Closing this panel keeps the unsaved draft.";
+"dictionary.back" = "Word libraries";
+"dictionary.inspector.close" = "Close word library editor";
+"settings.sidebar.reorder" = "Drag to reorder";
+"settings.sidebar.reorder_done" = "Finish arranging sidebar";
+"inspector.open" = "Open configuration editor";
+"inspector.choose" = "Choose configuration";
+"inspector.search" = "Search configurations";
+"inspector.filter" = "Filter";
+"inspector.all" = "All";
+"inspector.profiles" = "Processing configurations";
+"inspector.dictionaries" = "Word libraries";
+"inspector.no_results" = "No matching configurations";
+"inspector.edge_style" = "Inspector top scroll edge";
+"inspector.edge_none" = "Off";

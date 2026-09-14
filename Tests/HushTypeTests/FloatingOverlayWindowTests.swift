@@ -29,6 +29,7 @@ final class FloatingOverlayWindowTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertEqual(window.frame.width, listeningFrame.width, accuracy: 1)
         XCTAssertEqual(window.frame.midX, listeningFrame.midX, accuracy: 1)
+        window.updatePointerLocation(at: NSPoint(x: window.frame.midX, y: window.frame.midY))
         XCTAssertFalse(window.ignoresMouseEvents)
 
         model.state = .connectionDisconnected
@@ -36,6 +37,7 @@ final class FloatingOverlayWindowTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertEqual(window.frame.width, listeningFrame.width, accuracy: 1)
         XCTAssertEqual(window.frame.midX, listeningFrame.midX, accuracy: 1)
+        window.updatePointerLocation(at: NSPoint(x: window.frame.midX, y: window.frame.midY))
         XCTAssertFalse(window.ignoresMouseEvents)
 
         window.hideImmediately()
@@ -54,6 +56,7 @@ final class FloatingOverlayWindowTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(150))
         let listeningSize = window.frame.size
         XCTAssertEqual(window.level, .screenSaver)
+        window.updatePointerLocation(at: NSPoint(x: window.frame.midX, y: window.frame.midY))
         XCTAssertFalse(window.ignoresMouseEvents)
 
         for kind in [ModelNoticeKind.unloaded, .loaded] {
@@ -85,6 +88,7 @@ final class FloatingOverlayWindowTests: XCTestCase {
         XCTAssertGreaterThan(window.alphaValue, 0.9)
         XCTAssertEqual(model.state, .recording(level: 0, provider: nil))
         XCTAssertEqual(window.level, .screenSaver)
+        window.updatePointerLocation(at: NSPoint(x: window.frame.midX, y: window.frame.midY))
         XCTAssertFalse(window.ignoresMouseEvents)
     }
 
@@ -322,5 +326,102 @@ final class FloatingOverlayWindowTests: XCTestCase {
             pressure: 1
         ))
         XCTAssertNotNil(window.handleMouseEvent(actionDown))
+
+        let shadowPoint = NSPoint(x: window.frame.minX + 2, y: window.frame.midY)
+        window.updatePointerLocation(at: shadowPoint)
+        XCTAssertFalse(window.ignoresMouseEvents, "An action-button press retains its native mouse-up even outside the pill")
+        let actionUp = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseUp,
+            location: actionDown.locationInWindow,
+            modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil,
+            eventNumber: 3, clickCount: 1, pressure: 0
+        ))
+        window.sendEvent(actionUp)
+        window.updatePointerLocation(at: shadowPoint)
+        XCTAssertTrue(window.ignoresMouseEvents, "Native dispatch completion releases the button capture")
+    }
+
+    @MainActor
+    func testShadowRoutesToUnderlyingWindowAtWindowServerLevel() async throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let model = OverlayStateModel()
+        var pointer = NSEvent.mouseLocation
+        let overlay = FloatingOverlayWindow(stateModel: model, pointerLocation: { pointer })
+        let lower = NSPanel(
+            contentRect: NSRect(x: screen.visibleFrame.minX + 80, y: screen.visibleFrame.minY + 100,
+                                width: 500, height: 300),
+            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false
+        )
+        lower.isReleasedWhenClosed = false
+        lower.backgroundColor = .white
+        lower.isOpaque = true
+        lower.hasShadow = false
+        lower.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue - 1)
+        defer {
+            overlay.hideImmediately()
+            lower.close()
+        }
+
+        model.state = .recording(level: 0, provider: nil)
+        overlay.show()
+        try await Task.sleep(for: .milliseconds(220))
+        overlay.setFrame(NSRect(x: lower.frame.minX + 50, y: lower.frame.minY + 80,
+                                width: overlay.frame.width, height: overlay.frame.height), display: true)
+        lower.orderFrontRegardless()
+        overlay.orderFrontRegardless()
+        overlay.contentView?.displayIfNeeded()
+        try await Task.sleep(for: .milliseconds(80))
+
+        let pill = FloatingOverlayPlacement.visiblePillFrame(
+            for: overlay.frame, shadowInsets: FloatingOverlayAppearance.shadowInsets
+        )
+        let shadow = NSPoint(x: pill.minX - 2, y: pill.midY)
+        let body = NSPoint(x: pill.midX, y: pill.midY)
+        let host = try XCTUnwrap(overlay.contentView)
+        let localShadow = host.convert(overlay.convertPoint(fromScreen: shadow), from: nil)
+        XCTAssertNil(host.hitTest(localShadow))
+
+        // Recreate the previous bug using the actual rendered shadow. A nil
+        // view hit does not make WindowServer target the lower window.
+        pointer = body
+        overlay.ignoresMouseEvents = false
+        try await Task.sleep(for: .milliseconds(60))
+        XCTAssertEqual(NSWindow.windowNumber(at: shadow, belowWindowWithWindowNumber: 0), overlay.windowNumber)
+
+        pointer = shadow
+        overlay.updatePointerLocation()
+        try await Task.sleep(for: .milliseconds(60))
+        XCTAssertTrue(overlay.ignoresMouseEvents)
+        XCTAssertEqual(NSWindow.windowNumber(at: shadow, belowWindowWithWindowNumber: 0), lower.windowNumber)
+
+        pointer = body
+        overlay.updatePointerLocation()
+        try await Task.sleep(for: .milliseconds(60))
+        XCTAssertFalse(overlay.ignoresMouseEvents)
+        XCTAssertEqual(NSWindow.windowNumber(at: body, belowWindowWithWindowNumber: 0), overlay.windowNumber)
+
+        let down = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: overlay.convertPoint(fromScreen: body),
+            modifierFlags: [], timestamp: 0, windowNumber: overlay.windowNumber,
+            context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        XCTAssertNil(overlay.handleMouseEvent(down))
+        pointer = shadow
+        overlay.updatePointerLocation(at: shadow)
+        XCTAssertFalse(overlay.ignoresMouseEvents, "Dragging keeps capture across the pill boundary")
+        let up = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: down.locationInWindow,
+            modifierFlags: [], timestamp: 0, windowNumber: overlay.windowNumber,
+            context: nil, eventNumber: 1, clickCount: 1, pressure: 0
+        ))
+        XCTAssertNil(overlay.handleMouseEvent(up))
+        overlay.updatePointerLocation(at: shadow)
+        XCTAssertTrue(overlay.ignoresMouseEvents)
+
+        overlay.hideImmediately()
+        overlay.updatePointerLocation(at: body)
+        XCTAssertTrue(overlay.ignoresMouseEvents)
     }
 }

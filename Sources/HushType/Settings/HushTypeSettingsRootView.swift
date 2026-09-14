@@ -5,28 +5,25 @@ import SwiftUI
 
 struct HushTypeSettingsRootView: View {
     @ObservedObject var model: HushTypeSettingsModel
+    @ObservedObject private var profiles = ProcessingProfileStore.shared
     @State private var historySearchText = ""
+    @State private var inspectorWidth: CGFloat = 420
+    @State private var inspectorTitleX: CGFloat = 280
+    @State private var inspectorChrome = SettingsWindowChromeMetrics()
+    @State private var lastInspectorWasDictionary = false
+    @StateObject private var inspectorDockAnchor = SettingsInspectorDockAnchor()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var sections: [HushTypeSettingsSection] {
         model.visibleSections
     }
 
-    private var currentSectionIndex: Int? {
-        sections.firstIndex(of: model.selection)
-    }
-
-    private var isFirstSection: Bool {
-        currentSectionIndex == 0
-    }
-
-    private var isLastSection: Bool {
-        currentSectionIndex == sections.count - 1
-    }
     var body: some View {
         SettingsWindowShell(
             toggleLabel: L10n.string("settings.sidebar.toggle", fallback: "Toggle Sidebar"),
             expandedLabel: L10n.string("settings.sidebar.expanded", fallback: "Expanded"),
             collapsedLabel: L10n.string("settings.sidebar.collapsed", fallback: "Collapsed"),
+            stabilizesDetailWidth: false,
             showsSearch: model.selection == .history
         ) {
             detail
@@ -35,6 +32,47 @@ struct HushTypeSettingsRootView: View {
             sidebar
         } header: {
             header
+        }
+        .coordinateSpace(name: "settingsChrome")
+        .onPreferenceChange(SettingsTitleLeadingKey.self) { value in
+            if value > 0 { inspectorTitleX = value }
+        }
+        .onPreferenceChange(SettingsChromeMetricsKey.self) { inspectorChrome = $0 }
+        .overlay {
+            GeometryReader { geometry in
+                let maximum = max(0, geometry.size.width - inspectorTitleX)
+                let width = min(maximum, max(min(320, maximum), inspectorWidth))
+                let dictionary = model.isDictionaryInspectorPresented ||
+                    (!model.isProfileInspectorPresented && lastInspectorWasDictionary)
+                SettingsInspectorPresentation(
+                    isPresented: model.isProfileInspectorPresented || model.isDictionaryInspectorPresented,
+                    width: width, reduceMotion: reduceMotion,
+                    showsToggle: true,
+                    headerCenterY: inspectorChrome.titlebarCenterY,
+                    rightInset: SettingsToolbarGeometry.edgeGap(centerY: inspectorChrome.titlebarCenterY),
+                    toggle: toggleInspector,
+                    dockAnchor: inspectorDockAnchor
+                ) {
+                    SettingsInspectorContainer(maximumWidth: maximum, width: $inspectorWidth) {
+                        if dictionary {
+                            SettingsDictionaryInspector(model: model,
+                                onClose: { model.isDictionaryInspectorPresented = false })
+                        } else {
+                            SettingsProfileInspector(model: model,
+                                onClose: { model.isProfileInspectorPresented = false })
+                        }
+                    }
+                    .environment(\.settingsInspectorCenterY, inspectorChrome.titlebarCenterY)
+                    .environment(\.inspectorHasDockedControl, true)
+                }
+            }
+            .ignoresSafeArea(.container, edges: .top)
+        }
+        .onChange(of: model.isDictionaryInspectorPresented) { _, open in
+            if open { lastInspectorWasDictionary = true }
+        }
+        .onChange(of: model.isProfileInspectorPresented) { _, open in
+            if open { lastInspectorWasDictionary = false }
         }
         .modifier(SettingsToolbarChrome())
         .onAppear { model.refresh() }
@@ -47,7 +85,7 @@ struct HushTypeSettingsRootView: View {
     private var header: some View {
         HStack(spacing: 16) {
             SettingsNavigationButtons(
-                backDisabled: isFirstSection, forwardDisabled: isLastSection,
+                backDisabled: !model.canNavigateBack, forwardDisabled: !model.canNavigateForward,
                 backLabel: L10n.string("settings.navigation.back", fallback: "Back"),
                 forwardLabel: L10n.string("settings.navigation.forward", fallback: "Forward"),
                 back: navigateBack, forward: navigateForward
@@ -55,11 +93,31 @@ struct HushTypeSettingsRootView: View {
             Text(model.selection.title)
                 .font(.headline)
                 .lineLimit(1)
+                .background(GeometryReader { geometry in
+                    Color.clear.preference(key: SettingsTitleLeadingKey.self,
+                                           value: geometry.frame(in: .named("settingsChrome")).minX)
+                })
             Spacer(minLength: 12)
-            if model.selection == .history {
-                SettingsHistorySearch(text: $historySearchText,
-                    prompt: L10n.string("settings.history.search", fallback: "Search recognition text"))
-            }
+            SettingsInspectorToolbarControls(anchor: inspectorDockAnchor,
+                showsSearch: model.selection == .history, searchText: $historySearchText,
+                searchPrompt: L10n.string("settings.history.search", fallback: "Search recognition text"))
+        }
+    }
+
+    private func toggleInspector() {
+        if model.isDictionaryInspectorPresented {
+            model.isDictionaryInspectorPresented = false
+        } else if model.isProfileInspectorPresented {
+            if ProfileEditorPreferences.autosaveEnabled, profiles.isDirty, !profiles.save() { return }
+            model.isProfileInspectorPresented = false
+        } else if lastInspectorWasDictionary, model.dictionaryLibraryEditors.selectedID != nil {
+            model.isDictionaryInspectorPresented = true
+        } else if profiles.draft != nil {
+            model.isProfileInspectorPresented = true
+        } else if let initial = profiles.selected(model.selection == .captions ? .captions : .dictation) ?? profiles.profiles.first {
+            model.openProfileInspector(initial)
+        } else {
+            model.selection = .profiles
         }
     }
 
@@ -72,24 +130,29 @@ struct HushTypeSettingsRootView: View {
         switch model.selection {
         case .overview: SettingsOverviewView(model: model)
         case .dictation: SettingsDictationView(model: model)
+        case .captions: SettingsCaptionsView(model: model)
+        case .profiles: SettingsProfilesView(model: model)
+        case .shortcuts: SettingsShortcutsView(model: model)
         case .history: SettingsHistoryView(model: model, searchText: $historySearchText)
         case .model: SettingsModelView(model: model)
         case .dictionary: SettingsDictionaryView(model: model)
         case .permissions: SettingsPermissionsView(model: model)
         case .general: SettingsGeneralView(model: model)
-        case .debug: SettingsDebugView(model: model)
         }
     }
 
     private func navigateBack() {
-        guard let currentSectionIndex, currentSectionIndex > 0 else { return }
-        model.selection = sections[currentSectionIndex - 1]
+        model.navigateBack()
     }
 
     private func navigateForward() {
-        guard let currentSectionIndex, currentSectionIndex < sections.count - 1 else { return }
-        model.selection = sections[currentSectionIndex + 1]
+        model.navigateForward()
     }
+}
+
+private struct SettingsTitleLeadingKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 private enum RecognitionHistoryFilter: String, CaseIterable, Identifiable {
@@ -97,6 +160,7 @@ private enum RecognitionHistoryFilter: String, CaseIterable, Identifiable {
     case today
     case sevenDays
     case thirtyDays
+    case custom
 
     var id: String { rawValue }
 
@@ -106,6 +170,31 @@ private enum RecognitionHistoryFilter: String, CaseIterable, Identifiable {
         case .today: L10n.string("settings.history.filter.today", fallback: "Today")
         case .sevenDays: L10n.string("settings.history.filter.seven_days", fallback: "7 Days")
         case .thirtyDays: L10n.string("settings.history.filter.thirty_days", fallback: "30 Days")
+        case .custom: L10n.string("settings.history.filter.custom_range", fallback: "Custom")
+        }
+    }
+}
+
+private enum RecognitionHistoryContentFilter: String, CaseIterable, Identifiable {
+    case all
+    case dictation
+    case caption
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: L10n.string("settings.history.type.all", fallback: "All")
+        case .dictation: L10n.string("settings.history.type.dictation", fallback: "Dictation")
+        case .caption: L10n.string("settings.history.type.caption", fallback: "Captions")
+        }
+    }
+
+    var historyKind: RecognitionHistoryKind? {
+        switch self {
+        case .all: nil
+        case .dictation: .dictation
+        case .caption: .caption
         }
     }
 }
@@ -122,11 +211,16 @@ private struct SettingsHistoryView: View {
     @Environment(\.settingsTopBarHeight) private var topBarHeight
     @Environment(\.settingsSidebarIsResizing) private var sidebarIsResizing
     @Binding var searchText: String
+    @AppStorage(RecognitionHistoryPreferences.savingEnabledKey) private var isSavingHistory = true
     @State private var filter: RecognitionHistoryFilter = .all
+    @State private var contentFilter: RecognitionHistoryContentFilter = .all
+    @State private var customStartDate = Calendar.current.startOfDay(for: Date())
+    @State private var customEndDate = Calendar.current.startOfDay(for: Date())
     @State private var entryPendingDeletion: RecognitionHistoryEntry?
     @State private var isConfirmingClear = false
     @State private var displayedGroups: [RecognitionHistoryDayGroup] = []
     @State private var entryNumbers: [UUID: Int] = [:]
+    @State private var expandedEntryIDs: Set<UUID> = []
 
     init(model: HushTypeSettingsModel, searchText: Binding<String>) {
         self.model = model
@@ -140,13 +234,17 @@ private struct SettingsHistoryView: View {
             rows: nativeRows,
             topInset: topBarHeight,
             sidebarIsResizing: sidebarIsResizing,
-            onDelete: { entryPendingDeletion = $0 }
+            onDelete: { entryPendingDeletion = $0 },
+            onToggleExpansion: toggleExpansion
         )
         .focusSection()
         .accessibilityElement(children: .contain)
         .onReceive(store.$entries) { entries in rebuildHistoryPresentation(entries) }
         .onChange(of: searchText) { _, _ in rebuildHistoryPresentation(store.entries) }
         .onChange(of: filter) { _, _ in rebuildHistoryPresentation(store.entries) }
+        .onChange(of: contentFilter) { _, _ in rebuildHistoryPresentation(store.entries) }
+        .onChange(of: customStartDate) { _, _ in rebuildHistoryPresentation(store.entries) }
+        .onChange(of: customEndDate) { _, _ in rebuildHistoryPresentation(store.entries) }
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
             rebuildHistoryPresentation(store.entries)
         }
@@ -191,18 +289,50 @@ private struct SettingsHistoryView: View {
     /// the current total, then numbers descend through the complete history.
     private var historyControls: some View {
         VStack(alignment: .leading, spacing: 18) {
-            SettingsHistoryCard {
-                Text(L10n.string(
+            SettingsPageDescription(
+                L10n.string(
                     "settings.history.subtitle",
                     fallback: "Find and copy past recognition results, even when insertion into another app failed."
-                ))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            }
+                )
+            )
+            .padding(.horizontal, 14)
 
             SettingsHistoryCard {
                 Picker(L10n.string("settings.history.filter", fallback: "Time Range"), selection: $filter) {
                     ForEach(RecognitionHistoryFilter.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+
+            if filter == .custom {
+                SettingsHistoryCard {
+                    DatePicker(
+                        L10n.string("settings.history.date_range.start", fallback: "From"),
+                        selection: $customStartDate,
+                        displayedComponents: .date
+                    )
+                    DatePicker(
+                        L10n.string("settings.history.date_range.end", fallback: "To"),
+                        selection: $customEndDate,
+                        displayedComponents: .date
+                    )
+                    Text(L10n.string(
+                        "settings.history.date_range.help",
+                        fallback: "Includes both selected local calendar days."
+                    ))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                }
+            }
+
+            SettingsHistoryCard {
+                Picker(
+                    L10n.string("settings.history.type_filter", fallback: "Type"),
+                    selection: $contentFilter
+                ) {
+                    ForEach(RecognitionHistoryContentFilter.allCases) { option in
                         Text(option.title).tag(option)
                     }
                 }
@@ -223,6 +353,17 @@ private struct SettingsHistoryView: View {
             }
 
             SettingsHistoryCard {
+                Toggle(
+                    L10n.string("settings.history.saving.enabled", fallback: "Save recognition history"),
+                    isOn: $isSavingHistory
+                )
+                Text(L10n.string(
+                    "settings.history.saving.help",
+                    fallback: "When off, new dictation and caption sessions are not saved. Existing history stays available."
+                ))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
                 SettingsFeatureGroup(
                     title: L10n.string("settings.history.storage", fallback: "Storage"),
                     systemImage: "archivebox"
@@ -288,7 +429,8 @@ private struct SettingsHistoryView: View {
                         number: entryNumbers[entry.id, default: 0],
                         time: timeTitle(entry.createdAt),
                         isFirstInDay: index == 0,
-                        isLastInDay: index == group.entries.count - 1
+                        isLastInDay: index == group.entries.count - 1,
+                        isExpanded: expandedEntryIDs.contains(entry.id)
                     )
                 }
         }
@@ -307,12 +449,19 @@ private struct SettingsHistoryView: View {
         case .today: startOfToday
         case .sevenDays: calendar.date(byAdding: .day, value: -6, to: startOfToday)
         case .thirtyDays: calendar.date(byAdding: .day, value: -29, to: startOfToday)
+        case .custom: nil
         }
+        let customRange = RecognitionHistoryDateRange(
+            startDate: customStartDate,
+            endDate: customEndDate
+        )
 
         let filtered = entries.filter { entry in
             let isRecentEnough = cutoff.map { entry.createdAt >= $0 } ?? true
+            let isWithinCustomRange = filter != .custom || customRange.contains(entry.createdAt, calendar: calendar)
+            let matchesType = contentFilter.historyKind.map { entry.kind == $0 } ?? true
             let matchesSearch = searchText.isEmpty || entry.text.localizedStandardContains(searchText)
-            return isRecentEnough && matchesSearch
+            return isRecentEnough && isWithinCustomRange && matchesType && matchesSearch
         }
         let grouped = Dictionary(grouping: filtered) { calendar.startOfDay(for: $0.createdAt) }
         displayedGroups = grouped.keys.sorted(by: >).map { day in
@@ -340,6 +489,14 @@ private struct SettingsHistoryView: View {
     private func timeTitle(_ date: Date) -> String {
         date.formatted(date: .omitted, time: .shortened)
     }
+
+    private func toggleExpansion(_ entry: RecognitionHistoryEntry) {
+        if expandedEntryIDs.contains(entry.id) {
+            expandedEntryIDs.remove(entry.id)
+        } else {
+            expandedEntryIDs.insert(entry.id)
+        }
+    }
 }
 
 /// The history page may contain hundreds of variable-height rows. Keep it out
@@ -358,18 +515,15 @@ private struct SettingsHistoryPage<Content: View>: View {
             let layoutWidth = resize.layoutWidth(available: geometry.size.width)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
-                    SettingsHistoryCard {
-                        Text(subtitle)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    SettingsPageDescription(subtitle)
+                        .padding(.horizontal, 14)
 
                     content
                 }
                 .frame(maxWidth: 736, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.horizontal, max(16, (layoutWidth - 736) / 2))
-                .padding(.top, topBarHeight + 18)
+                .padding(.top, topBarHeight)
                 .padding(.bottom, 18)
                 .frame(width: layoutWidth, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -456,16 +610,17 @@ private struct SettingsHistoryEntriesCard<Rows: View>: View {
     }
 }
 
-private struct SettingsPage<Content: View>: View {
-    @Environment(\.settingsTopBarHeight) private var topBarHeight
-    let subtitle: String
+struct SettingsPage<Content: View>: View {
+    @Environment(\.usesNativeInspectorEdge) private var nativeInspectorEdge
+    @Environment(\.nativeInspectorEdgeHidden) private var nativeInspectorEdgeHidden
+    var subtitle: String? = nil
     @ViewBuilder var content: Content
 
     @ViewBuilder
     var body: some View {
         if #available(macOS 26.0, *) {
             settingsForm
-                .scrollEdgeEffectHidden(true, for: .top)
+                .scrollEdgeEffectHidden(!nativeInspectorEdge || nativeInspectorEdgeHidden, for: .top)
         } else {
             settingsForm
         }
@@ -474,17 +629,17 @@ private struct SettingsPage<Content: View>: View {
     private var settingsForm: some View {
         GeometryReader { geometry in
             Form {
-                Section {
-                    Text(subtitle)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                if let subtitle {
+                    Section {
+                        SettingsPageDescription(subtitle)
+                    }
+                    .listRowBackground(Color.clear)
                 }
-                .listRowBackground(Color.clear)
 
                 content
             }
             .formStyle(.grouped)
-            .contentMargins(.top, topBarHeight, for: .scrollContent)
+            .settingsDetailScrollInset()
             .scrollContentBackground(.hidden)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             // Derive margins directly; avoid feeding each animated width
@@ -493,6 +648,40 @@ private struct SettingsPage<Content: View>: View {
             .focusSection()
             .accessibilityElement(children: .contain)
         }
+    }
+}
+
+struct SettingsPageDescription: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct SettingsDescriptionCard: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+    var body: some View {
+        // Lists don't render grouped Form sections. Host the very same native
+        // Form here instead of approximating its fill, row height and insets.
+        // Intrinsic sizing includes the system's section spacing; no hand-set
+        // card height or extra padded background is needed.
+        Form {
+            Section { SettingsPageDescription(text) }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .scrollDisabled(true)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -506,137 +695,55 @@ private struct SettingsSection<Content: View>: View {
     }
 }
 
-private struct SettingsOverviewView: View {
-    @ObservedObject var model: HushTypeSettingsModel
-
-    var body: some View {
-        SettingsPage(
-            subtitle: L10n.string("settings.overview.subtitle", fallback: "A quick view of HushType and its local speech model.")
-        ) {
-            SettingsSection {
-                HStack(alignment: .center, spacing: 16) {
-                    Image(systemName: model.statusSymbol)
-                        .font(.system(size: 28, weight: .medium))
-                        .foregroundStyle(model.statusTint)
-                        .frame(width: 38)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(model.statusTitle).font(.headline)
-                        Text(model.statusDetail).font(.subheadline).foregroundStyle(.secondary)
-                        HStack(spacing: 5) {
-                            Text(model.overviewModelLabel)
-                            Text(model.overviewModelName)
-                                .fontWeight(.medium)
-                        }
-                        .font(.subheadline)
-                        .padding(.top, 3)
-                        if model.hasPendingModelChange {
-                            Text(L10n.format(
-                                "settings.overview.pending_model_change",
-                                "%1$@ is selected and will run after the next model load.",
-                                arguments: [model.selectedModelName]
-                            ))
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                        }
-                    }
-                    Spacer(minLength: 12)
-                    modelAction
-                }
-            }
-
-            if !model.permissionsComplete {
-                SettingsSection {
-                    Button {
-                        model.selection = .permissions
-                    } label: {
-                        HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.orange)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(L10n.string("settings.overview.permissions_needed.title", fallback: "Permissions need attention"))
-                                    .font(.headline)
-                                Text(L10n.string("settings.overview.permissions_needed.detail", fallback: "Allow Accessibility and Microphone in Permissions to use voice input."))
-                                    .font(.subheadline).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
-            SettingsSection {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label(L10n.string("settings.overview.how_to.title", fallback: "How to dictate"), systemImage: "keyboard")
-                        .font(.headline)
-                    Text(L10n.string("settings.overview.how_to.detail", fallback: "Press F5 to start recording, then press F5 again to transcribe and insert at the cursor."))
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var modelAction: some View {
-        switch model.modelControl {
-        case .stopDownload:
-            Button(L10n.string("settings.model.stop", fallback: "Stop")) { model.stopModelDownload() }
-                .buttonStyle(.bordered)
-        case .unload:
-            Button(L10n.string("settings.model.unload", fallback: "Unload")) { model.unloadModel() }
-                .buttonStyle(.bordered)
-        case .load:
-            Button(L10n.string("settings.model.load", fallback: "Load Model")) { model.loadOrReloadModel() }
-                .buttonStyle(.borderedProminent)
-        case .none:
-            EmptyView()
-        }
-    }
-}
 
 private struct SettingsDictationView: View {
     @ObservedObject var model: HushTypeSettingsModel
-
+    @AppStorage("hushtype.input.method") private var inputMethodRaw = TextInsertionConfiguration.Method.clipboard.rawValue
     var body: some View {
-        SettingsPage(
-            subtitle: L10n.string("settings.dictation.window_subtitle", fallback: "Configure local recognition and output cleanup.")
-        ) {
-            if model.currentDictationEngine == .local {
-                SettingsSection {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label(L10n.string("settings.dictation.local_engine", fallback: "Local (Qwen3-ASR)"), systemImage: "cpu")
-                            .font(.headline)
-                        Text(L10n.string("settings.dictation.local_privacy", fallback: "Speech recognition runs locally on this Mac. Audio is not uploaded."))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            } else {
-                DictationEngineSettingsView(onSwitchEngine: model.switchDictationEngine)
-            }
-
-            Section {
-                SettingsFeatureGroup(
-                    title: L10n.string("settings.dictation.output", fallback: "Recognition and output"),
-                    systemImage: "text.bubble"
+        SettingsPage {
+            SettingsTaskControlSection(
+                taskName: L10n.string("settings.sidebar.dictation", fallback: "Dictation"),
+                statusLabel: L10n.string("settings.captions.status", fallback: "Status"),
+                status: dictationStatus,
+                state: model.dictationTaskState,
+                enabled: model.canToggleDictation,
+                action: model.toggleDictation
+            )
+            ProfileSelectionSection(use: .dictation, model: model)
+            SettingsSection {
+                Picker(
+                    L10n.string("settings.general.input_method", fallback: "Text input method"),
+                    selection: inputMethodBinding
                 ) {
-                    Picker(L10n.string("menu.speech_to_text_language", fallback: "Speech-to-Text Language"), selection: $model.speechLanguage) {
-                        Text(L10n.string("menu.choice.auto", fallback: "Auto")).tag("auto")
-                        Text(L10n.string("picker.autonym.en", fallback: "English")).tag("english")
-                        Text(L10n.string("picker.autonym.zh", fallback: "中文")).tag("chinese")
-                        Text(L10n.string("picker.autonym.ja", fallback: "日本語")).tag("japanese")
-                    }
-                    Toggle(L10n.string("settings.general.number_conversion", fallback: "Convert Chinese numbers to digits"), isOn: $model.numberConversionEnabled)
-                    Toggle(L10n.string("settings.dictation.traditional_chinese", fallback: "Convert Simplified Chinese output to Traditional Chinese"), isOn: $model.chineseConversionEnabled)
-                    Picker(L10n.string("settings.general.punctuation", fallback: "Punctuation cleanup"), selection: $model.punctuationMode) {
-                        Text(L10n.string("settings.general.punctuation.soft", fallback: "Soft")).tag(PunctuationMode.soft)
-                        Text(L10n.string("settings.general.punctuation.hard", fallback: "Strict")).tag(PunctuationMode.hard)
-                        Text(L10n.string("settings.general.punctuation.off", fallback: "Off")).tag(PunctuationMode.off)
-                    }
-                    .pickerStyle(.segmented)
+                    Text(L10n.string("settings.input_method.clipboard", fallback: "Temporary clipboard"))
+                        .tag(TextInsertionConfiguration.Method.clipboard)
+                    Text(L10n.string("settings.input_method.unicode", fallback: "Unicode keyboard input"))
+                        .tag(TextInsertionConfiguration.Method.unicode)
                 }
+                .pickerStyle(.menu)
             }
+            Section {
+                Toggle(L10n.string("settings.general.floating_overlay", fallback: "Show the floating recording overlay"), isOn: $model.floatingOverlayEnabled)
+            }
+            SettingsDebugSections(scope: .dictation, model: model)
         }
+    }
+
+    private var dictationStatus: String {
+        switch model.dictationTaskState {
+        case .stopped:
+            L10n.string("settings.captions.status.stopped", fallback: "Stopped")
+        case .running:
+            model.statusTitle
+        case .finishing:
+            L10n.string("overview.finishing", fallback: "Finishing")
+        }
+    }
+    private var inputMethodBinding: Binding<TextInsertionConfiguration.Method> {
+        Binding(
+            get: { TextInsertionConfiguration.Method(rawValue: inputMethodRaw) ?? .clipboard },
+            set: { inputMethodRaw = $0.rawValue }
+        )
     }
 }
 
@@ -652,7 +759,7 @@ private struct SettingsModelView: View {
 
     var body: some View {
         SettingsPage(
-            subtitle: L10n.string("settings.model.subtitle", fallback: "Manage the Qwen3-ASR model stored in memory for local dictation.")
+            subtitle: L10n.string("settings.model.subtitle", fallback: "Install and manage local speech and text models.")
         ) {
             SettingsSection {
                 VStack(alignment: .leading, spacing: 14) {
@@ -726,6 +833,7 @@ private struct SettingsModelView: View {
                     .textCase(nil)
                 }
             }
+            SettingsLocalTextModelView(model: model)
         }
         .onAppear { ensureInstalledSelection() }
         .onChange(of: library.installedModels.map(\.id)) { _, _ in
@@ -879,41 +987,12 @@ private struct SettingsModelView: View {
     }
 }
 
-private struct SettingsDictionaryView: View {
-    @ObservedObject var model: HushTypeSettingsModel
-
-    var body: some View {
-        SettingsPage(
-            subtitle: L10n.string("settings.dictionary.subtitle", fallback: "Correct names, technical terms, and recurring transcription mistakes.")
-        ) {
-            SettingsSection {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(L10n.string("settings.dictionary.entries", fallback: "Customized Dictionary")).font(.headline)
-                    Text(dictionaryDetail).foregroundStyle(.secondary)
-                    Button(L10n.string("settings.dictionary.open", fallback: "Open Dictionary…")) { model.openDictionary() }
-                        .buttonStyle(.borderedProminent)
-                    Text(L10n.string("settings.dictionary.help", fallback: "Use one rule per line: what you say -> what gets typed. Changes apply to the next transcription."))
-                        .font(.subheadline).foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    private var dictionaryDetail: String {
-        guard DictionaryReplacer.fileExists else {
-            return L10n.string("settings.dictionary.empty", fallback: "No dictionary file yet.")
-        }
-        let count = DictionaryReplacer.entryCount
-        return L10n.plural("settings.dictionary.entry_count", count, fallback: count == 1 ? "%1$ld entry loaded" : "%1$ld entries loaded")
-    }
-}
-
 private struct SettingsPermissionsView: View {
     @ObservedObject var model: HushTypeSettingsModel
 
     var body: some View {
         SettingsPage(
-            subtitle: L10n.string("settings.permissions.subtitle", fallback: "HushType needs these permissions for its global hotkey and microphone input.")
+            subtitle: L10n.string("settings.permissions.subtitle", fallback: "Manage permissions for global shortcuts, microphone input, and app-audio capture.")
         ) {
             permissionCard(
                 icon: "figure.stand",
@@ -969,6 +1048,92 @@ private struct SettingsPermissionsView: View {
                         model.openMicrophoneSettings()
                     }
                     .buttonStyle(.bordered)
+                }
+            }
+
+            permissionCard(
+                icon: "record.circle",
+                title: L10n.string(
+                    "permission.screen_system_audio.name",
+                    fallback: "Screen & System Audio Recording"
+                ),
+                detail: L10n.string(
+                    "permission.system_audio.required_by_macos",
+                    fallback: "Required by macOS for capturing audio from an application."
+                ),
+                isGranted: model.systemAudioGranted
+            ) {
+                if model.systemAudioGranted {
+                    Label(
+                        L10n.string("permission.status.allowed", fallback: "Allowed"),
+                        systemImage: "checkmark.circle.fill"
+                    )
+                    .foregroundStyle(.green)
+                } else {
+                    HStack {
+                        Button(L10n.string(
+                            "permission.system_audio.allow",
+                            fallback: "Allow System Audio"
+                        )) {
+                            model.requestSystemAudio()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        Button(L10n.string(
+                            "common.button.open_system_settings",
+                            fallback: "Open System Settings"
+                        )) {
+                            model.openSystemAudioSettings()
+                        }
+                        .buttonStyle(.bordered)
+                        if model.didRequestSystemAudio || model.systemAudioSettingsOpened || model.didResetSystemAudio {
+                            Button(L10n.string(
+                                "onboarding.button.restart",
+                                fallback: "Restart HushType"
+                            )) {
+                                model.restart()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+
+                    if model.didRequestSystemAudio || model.systemAudioSettingsOpened {
+                        Label(L10n.string(
+                            "permission.system_audio.restart_guidance",
+                            fallback: "After turning on HushType in System Settings, restart the app so macOS applies the permission."
+                        ), systemImage: "arrow.triangle.2.circlepath")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    }
+
+                    DisclosureGroup(L10n.string(
+                        "permission.troubleshooting.heading",
+                        fallback: "Having trouble?"
+                    )) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(L10n.string(
+                                "permission.system_audio.reset_help",
+                                fallback: "Use this if HushType is missing or appears twice in System Settings."
+                            ))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            Button(L10n.string(
+                                "permission.system_audio.reset_stale",
+                                fallback: "Reset stale permission entries"
+                            )) {
+                                model.resetOldSystemAudioEntry()
+                            }
+                            .buttonStyle(.bordered)
+                            if model.didResetSystemAudio {
+                                Label(L10n.string(
+                                    "permission.system_audio.reset_complete",
+                                    fallback: "Reset complete. Turn on HushType in System Settings, then restart."
+                                ), systemImage: "checkmark.circle.fill")
+                                .font(.subheadline)
+                                .foregroundStyle(.green)
+                            }
+                        }
+                        .padding(.top, 6)
+                    }
                 }
             }
 
@@ -1065,36 +1230,14 @@ private struct SettingsPermissionsView: View {
 
 private struct SettingsGeneralView: View {
     @ObservedObject var model: HushTypeSettingsModel
-    @AppStorage("hushtype.input.method") private var inputMethodRaw = TextInsertionConfiguration.Method.clipboard.rawValue
-    private let deviceRefreshTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
+    @AppStorage(OverviewPreferences.developerModeKey) private var developerMode = false
 
     var body: some View {
         SettingsPage(
-            subtitle: L10n.string("settings.general.subtitle", fallback: "Adjust how HushType presents and cleans up dictation.")
+            subtitle: L10n.string("settings.general.subtitle", fallback: "Manage the interface, updates, and developer settings.")
         ) {
             SettingsSection {
-                Toggle(L10n.string("settings.general.floating_overlay", fallback: "Show the floating recording overlay"), isOn: $model.floatingOverlayEnabled)
-                Toggle(
-                    L10n.string(
-                        "settings.general.release_f5_when_unloaded",
-                        fallback: "Return F5 to macOS after unloading the model"
-                    ),
-                    isOn: $model.releaseF5WhenModelUnloaded
-                )
-                Toggle(L10n.string("settings.general.text_polish", fallback: "Enable text polishing"), isOn: $model.textPolishEnabled)
-            }
-
-            SettingsSection {
-                Picker(
-                    L10n.string("settings.general.input_method", fallback: "Text input method"),
-                    selection: inputMethodBinding
-                ) {
-                    Text(L10n.string("settings.input_method.clipboard", fallback: "Temporary clipboard"))
-                        .tag(TextInsertionConfiguration.Method.clipboard)
-                    Text(L10n.string("settings.input_method.unicode", fallback: "Unicode keyboard input"))
-                        .tag(TextInsertionConfiguration.Method.unicode)
-                }
-                .pickerStyle(.menu)
+                Toggle(L10n.string("overview.developer_mode", fallback: "Developer mode"), isOn: $developerMode)
             }
 
             SettingsSection {
@@ -1112,39 +1255,6 @@ private struct SettingsGeneralView: View {
                     }
                 }
 
-                Picker(selection: $model.audioInputSelection) {
-                    Text(L10n.string("settings.general.input_device.follow_system", fallback: "Follow System"))
-                        .tag(AudioInputSelection.followSystem)
-                    Text(L10n.string("settings.general.input_device.automatic", fallback: "Automatic"))
-                        .tag(AudioInputSelection.automatic)
-                    Divider()
-                    if let selectedUID = AudioInputSelection.deviceUID(from: model.audioInputSelection),
-                       !model.audioInputDevices.contains(where: { $0.id == selectedUID }) {
-                        Text(L10n.string(
-                            "settings.general.input_device.selected_unavailable",
-                            fallback: "Selected device unavailable"
-                        ))
-                        .tag(model.audioInputSelection)
-                        Divider()
-                    }
-                    ForEach(model.audioInputDevices) { device in
-                        Text(device.name).tag(AudioInputSelection.device(device.id))
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        Text(L10n.string("settings.general.input_device", fallback: "Input Device"))
-                        Text(L10n.format(
-                            "settings.general.input_device.current",
-                            "Current: %1$@",
-                            arguments: [model.currentAudioInputDeviceName ?? L10n.string(
-                                "settings.general.input_device.unavailable",
-                                fallback: "Unavailable"
-                            )]
-                        ))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    }
-                }
             }
 
             SettingsSection {
@@ -1176,20 +1286,13 @@ private struct SettingsGeneralView: View {
                     }
                 }
             }
+            SettingsDebugSections(scope: .general, model: model)
         }
-        .onAppear { model.refreshAudioInputDevices() }
-        .onReceive(deviceRefreshTimer) { _ in model.refreshAudioInputDevices() }
     }
 
-    private var inputMethodBinding: Binding<TextInsertionConfiguration.Method> {
-        Binding(
-            get: { TextInsertionConfiguration.Method(rawValue: inputMethodRaw) ?? .clipboard },
-            set: { inputMethodRaw = $0.rawValue }
-        )
-    }
 }
 
-private extension HushTypeSettingsModel {
+extension HushTypeSettingsModel {
     var overviewModelLabel: String {
         if loadedModelID != nil {
             return L10n.string("settings.overview.running_model", fallback: "Running model:")

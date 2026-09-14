@@ -62,7 +62,7 @@
 | Simplified → Traditional post-processing (OpenCC `s2twp`) | OFF | Optional |
 | 阿拉伯數字 conversion (deterministic ITN) | **ON** | - |
 | Chinese punctuation cleanup: trims the model's over-segmentation (soft / hard / off) | **soft** | - |
-| Customized dictionary (proper nouns / jargon) | File-driven | - |
+| Customized dictionary (proper nouns / jargon) | Native editor + text file | - |
 | Interface Language (Follow System / English / 繁體中文) | Follow System | - |
 | Floating "Listening / Transcribing" pill | ON | - |
 | Unload speech-to-text model | One-click | - |
@@ -120,10 +120,10 @@ iOS (via your Mac as server):
 
 ## Install
 
-### Option A: Download DMG (no build tools needed)
+### Option A: Download the stable release (no build tools needed)
 
-1. Download `HushType.dmg` from the [latest release](https://github.com/felixfu824/HushType/releases)
-2. Open the DMG and drag HushType to Applications
+1. Download `HushType-0.5.18.zip` from [this fork's latest release](https://github.com/Hanosn2007/HushType/releases/latest)
+2. Extract the ZIP and drag HushType.app to Applications
 3. Right-click HushType.app → Open (required on first launch; releases from 0.5.17 use a stable self-signed identity and are not notarized)
 4. Grant **Accessibility** and **Microphone** permissions when prompted
 5. Wait for the Qwen3-ASR 1.7B 8-bit model to download (one-time, progress shown in menu bar)
@@ -207,8 +207,12 @@ make install
 
 ### Step 3: Use it
 
+- **Hold F5 for about half a second**: start or stop local captions. The Live Caption menu selects the microphone or one app's system audio. The complete session transcript remains scrollable; the panel smoothly sizes to its content up to a limit. Manually resizing locks its dimensions until the circular shrink button beside the top-left close button restores automatic sizing. Captions and dictation are currently exclusive. Custom shortcuts and selectable exclusive/shared-model queue/dual-model operation remain future work.
 - **Press F5 once**: start recording. F5 is a toggle, not a key you hold; a "Listening" pill with a live audio meter shows at the bottom of the screen.
 - **Press F5 again**: stop recording; the pill switches to "Transcribing", and the transcription pastes at your cursor and stays on the clipboard.
+- **Cancel recording**: click the red recording icon in Settings Overview to discard the current audio without transcribing it.
+
+When “Return F5 to macOS after unloading the model” is enabled, both short and long presses pass to macOS while unloaded. Use the menu to start captions in that state. This fork uses held F5 for captions; the Right Command + / and cloud sections below describe inherited features that are not currently exposed or validated.
 
 **Menu bar:**
 
@@ -218,7 +222,7 @@ make install
   - **Number Conversion**: Chinese numeral → Arabic digit pass (default on)
   - **Punctuation Cleanup**: soft / hard / off (default soft)
   - **Show Floating Indicator**: toggle the listening pill (default on)
-  - **Edit Customized Dictionary**: `~/Library/Application Support/HushType/dictionary.txt`, plain text, `source -> target` per line, hot-reloads
+  - **Dictionary**: add, edit, and remove replacement rules in native settings; Save applies them to the next dictation. Enter Text to Test Replacements previews unsaved rules. The existing `~/Library/Application Support/HushType/dictionary.txt` format (`source -> target`) and hot-reloading of external edits remain supported.
 - **Unload Speech-to-Text Model**: one click frees the local model's RAM; reload from the same menu (~3s cold start)
 - **Quit HushType**
 

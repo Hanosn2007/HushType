@@ -30,7 +30,7 @@ enum AudioCaptureHealthPolicy {
     }
 }
 
-final class AudioCaptureService {
+final class MicrophoneCaptureDriver: MicrophoneCaptureDriverProtocol {
     private final class CaptureBufferHeartbeat: @unchecked Sendable {
         private let lock = NSLock()
         private var lastBufferUptime: TimeInterval?
@@ -138,8 +138,10 @@ final class AudioCaptureService {
     private var captureSession: AVCaptureSession?
     private var sampleBufferReceiver: SampleBufferReceiver?
     private let sessionQueue = DispatchQueue(label: "com.felix.hushtype.audio-session", qos: .userInitiated)
+    private let sessionQueueKey = DispatchSpecificKey<Bool>()
     private let captureQueue = DispatchQueue(label: "com.felix.hushtype.audio-capture", qos: .userInitiated)
     private var samples: [Float] = []
+    var retainsRecordedSamples = true
     private let samplesLock = NSLock()
     private let activeAttemptLock = NSLock()
     private var activeRecordingAttemptID: UUID?
@@ -147,9 +149,15 @@ final class AudioCaptureService {
     private var isRecording = false
     private var recordingAttemptID: UUID?
     private var isContinuousCapturing = false
+    private let selectionOverride: String?
     private var captureObserverTokens: [NSObjectProtocol] = []
     private var captureGeneration: UUID?
     private var captureAvailabilityTimer: DispatchSourceTimer?
+
+    init(selection: String? = nil) {
+        selectionOverride = selection
+        sessionQueue.setSpecific(key: sessionQueueKey, value: true)
+    }
 
     /// Called on each audio buffer with the current RMS level (0.0–1.0).
     var onRMSLevel: ((Float) -> Void)?
@@ -171,9 +179,18 @@ final class AudioCaptureService {
         onUnexpectedStop: @escaping (Error) -> Void,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
-        let selection = AppConfig.shared.audioInputSelection
+        let selection = selectionOverride ?? AppConfig.shared.audioInputSelection
         sessionQueue.async { [weak self] in
             guard let self else { return }
+            guard !self.isContinuousCapturing else {
+                completion(.failure(NSError(
+                    domain: "AudioCaptureService", code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: L10n.string(
+                        "caption.stop_to_dictate", fallback: "Stop Live Caption to dictate"
+                    )]
+                )))
+                return
+            }
             guard !self.isRecording else {
                 completion(.success(()))
                 return
@@ -271,9 +288,12 @@ final class AudioCaptureService {
 
                 let newSamples = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
                 guard self.isActiveRecordingAttempt(attemptID, candidateID: candidateID) else { return }
-                self.samplesLock.lock()
-                self.samples.append(contentsOf: newSamples)
-                self.samplesLock.unlock()
+                if self.retainsRecordedSamples {
+                    self.samplesLock.lock()
+                    self.samples.append(contentsOf: newSamples)
+                    self.samplesLock.unlock()
+                }
+                self.onSamples?(newSamples)
                 self.onRMSLevel?(rms)
 
                 self.sessionQueue.async {
@@ -355,7 +375,20 @@ final class AudioCaptureService {
     /// Live-caption capture path: installs a tap that pushes 16kHz mono Float32
     /// samples to `onSamples` per buffer. Does NOT accumulate into `samples`.
     /// Throws if the AVAudioEngine fails to start.
-    func startContinuousCapture() throws {
+    func startContinuousCapture() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            sessionQueue.async {
+                do {
+                    try self.startContinuousCaptureOnSessionQueue()
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    private func startContinuousCaptureOnSessionQueue() throws {
         guard !isContinuousCapturing else { return }
         guard !isRecording else {
             throw NSError(
@@ -390,6 +423,14 @@ final class AudioCaptureService {
     }
 
     func stopContinuousCapture() {
+        if DispatchQueue.getSpecific(key: sessionQueueKey) == true {
+            stopContinuousCaptureOnSessionQueue()
+        } else {
+            sessionQueue.sync { self.stopContinuousCaptureOnSessionQueue() }
+        }
+    }
+
+    private func stopContinuousCaptureOnSessionQueue() {
         guard isContinuousCapturing else { return }
         stopCapture()
         isContinuousCapturing = false

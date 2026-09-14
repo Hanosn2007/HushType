@@ -18,14 +18,13 @@ final class HotkeyManager {
     /// comment" — note we only fire on the *right* command bit, so left
     /// ⌘ + / continues to work for editor comment-toggle as expected.
     var onLiveCaptionToggle: (() -> Void)?
-    /// Fires once for each physical F5 press (auto-repeat is ignored). The
-    /// caller owns the start/stop toggle; unless pass-through is enabled, both
-    /// the key-down and key-up events are consumed so macOS cannot also treat
-    /// F5 as a system shortcut.
-    var onF5Toggle: (() -> Void)?
-    /// Returning true passes the complete F5 press through to macOS. The
-    /// decision is latched from key-down through key-up for a valid sequence.
-    var shouldPassThroughF5: (() -> Bool)?
+    var onDictationToggle: (() -> Void)?
+    var onCaptionToggle: (() -> Void)?
+    var onTranslateSelection: (() -> Void)?
+    var onPolishSelection: (() -> Void)?
+    /// A shared short/hold key is passed through as one physical press when
+    /// it contains the dictation action and the unloaded-model policy applies.
+    var shouldPassThroughDictationShortcut: (() -> Bool)?
     /// The system can disable an active tap while secure input or the login
     /// session is changing. Recovery must happen outside the tap callback.
     var onTapDisabled: ((DisableReason) -> Void)?
@@ -34,12 +33,14 @@ final class HotkeyManager {
     private var runLoopSource: CFRunLoopSource?
     private var isRightOptionDown = false
     private var otherKeyPressedDuringHold = false
-    private var passThroughF5KeyCode: Int64?
+    private var shortcutConfiguration = HushTypeShortcutPreferences.load()
+    private var shortcutRouter = HushTypeShortcutPressRouter()
+    private var holdWorkItems: [UInt16: DispatchWorkItem] = [:]
+    private var isCapturingShortcut = false
+    private var preferenceObservers: [NSObjectProtocol] = []
 
     private static let rightOptionKeyCode: Int64 = 61 // kVK_RightOption
-    // Standard F5 is kVK_F5 (96). Some Apple top-row media-mode keyboards
-    // deliver the microphone/F5 key as keycode 176 through CGEventTap.
-    private static let f5KeyCodes: Set<Int64> = [96, 176]
+    private static let longPressThreshold: TimeInterval = 0.5
     /// kVK_ANSI_Slash — physical "/" key. With Shift held, this is "?".
     private static let slashKeyCode: Int64 = 44
     /// Device-dependent bit for Right Command on macOS CGEventFlags.
@@ -48,6 +49,29 @@ final class HotkeyManager {
     /// 0x10 = right cmd; 0x08 = left cmd.
     private static let rightCommandFlagBit: UInt64 = 0x10
     private static let leftCommandFlagBit: UInt64 = 0x08
+
+    init() {
+        let center = NotificationCenter.default
+        preferenceObservers = [
+            center.addObserver(forName: HushTypeShortcutPreferences.didChange, object: nil, queue: .main) { [weak self] _ in
+                guard let self else { return }
+                self.cancelShortcutPresses()
+                self.shortcutConfiguration = HushTypeShortcutPreferences.load()
+            },
+            center.addObserver(forName: HushTypeShortcutPreferences.captureDidChange, object: nil, queue: .main) { [weak self] notification in
+                guard let self else { return }
+                self.isCapturingShortcut = notification.object as? Bool ?? false
+                self.cancelShortcutPresses()
+                self.isRightOptionDown = false
+                self.otherKeyPressedDuringHold = false
+            },
+        ]
+    }
+
+    deinit {
+        preferenceObservers.forEach(NotificationCenter.default.removeObserver)
+        holdWorkItems.values.forEach { $0.cancel() }
+    }
 
     func start() {
         if eventTap != nil || runLoopSource != nil {
@@ -83,13 +107,14 @@ final class HotkeyManager {
         CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
 
-        log.info("Hotkey manager started — listening for Right Option and F5")
+        shortcutConfiguration = HushTypeShortcutPreferences.load()
+        log.info("Hotkey manager started with configured shortcuts")
     }
 
     func stop() {
         isRightOptionDown = false
         otherKeyPressedDuringHold = false
-        passThroughF5KeyCode = nil
+        cancelShortcutPresses()
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
             if let source = runLoopSource {
@@ -107,7 +132,7 @@ final class HotkeyManager {
         // particular, user-input disablement can happen while macOS is
         // transitioning through the lock-screen secure-input session.
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            passThroughF5KeyCode = nil
+            cancelShortcutPresses()
             let reason: DisableReason = type == .tapDisabledByTimeout ? .timeout : .userInput
             log.error("Event tap disabled by \(reason.rawValue, privacy: .public); scheduling a clean rebuild")
             let recovery = onTapDisabled
@@ -115,6 +140,43 @@ final class HotkeyManager {
                 recovery?(reason)
             }
             return Unmanaged.passUnretained(event)
+        }
+
+        // The recorder is the foreground first responder. Pass through the
+        // entire capture gesture rather than invoking the action being edited.
+        if isCapturingShortcut { return Unmanaged.passUnretained(event) }
+
+        if type == .keyDown || type == .keyUp {
+            let keyCode = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
+            let result: HushTypeShortcutPressRouter.Result
+            if type == .keyDown {
+                result = shortcutRouter.keyDown(
+                    keyCode: keyCode,
+                    modifiers: .init(eventFlags: event.flags),
+                    isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0,
+                    configuration: shortcutConfiguration,
+                    shouldPassThrough: { [weak self] actions in
+                        actions.contains(.dictation) && self?.shouldPassThroughDictationShortcut?() == true
+                    }
+                )
+            } else {
+                holdWorkItems.removeValue(forKey: keyCode)?.cancel()
+                result = shortcutRouter.keyUp(keyCode: keyCode)
+            }
+            switch result {
+            case .passThrough:
+                break
+            case .consume:
+                if isRightOptionDown { otherKeyPressedDuringHold = true }
+                return nil
+            case .scheduleHold(let token):
+                if isRightOptionDown { otherKeyPressedDuringHold = true }
+                scheduleHold(keyCode: keyCode, token: token)
+                return nil
+            case .deliver(let delivery):
+                deliverShortcut(delivery)
+                return nil
+            }
         }
 
         // Live Caption toggle: Right ⌘ + /. Single discrete keyDown. We
@@ -125,28 +187,6 @@ final class HotkeyManager {
         // normally — only the bare "right ⌘ + /" combo triggers LC toggle.
         if type == .keyDown {
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-            if Self.f5KeyCodes.contains(keyCode) {
-                if passThroughF5KeyCode == keyCode || shouldPassThroughF5?() == true {
-                    passThroughF5KeyCode = keyCode
-                    return Unmanaged.passUnretained(event)
-                }
-                // F5 owns this chord. If Right Option is already held, mark
-                // that hold as cancelled so its release cannot become a tap.
-                if isRightOptionDown {
-                    otherKeyPressedDuringHold = true
-                }
-                // A held function key generates repeated keyDown events. Only
-                // the physical press toggles dictation; consume repeats too.
-                let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
-                if !isRepeat {
-                    log.debug("F5 pressed")
-                    let action = onF5Toggle
-                    DispatchQueue.main.async {
-                        action?()
-                    }
-                }
-                return nil // consume F5 — do not trigger system dictation
-            }
             if keyCode == Self.slashKeyCode {
                 let flagsRaw = event.flags.rawValue
                 let rightCmd = (flagsRaw & Self.rightCommandFlagBit) != 0
@@ -158,18 +198,6 @@ final class HotkeyManager {
                     onLiveCaptionToggle()
                     return nil // suppress — don't let editors interpret as comment-toggle
                 }
-            }
-        }
-
-        if type == .keyUp {
-            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-            if Self.f5KeyCodes.contains(keyCode) {
-                if passThroughF5KeyCode == keyCode {
-                    passThroughF5KeyCode = nil
-                    return Unmanaged.passUnretained(event)
-                }
-                log.debug("F5 released")
-                return nil // consume F5 release as well
             }
         }
 
@@ -214,6 +242,39 @@ final class HotkeyManager {
         }
 
         return Unmanaged.passUnretained(event)
+    }
+
+    private func scheduleHold(keyCode: UInt16, token: UInt64) {
+        holdWorkItems.removeValue(forKey: keyCode)?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self,
+                  let delivery = self.shortcutRouter.holdDeadlineFired(token: token) else { return }
+            self.holdWorkItems.removeValue(forKey: keyCode)
+            self.deliverShortcut(delivery)
+        }
+        holdWorkItems[keyCode] = work
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.longPressThreshold,
+            execute: work
+        )
+    }
+
+    private func deliverShortcut(_ delivery: HushTypeShortcutPressRouter.Delivery) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.isCapturingShortcut, self.shortcutRouter.shouldDeliver(delivery) else { return }
+            switch delivery.action {
+            case .dictation: self.onDictationToggle?()
+            case .captions: self.onCaptionToggle?()
+            case .translation: self.onTranslateSelection?()
+            case .polish: self.onPolishSelection?()
+            }
+        }
+    }
+
+    private func cancelShortcutPresses() {
+        holdWorkItems.values.forEach { $0.cancel() }
+        holdWorkItems.removeAll()
+        shortcutRouter.cancel()
     }
 
     private func promptAccessibilityPermission() {

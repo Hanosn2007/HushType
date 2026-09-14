@@ -129,10 +129,10 @@ iOS（通过你的 Mac 作为服务器）：
 
 ## 安装
 
-### 方案 A：下载 DMG（不需要任何开发工具）
+### 方案 A：下载正式版（不需要任何开发工具）
 
-1. 从[最新版本](https://github.com/felixfu824/HushType/releases)下载 `HushType.dmg`
-2. 打开 DMG，将 HushType 拖到「应用程序」
+1. 从[本分支最新版本](https://github.com/Hanosn2007/HushType/releases/latest)下载 `HushType-0.5.18.zip`
+2. 解压 ZIP，将 HushType.app 拖到「应用程序」
 3. 右键点击 HushType.app → 打开（首次启动时需要，0.5.17 起使用固定自签名，未经 Apple 公证）
 4. 授予**辅助功能**与**麦克风**权限
 5. 等待 Qwen3-ASR 1.7B 8-bit 模型下载（仅首次，进度显示在菜单栏）
@@ -216,8 +216,12 @@ make install
 
 ### 步骤 3：使用
 
+- **长按 F5 约半秒**：开启或关闭本地字幕；菜单栏“实时字幕”可选择麦克风或某个应用的系统音频。字幕保留本次会话全部文字，自动调整宽高，到上限后滚动。手动拉伸后固定尺寸，左上角关闭按钮旁的圆形缩小按钮恢复自动尺寸。当前字幕和听写互斥；快捷键自定义，以及互斥／共享模型排队／双模型并行三种模式的切换留待后续研究。
 - **单击 F5**：开始录音。F5 不需要按住，屏幕底部出现「Listening」指示条与音量条。
 - **再次单击 F5**：停止录音，指示条切换为「Transcribing」，文字粘贴到光标位置并保留在剪贴板。
+- **取消录音**：点击设置总览中红色的录音图标，丢弃本段音频，不进入识别。
+
+若开启“模型卸载后将 F5 交还 macOS”，卸载状态的短按和长按都会交给系统；此时可用菜单启动字幕。当前 fork 的字幕快捷键是长按 F5，下方 Right ⌘ + / 与云端段落保留为继承功能参考，尚未开放或验收。
 
 **菜单栏：**
 
@@ -227,7 +231,7 @@ make install
   - **Number Conversion**：中文数字 → 阿拉伯数字（默认打开）
   - **标点清理**：温和 / 强力 / 关闭（默认温和）
   - **Show Floating Indicator**：切换指示条（默认打开）
-  - **Edit Customized Dictionary**：`~/Library/Application Support/HushType/dictionary.txt`，`source -> target` 一行一条，保存自动热重载
+  - **词典**：在原生设置中增删改“识别结果／替换为”，点击保存后于下次听写生效；“输入文字测试效果”可预览未保存规则的替换结果。继续兼容 `~/Library/Application Support/HushType/dictionary.txt`（`source -> target`），外部文本编辑也会热重载。
 - **Unload Speech-to-Text Model**：一键释放本地模型内存；同一菜单可重新加载（约 3 秒冷启动）
 - **Quit HushType**
 

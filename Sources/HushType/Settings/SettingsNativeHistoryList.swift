@@ -8,7 +8,14 @@ struct SettingsNativeHistoryList: NSViewRepresentable {
     struct Row: Identifiable, Equatable {
         enum Kind: Equatable {
             case dayHeader(String)
-            case entry(RecognitionHistoryEntry, number: Int, time: String, isFirstInDay: Bool, isLastInDay: Bool)
+            case entry(
+                RecognitionHistoryEntry,
+                number: Int,
+                time: String,
+                isFirstInDay: Bool,
+                isLastInDay: Bool,
+                isExpanded: Bool
+            )
         }
 
         let id: String
@@ -23,7 +30,8 @@ struct SettingsNativeHistoryList: NSViewRepresentable {
             number: Int,
             time: String,
             isFirstInDay: Bool,
-            isLastInDay: Bool
+            isLastInDay: Bool,
+            isExpanded: Bool = false
         ) -> Self {
             Self(
                 id: "entry-\(entry.id.uuidString)",
@@ -32,7 +40,8 @@ struct SettingsNativeHistoryList: NSViewRepresentable {
                     number: number,
                     time: time,
                     isFirstInDay: isFirstInDay,
-                    isLastInDay: isLastInDay
+                    isLastInDay: isLastInDay,
+                    isExpanded: isExpanded
                 )
             )
         }
@@ -43,9 +52,15 @@ struct SettingsNativeHistoryList: NSViewRepresentable {
     let topInset: CGFloat
     let sidebarIsResizing: Bool
     let onDelete: (RecognitionHistoryEntry) -> Void
+    let onToggleExpansion: (RecognitionHistoryEntry) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(header: header, rows: rows, onDelete: onDelete)
+        Coordinator(
+            header: header,
+            rows: rows,
+            onDelete: onDelete,
+            onToggleExpansion: onToggleExpansion
+        )
     }
 
     func makeNSView(context: Context) -> SettingsNativeHistoryScrollView {
@@ -56,7 +71,7 @@ struct SettingsNativeHistoryList: NSViewRepresentable {
         scroll.scrollerStyle = .overlay
         scroll.drawsBackground = false
         scroll.automaticallyAdjustsContentInsets = false
-        scroll.contentInsets = NSEdgeInsets(top: topInset + 18, left: 0, bottom: 18, right: 0)
+        scroll.contentInsets = NSEdgeInsets(top: topInset, left: 0, bottom: 18, right: 0)
 
         let table = NSTableView()
         table.style = .plain
@@ -88,15 +103,25 @@ struct SettingsNativeHistoryList: NSViewRepresentable {
 
     func updateNSView(_ scroll: SettingsNativeHistoryScrollView, context: Context) {
         let coordinator = context.coordinator
-        scroll.contentInsets = NSEdgeInsets(top: topInset + 18, left: 0, bottom: 18, right: 0)
+        scroll.contentInsets = NSEdgeInsets(top: topInset, left: 0, bottom: 18, right: 0)
         // On drag start, freeze before SwiftUI refreshes the hosted controls.
         // On release, refresh while still frozen, then commit all row geometry
         // together through the coordinator's final-width path.
         if sidebarIsResizing {
             coordinator.setSidebarResizing(true, width: scroll.contentSize.width)
-            coordinator.update(header: header, rows: rows, onDelete: onDelete)
+            coordinator.update(
+                header: header,
+                rows: rows,
+                onDelete: onDelete,
+                onToggleExpansion: onToggleExpansion
+            )
         } else {
-            coordinator.update(header: header, rows: rows, onDelete: onDelete)
+            coordinator.update(
+                header: header,
+                rows: rows,
+                onDelete: onDelete,
+                onToggleExpansion: onToggleExpansion
+            )
             coordinator.setSidebarResizing(false, width: scroll.contentSize.width)
         }
     }
@@ -118,6 +143,7 @@ struct SettingsNativeHistoryList: NSViewRepresentable {
         private var resizeAnchor: TopAnchor?
         private var heightTimer: Timer?
         private var onDelete: (RecognitionHistoryEntry) -> Void
+        private var onToggleExpansion: (RecognitionHistoryEntry) -> Void
         private let headerMeasurementView = SettingsNativeHistoryControlsView()
         private let measurementQueue = DispatchQueue(
             label: "com.felix.hushtype.history-height-preparation",
@@ -128,11 +154,17 @@ struct SettingsNativeHistoryList: NSViewRepresentable {
 
         private var isResizing: Bool { windowResizing || sidebarResizing }
 
-        init(header: AnyView, rows: [Row], onDelete: @escaping (RecognitionHistoryEntry) -> Void) {
+        init(
+            header: AnyView,
+            rows: [Row],
+            onDelete: @escaping (RecognitionHistoryEntry) -> Void,
+            onToggleExpansion: @escaping (RecognitionHistoryEntry) -> Void = { _ in }
+        ) {
             self.header = header
             self.rows = rows
             self.rowHeights = [1] + rows.map { Self.defaultHeight(for: $0) }
             self.onDelete = onDelete
+            self.onToggleExpansion = onToggleExpansion
         }
 
         func install(table: NSTableView, scroll: SettingsNativeHistoryScrollView) {
@@ -142,18 +174,29 @@ struct SettingsNativeHistoryList: NSViewRepresentable {
             prepareHeights(for: scroll.contentSize.width)
         }
 
-        func update(header: AnyView, rows: [Row], onDelete: @escaping (RecognitionHistoryEntry) -> Void) {
+        func update(
+            header: AnyView,
+            rows: [Row],
+            onDelete: @escaping (RecognitionHistoryEntry) -> Void,
+            onToggleExpansion: @escaping (RecognitionHistoryEntry) -> Void
+        ) {
             self.onDelete = onDelete
+            self.onToggleExpansion = onToggleExpansion
             self.header = header
             guard self.rows != rows else {
                 needsHeaderRefresh = true
                 if !isResizing { reloadHeader() }
                 return
             }
+            // A fold/unfold changes only an entry's height. Keep the same
+            // stable row at the same clipped offset while AppKit receives the
+            // replacement row model and the measured height animation starts.
+            let contentAnchor = hasPreparedInitialHeights ? captureTopAnchor() : nil
             self.rows = rows
             rowHeights = [rowHeights.first ?? 1] + rows.map { Self.defaultHeight(for: $0) }
             measuredTextWidth = 0
             generation += 1
+            if resizeAnchor == nil { resizeAnchor = contentAnchor }
             guard let table else { return }
             table.reloadData()
             prepareHeights(for: scroll?.contentSize.width ?? table.bounds.width)
@@ -185,7 +228,7 @@ struct SettingsNativeHistoryList: NSViewRepresentable {
                 view.identifier = id
                 view.configure(title: title)
                 return view
-            case let .entry(entry, number, time, isFirstInDay, isLastInDay):
+            case let .entry(entry, number, time, isFirstInDay, isLastInDay, isExpanded):
                 let id = NSUserInterfaceItemIdentifier("recognition-history-entry")
                 let view = tableView.makeView(withIdentifier: id, owner: self) as? SettingsNativeHistoryEntryView
                     ?? SettingsNativeHistoryEntryView()
@@ -196,7 +239,9 @@ struct SettingsNativeHistoryList: NSViewRepresentable {
                     time: time,
                     isFirstInDay: isFirstInDay,
                     isLastInDay: isLastInDay,
-                    onDelete: onDelete
+                    isExpanded: isExpanded,
+                    onDelete: onDelete,
+                    onToggleExpansion: onToggleExpansion
                 )
                 return view
             }
@@ -248,8 +293,12 @@ struct SettingsNativeHistoryList: NSViewRepresentable {
                     switch row.kind {
                     case .dayHeader:
                         Self.defaultHeight(for: row)
-                    case let .entry(entry, _, _, _, _):
-                        SettingsHistoryTextLayout.rowHeight(for: entry.text, textWidth: textWidth)
+                    case let .entry(entry, _, _, _, _, isExpanded):
+                        SettingsHistoryTextLayout.rowHeight(
+                            for: entry.text,
+                            textWidth: textWidth,
+                            isExpanded: isExpanded
+                        )
                     }
                 }
                 DispatchQueue.main.async {
@@ -361,16 +410,35 @@ struct SettingsNativeHistoryList: NSViewRepresentable {
 /// testable. The cell and Core Text layout use the same font and wrapping
 /// behavior, which keeps line breaks (including explicit blank lines) intact.
 enum SettingsHistoryTextLayout {
+    static let collapsedLineLimit = 3
+
     static func textWidth(for availableWidth: CGFloat) -> CGFloat {
         let contentWidth = max(0, min(736, availableWidth - 32))
         // 14 left padding + number 24 + gap 8 + time 58 + gap 8 +
-        // copy/delete area 58 + 14 right padding, plus the NSTextFieldCell's
-        // four-point internal horizontal inset. Measuring a little narrower
-        // prevents its drawn text from needing a line the row did not reserve.
+        // action area 58 + 14 right padding, plus the NSTextFieldCell's
+        // four-point internal horizontal inset. The expand chevron uses the
+        // existing action gutter, so it does not change accepted line wraps.
         return max(32, contentWidth - 186)
     }
 
-    static func rowHeight(for text: String, textWidth: CGFloat) -> CGFloat {
+    static func rowHeight(for text: String, textWidth: CGFloat, isExpanded: Bool = true) -> CGFloat {
+        let textHeight = measuredTextHeight(for: text, textWidth: textWidth)
+        let visibleTextHeight = isExpanded
+            ? textHeight
+            : min(textHeight, collapsedTextHeight)
+        // Eight points above and below match SettingsNativeHistoryEntryView.
+        return max(36, ceil(visibleTextHeight) + 16)
+    }
+
+    static func requiresExpansion(for text: String, textWidth: CGFloat) -> Bool {
+        measuredTextHeight(for: text, textWidth: textWidth) > collapsedTextHeight + 0.5
+    }
+
+    private static var collapsedTextHeight: CGFloat {
+        ceil(NSLayoutManager().defaultLineHeight(for: NSFont.systemFont(ofSize: 13)) * CGFloat(collapsedLineLimit))
+    }
+
+    private static func measuredTextHeight(for text: String, textWidth: CGFloat) -> CGFloat {
         let font = NSFont.systemFont(ofSize: 13)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byWordWrapping
@@ -389,8 +457,7 @@ enum SettingsHistoryTextLayout {
                 CGSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude),
             nil
         )
-        // Eight points above and below match SettingsNativeHistoryEntryView.
-        return max(36, ceil(size.height) + 16)
+        return ceil(size.height)
     }
 }
 
@@ -474,15 +541,19 @@ private final class SettingsNativeHistoryDayHeaderView: NSView {
 }
 
 private final class SettingsNativeHistoryEntryView: NSView {
+    private let kindIndicator = NSImageView()
     private let numberLabel = NSTextField(labelWithString: "")
     private let timeLabel = NSTextField(labelWithString: "")
     private let textField = NSTextField(wrappingLabelWithString: "")
+    private let expandButton = NSButton()
     private let copyButton = NSButton()
     private let deleteButton = NSButton()
     private var isFirstInDay = false
     private var isLastInDay = false
     private var entry: RecognitionHistoryEntry?
     private var onDelete: ((RecognitionHistoryEntry) -> Void)?
+    private var onToggleExpansion: ((RecognitionHistoryEntry) -> Void)?
+    private var isExpanded = false
 
     override var isFlipped: Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
@@ -504,6 +575,11 @@ private final class SettingsNativeHistoryEntryView: NSView {
         textField.cell?.isScrollable = false
         textField.isSelectable = true
 
+        expandButton.isBordered = false
+        expandButton.contentTintColor = .secondaryLabelColor
+        expandButton.target = self
+        expandButton.action = #selector(toggleExpansion)
+
         configure(button: copyButton, symbol: "doc.on.doc", label: L10n.string("settings.history.copy", fallback: "Copy"))
         configure(button: deleteButton, symbol: "trash", label: L10n.string("settings.history.delete", fallback: "Delete"))
         copyButton.target = self
@@ -511,7 +587,7 @@ private final class SettingsNativeHistoryEntryView: NSView {
         deleteButton.target = self
         deleteButton.action = #selector(deleteText)
 
-        [numberLabel, timeLabel, textField, copyButton, deleteButton].forEach(addSubview)
+        [kindIndicator, numberLabel, timeLabel, textField, expandButton, copyButton, deleteButton].forEach(addSubview)
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -522,15 +598,21 @@ private final class SettingsNativeHistoryEntryView: NSView {
         time: String,
         isFirstInDay: Bool,
         isLastInDay: Bool,
-        onDelete: @escaping (RecognitionHistoryEntry) -> Void
+        isExpanded: Bool,
+        onDelete: @escaping (RecognitionHistoryEntry) -> Void,
+        onToggleExpansion: @escaping (RecognitionHistoryEntry) -> Void
     ) {
         self.entry = entry
         self.onDelete = onDelete
+        self.onToggleExpansion = onToggleExpansion
         self.isFirstInDay = isFirstInDay
         self.isLastInDay = isLastInDay
+        self.isExpanded = isExpanded
+        configureKindIndicator(for: entry)
         numberLabel.stringValue = String(number)
         timeLabel.stringValue = time
         textField.stringValue = entry.text
+        updateExpansionControl()
         needsLayout = true
         needsDisplay = true
     }
@@ -566,14 +648,17 @@ private final class SettingsNativeHistoryEntryView: NSView {
         super.layout()
         let width = min(736, max(0, bounds.width - 32))
         let left = (bounds.width - width) / 2
+        kindIndicator.frame = NSRect(x: left + 2, y: 12, width: 10, height: 12)
         numberLabel.frame = NSRect(x: left + 14, y: 9, width: 24, height: 18)
         timeLabel.frame = NSRect(x: left + 46, y: 9, width: 58, height: 18)
+        updateExpansionControl()
         textField.frame = NSRect(
             x: left + 112,
             y: 8,
             width: max(36, width - 182),
             height: max(20, bounds.height - 16)
         )
+        expandButton.frame = NSRect(x: left + width - 92, y: 8, width: 18, height: 20)
         copyButton.frame = NSRect(x: left + width - 58, y: 8, width: 18, height: 20)
         deleteButton.frame = NSRect(x: left + width - 32, y: 8, width: 18, height: 20)
     }
@@ -587,6 +672,73 @@ private final class SettingsNativeHistoryEntryView: NSView {
     @objc private func deleteText() {
         guard let entry else { return }
         onDelete?(entry)
+    }
+
+    @objc private func toggleExpansion() {
+        guard let entry, !expandButton.isHidden else { return }
+        onToggleExpansion?(entry)
+    }
+
+    private func updateExpansionControl() {
+        let width = max(0, bounds.width)
+        let isExpandable = SettingsHistoryTextLayout.requiresExpansion(
+            for: textField.stringValue,
+            textWidth: SettingsHistoryTextLayout.textWidth(for: width)
+        )
+        expandButton.isHidden = !isExpandable
+        let label = L10n.string(
+            isExpanded ? "settings.history.collapse" : "settings.history.expand",
+            fallback: isExpanded ? "Less" : "More"
+        )
+        expandButton.image = NSImage(
+            systemSymbolName: isExpanded ? "chevron.up" : "chevron.down",
+            accessibilityDescription: label
+        )
+        expandButton.toolTip = label
+        textField.maximumNumberOfLines = isExpandable && !isExpanded
+            ? SettingsHistoryTextLayout.collapsedLineLimit
+            : 0
+        textField.lineBreakMode = isExpandable && !isExpanded ? .byTruncatingTail : .byWordWrapping
+    }
+
+    private func configureKindIndicator(for entry: RecognitionHistoryEntry) {
+        let description = historyKindDescription(for: entry)
+        let symbol: String
+        switch entry.kind {
+        case .dictation:
+            symbol = "mic.fill"
+            kindIndicator.contentTintColor = .secondaryLabelColor
+        case .caption:
+            symbol = "captions.bubble.fill"
+            kindIndicator.contentTintColor = .controlAccentColor
+        }
+        kindIndicator.image = NSImage(systemSymbolName: symbol, accessibilityDescription: description)
+        kindIndicator.toolTip = description
+        kindIndicator.setAccessibilityLabel(description)
+    }
+
+    private func historyKindDescription(for entry: RecognitionHistoryEntry) -> String {
+        switch entry.kind {
+        case .dictation:
+            return L10n.string("settings.history.kind.dictation", fallback: "Dictation")
+        case .caption:
+            let caption = L10n.string("settings.history.kind.caption", fallback: "Caption session")
+            guard let metadata = entry.captionMetadata else { return caption }
+            let started = metadata.startedAt.formatted(date: .omitted, time: .shortened)
+            let ended = metadata.endedAt.formatted(date: .omitted, time: .shortened)
+            if let source = metadata.sourceLabel?.trimmingCharacters(in: .whitespacesAndNewlines), !source.isEmpty {
+                return L10n.format(
+                    "settings.history.caption.session_details",
+                    "%1$@ from %2$@, started %3$@, ended %4$@.",
+                    arguments: [caption, source, started, ended]
+                )
+            }
+            return L10n.format(
+                "settings.history.caption.session_details.no_source",
+                "%1$@, started %2$@, ended %3$@.",
+                arguments: [caption, started, ended]
+            )
+        }
     }
 
     private func configure(button: NSButton, symbol: String, label: String) {

@@ -79,6 +79,12 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
         try model.appendRecognitionHistory(text)
     }
 
+    func appendCaptionHistory(_ summary: LiveCaptionSessionSummary) throws {
+        try model.appendCaptionHistory(
+            summary.text, startedAt: summary.startedAt, endedAt: summary.endedAt, sourceLabel: summary.sourceLabel
+        )
+    }
+
     func applyRecognitionHistoryCleanup() {
         model.applyRecognitionHistoryCleanup()
     }
@@ -110,6 +116,24 @@ final class HushTypeSettingsWindowController: NSWindowController, NSWindowDelega
 
     func updateAppState(_ state: StatusBarController.State) {
         model.updateAppState(state)
+    }
+
+    func setDictationPreparing(_ preparing: Bool) {
+        model.setDictationPreparing(preparing)
+    }
+
+    func updateProfileUsage(_ profile: ProcessingProfile?, captions: Bool) {
+        if captions { model.activeCaptionProfile = profile }
+        else { model.activeDictationProfile = profile }
+    }
+
+    func updateCaptionState(
+        mode: AppConfig.CaptionMode?,
+        source: AudioSourceKind?,
+        isStarting: Bool = false,
+        isFinishing: Bool = false
+    ) {
+        model.updateCaptionState(mode: mode, source: source, isStarting: isStarting, isFinishing: isFinishing)
     }
 
     /// Used by first-run onboarding. The caller still controls whether normal

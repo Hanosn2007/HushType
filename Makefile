@@ -15,6 +15,7 @@ override STABLE_CODE_SIGN_IDENTITY := $(shell tr -d '[:space:]' < scripts/releas
 # OpenCC paths (Homebrew on Apple Silicon)
 OPENCC_BIN = /opt/homebrew/bin/opencc
 OPENCC_LIB_DIR = /opt/homebrew/lib
+OPENCC_DYLIB_NAME = $(notdir $(shell otool -D "$(OPENCC_LIB_DIR)/libopencc.dylib" | tail -n 1))
 OPENCC_DATA_DIR = /opt/homebrew/share/opencc
 MARISA_LIB_DIR = /opt/homebrew/opt/marisa/lib
 
@@ -86,10 +87,9 @@ replacement = b'/redacted' + b'\x00' * (len(prefix) - 9); \
 binary.write_bytes(data.replace(prefix, replacement)) if count else None; \
 print(f'  Scrubbed {count} dev-path occurrence(s) from binary')"
 	@install_name_tool -add_rpath "@executable_path/../Frameworks" "$(BUNDLE_DIR)/Contents/MacOS/$(APP_NAME)"
-	@# Local-only MVP keeps Qwen's Simplified Chinese output and does not
-	@# expose Traditional conversion, so OpenCC is intentionally not bundled.
-	@# The bundle-opencc target remains available for a future Hant build.
-	@echo "OpenCC skipped (local Simplified-Chinese MVP)"
+	@# Profiles expose Traditional Chinese conversion; ship its runtime so it
+	@# also works on machines without Homebrew. Sign the outer bundle afterward.
+	@$(MAKE) bundle-opencc BUNDLE_DIR="$(BUNDLE_DIR)"
 	@# Keep Sparkle's shipped nested signatures intact; --deep is verification,
 	@# not a safe signing strategy for a framework with helpers and XPC services.
 	@# mlx.metallib remains ad-hoc signed in both modes. When a certificate SHA-1
@@ -117,21 +117,29 @@ bundle-stable:
 
 bundle-opencc:
 	@echo "Bundling OpenCC..."
-	@mkdir -p "$(BUNDLE_DIR)/Contents/MacOS/opencc_data"
+	@mkdir -p "$(BUNDLE_DIR)/Contents/Resources/opencc_data"
+	@# Homebrew files can be read-only; make only this staging copy writable.
+	@chmod -R u+w "$(BUNDLE_DIR)/Contents/MacOS"
+	@chmod -R u+w "$(BUNDLE_DIR)/Contents/Resources/opencc_data"
 	@# Copy opencc binary
 	@cp "$(OPENCC_BIN)" "$(BUNDLE_DIR)/Contents/MacOS/opencc"
 	@# Copy dylibs
-	@cp "$(OPENCC_LIB_DIR)/libopencc.1.2.dylib" "$(BUNDLE_DIR)/Contents/MacOS/"
+	@cp "$(OPENCC_LIB_DIR)/$(OPENCC_DYLIB_NAME)" "$(BUNDLE_DIR)/Contents/MacOS/"
 	@cp "$(MARISA_LIB_DIR)/libmarisa.0.dylib" "$(BUNDLE_DIR)/Contents/MacOS/"
 	@# Copy data files (dictionaries + configs)
-	@cp "$(OPENCC_DATA_DIR)"/*.json "$(BUNDLE_DIR)/Contents/MacOS/opencc_data/"
-	@cp "$(OPENCC_DATA_DIR)"/*.ocd2 "$(BUNDLE_DIR)/Contents/MacOS/opencc_data/"
+	@cp "$(OPENCC_DATA_DIR)"/*.json "$(BUNDLE_DIR)/Contents/Resources/opencc_data/"
+	@cp "$(OPENCC_DATA_DIR)"/*.ocd2 "$(BUNDLE_DIR)/Contents/Resources/opencc_data/"
+	@mkdir -p "$(BUNDLE_DIR)/Contents/Resources/ThirdPartyLicenses"
+	@chmod -R u+w "$(BUNDLE_DIR)/Contents/Resources/ThirdPartyLicenses"
+	@cp "$$(brew --cellar opencc)/$$(brew list --versions opencc | awk '{print $$2}')/LICENSE" "$(BUNDLE_DIR)/Contents/Resources/ThirdPartyLicenses/OpenCC-LICENSE"
+	@cp "$$(brew --cellar marisa)/$$(brew list --versions marisa | awk '{print $$2}')/COPYING.md" "$(BUNDLE_DIR)/Contents/Resources/ThirdPartyLicenses/Marisa-COPYING.md"
 	@# Rewrite dylib paths to use @executable_path
-	@install_name_tool -change "@rpath/libopencc.1.2.dylib" "@executable_path/libopencc.1.2.dylib" "$(BUNDLE_DIR)/Contents/MacOS/opencc"
+	@chmod u+w "$(BUNDLE_DIR)/Contents/MacOS/opencc" "$(BUNDLE_DIR)/Contents/MacOS/$(OPENCC_DYLIB_NAME)" "$(BUNDLE_DIR)/Contents/MacOS/libmarisa.0.dylib"
+	@install_name_tool -change "@rpath/$(OPENCC_DYLIB_NAME)" "@executable_path/$(OPENCC_DYLIB_NAME)" "$(BUNDLE_DIR)/Contents/MacOS/opencc"
 	@install_name_tool -change "/opt/homebrew/opt/marisa/lib/libmarisa.0.dylib" "@executable_path/libmarisa.0.dylib" "$(BUNDLE_DIR)/Contents/MacOS/opencc"
-	@install_name_tool -change "/opt/homebrew/opt/marisa/lib/libmarisa.0.dylib" "@executable_path/libmarisa.0.dylib" "$(BUNDLE_DIR)/Contents/MacOS/libopencc.1.2.dylib"
+	@install_name_tool -change "/opt/homebrew/opt/marisa/lib/libmarisa.0.dylib" "@executable_path/libmarisa.0.dylib" "$(BUNDLE_DIR)/Contents/MacOS/$(OPENCC_DYLIB_NAME)"
 	@# Fix libopencc's own id
-	@install_name_tool -id "@executable_path/libopencc.1.2.dylib" "$(BUNDLE_DIR)/Contents/MacOS/libopencc.1.2.dylib"
+	@install_name_tool -id "@executable_path/$(OPENCC_DYLIB_NAME)" "$(BUNDLE_DIR)/Contents/MacOS/$(OPENCC_DYLIB_NAME)"
 	@install_name_tool -id "@executable_path/libmarisa.0.dylib" "$(BUNDLE_DIR)/Contents/MacOS/libmarisa.0.dylib"
 	@# Re-sign after install_name_tool — modifying load commands invalidates the
 	@# original Homebrew adhoc signature, and macOS Sequoia kills processes with
@@ -139,7 +147,7 @@ bundle-opencc:
 	@# opencc fails silently and ChineseConverter falls back to returning the
 	@# input unchanged. Both `make install` and `make dmg` need this.
 	@codesign --force --sign - "$(BUNDLE_DIR)/Contents/MacOS/libmarisa.0.dylib"
-	@codesign --force --sign - "$(BUNDLE_DIR)/Contents/MacOS/libopencc.1.2.dylib"
+	@codesign --force --sign - "$(BUNDLE_DIR)/Contents/MacOS/$(OPENCC_DYLIB_NAME)"
 	@codesign --force --sign - "$(BUNDLE_DIR)/Contents/MacOS/opencc"
 	@echo "OpenCC bundled (binary + dylibs + data files, re-signed)"
 

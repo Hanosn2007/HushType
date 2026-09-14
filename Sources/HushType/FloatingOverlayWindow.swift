@@ -82,8 +82,9 @@ enum FloatingOverlayPlacement {
 }
 
 /// The transparent host includes shadow safety padding. This hosting view only
-/// accepts pointer events inside the visible rounded pill, leaving its shadow
-/// and the rest of the desktop click-through.
+/// accepts pointer events inside the visible rounded pill. The panel separately
+/// manages WindowServer mouse transparency outside this path; returning nil
+/// here alone cannot deliver an already-targeted event to another window.
 private final class PillHitTestingHostingView: NSHostingView<FloatingOverlayView> {
     var acceptsPillPointerEvents = false {
         didSet {
@@ -157,6 +158,10 @@ private final class PillHitTestingHostingView: NSHostingView<FloatingOverlayView
             yRadius: FloatingOverlayAppearance.cornerRadius
         )
     }
+
+    func containsPillPoint(inWindow point: NSPoint) -> Bool {
+        pillPath.contains(convert(point, from: nil))
+    }
 }
 
 /// Borderless floating panel that displays the recording/transcribing
@@ -175,6 +180,7 @@ final class FloatingOverlayWindow: NSPanel {
     }
 
     private let stateModel: OverlayStateModel
+    private let pointerLocation: () -> NSPoint
     private var hostingView: PillHitTestingHostingView!
     private var presentationGeneration: UInt = 0
     private var pendingModelNoticeDismissal: DispatchWorkItem?
@@ -185,12 +191,16 @@ final class FloatingOverlayWindow: NSPanel {
     private var dragSession: DragSession?
     private let snapTargetWindow = FloatingOverlaySnapTargetWindow()
     private var mouseEventMonitor: Any?
+    private var globalPointerMonitor: Any?
+    private var pressedPillButtons: Set<Int> = []
+    private var lastPointerHover: Bool?
     private var screenParametersObserver: NSObjectProtocol?
 
     private let modelNoticeDisplayDuration: TimeInterval = 3
 
-    init(stateModel: OverlayStateModel) {
+    init(stateModel: OverlayStateModel, pointerLocation: @escaping () -> NSPoint = { NSEvent.mouseLocation }) {
         self.stateModel = stateModel
+        self.pointerLocation = pointerLocation
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 280, height: 56),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -211,7 +221,8 @@ final class FloatingOverlayWindow: NSPanel {
         isFloatingPanel = true
         level = .screenSaver
         isMovable = false
-        ignoresMouseEvents = true  // recording remains a pure indicator
+        ignoresMouseEvents = true
+        acceptsMouseMovedEvents = true
 
         hostingView = PillHitTestingHostingView(
             rootView: FloatingOverlayView(
@@ -241,6 +252,9 @@ final class FloatingOverlayWindow: NSPanel {
         if let mouseEventMonitor {
             NSEvent.removeMonitor(mouseEventMonitor)
         }
+        if let globalPointerMonitor {
+            NSEvent.removeMonitor(globalPointerMonitor)
+        }
         if let screenParametersObserver {
             NotificationCenter.default.removeObserver(screenParametersObserver)
         }
@@ -249,6 +263,44 @@ final class FloatingOverlayWindow: NSPanel {
     // Never become the key/main window — we must not steal focus.
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+        super.setFrame(frameRect, display: flag)
+        updatePointerLocation()
+    }
+
+    override func orderFrontRegardless() {
+        super.orderFrontRegardless()
+        startGlobalPointerMonitor()
+        updatePointerLocation()
+    }
+
+    override func orderOut(_ sender: Any?) {
+        super.orderOut(sender)
+        if let globalPointerMonitor {
+            NSEvent.removeMonitor(globalPointerMonitor)
+            self.globalPointerMonitor = nil
+        }
+        pressedPillButtons.removeAll()
+        lastPointerHover = nil
+        ignoresMouseEvents = true
+        cancelDrag()
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        super.sendEvent(event)
+        // NSControl tracking can consume mouse-up in a nested event loop,
+        // bypassing local monitors. Reconcile after dispatch returns as well.
+        switch event.type {
+        case .leftMouseDown, .leftMouseUp, .leftMouseDragged,
+             .rightMouseDown, .rightMouseUp, .rightMouseDragged,
+             .otherMouseDown, .otherMouseUp, .otherMouseDragged:
+            releaseFinishedPointerPresses()
+            updatePointerLocation()
+        default:
+            break
+        }
+    }
 
     /// Show the recording overlay. The transparent host padding remains
     /// click-through; the visible pill accepts events so its body can move.
@@ -275,7 +327,6 @@ final class FloatingOverlayWindow: NSPanel {
         isFloatingPanel = true
         level = .screenSaver
         collectionBehavior.insert(.fullScreenAuxiliary)
-        ignoresMouseEvents = false
         hostingView.acceptsPillPointerEvents = true
         positionAtBottomOfActiveScreen()
         if !isVisible {
@@ -341,7 +392,6 @@ final class FloatingOverlayWindow: NSPanel {
         // AppKit resets the level when isFloatingPanel changes.
         level = .screenSaver
         collectionBehavior.insert(.fullScreenAuxiliary)
-        ignoresMouseEvents = false
         hostingView.acceptsPillPointerEvents = true
     }
 
@@ -352,7 +402,6 @@ final class FloatingOverlayWindow: NSPanel {
         isFloatingPanel = false
         level = .normal
         collectionBehavior.remove(.fullScreenAuxiliary)
-        ignoresMouseEvents = false
         hostingView.acceptsPillPointerEvents = true
     }
 
@@ -417,6 +466,8 @@ final class FloatingOverlayWindow: NSPanel {
     private func beginPresentation() -> UInt {
         presentationGeneration &+= 1
         cancelDrag()
+        pressedPillButtons.removeAll()
+        lastPointerHover = nil
         pendingModelNoticeDismissal?.cancel()
         pendingModelNoticeDismissal = nil
         contentView?.layer?.removeAllAnimations()
@@ -436,6 +487,7 @@ final class FloatingOverlayWindow: NSPanel {
             self.animator().alphaValue = 1
         }, completionHandler: { [weak self] in
             guard let self, self.presentationGeneration == generation else { return }
+            self.updatePointerLocation()
             completion?()
         })
     }
@@ -518,10 +570,67 @@ final class FloatingOverlayWindow: NSPanel {
 
     private func installMouseEventMonitor() {
         mouseEventMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+            matching: [.mouseMoved, .leftMouseDown, .leftMouseDragged, .leftMouseUp,
+                       .rightMouseDown, .rightMouseDragged, .rightMouseUp,
+                       .otherMouseDown, .otherMouseDragged, .otherMouseUp]
         ) { [weak self] event in
-            guard let self else { return event }
+            guard let self, self.isVisible else { return event }
+            if event.type == .mouseMoved || event.window !== self {
+                self.releaseFinishedPointerPresses()
+                self.updatePointerLocation()
+            }
             return self.handleMouseEvent(event)
+        }
+    }
+
+    private func startGlobalPointerMonitor() {
+        guard globalPointerMonitor == nil else { return }
+        // A transparent panel receives no local events while the pointer is
+        // over another app. Observe movement there to re-enable the pill.
+        globalPointerMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.mouseMoved, .leftMouseDragged, .leftMouseUp,
+                       .rightMouseDragged, .rightMouseUp,
+                       .otherMouseDragged, .otherMouseUp]
+        ) { [weak self] _ in
+            self?.releaseFinishedPointerPresses()
+            self?.updatePointerLocation()
+        }
+    }
+
+    private func releaseFinishedPointerPresses() {
+        guard !pressedPillButtons.isEmpty else { return }
+        let pressed = NSEvent.pressedMouseButtons
+        pressedPillButtons = pressedPillButtons.filter { button in
+            button >= 0 && button < Int.bitWidth && pressed & (1 << button) != 0
+        }
+    }
+
+    /// Window-level routing is needed for the rendered shadow, whose nonzero
+    /// alpha still participates in WindowServer hit testing. The explicit point
+    /// lets tests verify the server's target window without moving the mouse.
+    func updatePointerLocation(at screenPoint: NSPoint? = nil) {
+        guard let hostingView else { return }
+        guard isVisible, hostingView.acceptsPillPointerEvents else {
+            if !ignoresMouseEvents { ignoresMouseEvents = true }
+            return
+        }
+
+        let point = screenPoint ?? pointerLocation()
+        let isInside = hostingView.containsPillPoint(inWindow: convertPoint(fromScreen: point))
+        let hasCapturedPress = dragSession != nil || !pressedPillButtons.isEmpty
+        let shouldIgnore = !isInside && !hasCapturedPress
+        if ignoresMouseEvents != shouldIgnore { ignoresMouseEvents = shouldIgnore }
+
+        if isPresentingModelNotice {
+            // Normal-level notices may be covered by another work window.
+            // Geometric overlap alone must not keep an obscured notice alive.
+            let isHovered = isInside && NSWindow.windowNumber(
+                at: point, belowWindowWithWindowNumber: 0
+            ) == windowNumber
+            if lastPointerHover != isHovered {
+                lastPointerHover = isHovered
+                setModelNoticeHovered(isHovered)
+            }
         }
     }
 
@@ -529,6 +638,15 @@ final class FloatingOverlayWindow: NSPanel {
     /// monitor calls this exact method in production.
     func handleMouseEvent(_ event: NSEvent) -> NSEvent? {
         guard event.window === self else { return event }
+
+        if [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type),
+           hostingView.acceptsPillPointerEvents,
+           hostingView.containsPillPoint(inWindow: event.locationInWindow) {
+            // This also covers action buttons, which follow native control
+            // tracking rather than the custom body-drag session below.
+            pressedPillButtons.insert(event.buttonNumber)
+            ignoresMouseEvents = false
+        }
 
         switch event.type {
         case .leftMouseDown:
@@ -581,13 +699,13 @@ final class FloatingOverlayWindow: NSPanel {
                 size: bounded.size,
                 shadowInsets: FloatingOverlayAppearance.shadowInsets
             )
-            let snap = FloatingOverlayPlacement.snappedOrigin(
+            let snap = FloatingOverlayDragPreferences.snappingEnabled ? FloatingOverlayPlacement.snappedOrigin(
                 for: bounded.origin,
                 defaultOrigin: defaultFrame.origin,
                 wasSnapped: dragSession.isSnappedToDefault,
                 snapRadius: FloatingOverlayDragPreferences.snapRadius
-            )
-            if !dragSession.isSnappedToDefault, snap.isSnapped {
+            ) : (origin: bounded.origin, isSnapped: false)
+            if !dragSession.isSnappedToDefault, snap.isSnapped, FloatingOverlayDragPreferences.hapticsEnabled {
                 NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
             }
             dragSession.isSnappedToDefault = snap.isSnapped
@@ -600,11 +718,13 @@ final class FloatingOverlayWindow: NSPanel {
         case .leftMouseUp:
             guard let dragSession else { return event }
             self.dragSession = nil
+            pressedPillButtons.remove(event.buttonNumber)
             snapTargetWindow.hide()
             customCenter = dragSession.isSnappedToDefault
                 ? nil
                 : CGPoint(x: frame.midX, y: frame.midY)
             NSCursor.arrow.set()
+            updatePointerLocation()
             return nil
 
         default:

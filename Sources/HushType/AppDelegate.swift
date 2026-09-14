@@ -132,6 +132,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var activeEngine: (any TranscriptionEngine)!
     private var translationManager: TranslationManager!
     private var liveCaptionManager: LiveCaptionManager?
+    private var captionStartTask: Task<Void, Never>?
+    private var captionStartGeneration: UInt64 = 0
+    private var captionSourcePickerPending = false
+    private var captionSourceRequestGeneration: UInt64 = 0
     private let tapArbiter = TapArbiter()
     private var hotkeyResumeWorkItem: DispatchWorkItem?
     private var hotkeyLifecycleGeneration: UInt = 0
@@ -142,6 +146,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// was stopped and then started again.
     private var modelLoadAttemptID = UUID()
     private var historyCleanupTimer: Timer?
+    private var lastExternalApplication: NSRunningApplication?
+    private var overviewDictationLoadPending = false
+    private var profilePreparationTask: Task<Void, Never>?
+    private var runningDictationSnapshot: ProcessingProfileSnapshot?
 
     private enum RecordingTrigger {
         case rightOption
@@ -159,11 +167,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case provided(String)
     }
 
-    /// Wall-clock at which the user pressed Right ⌥. Set on press, read on
-    /// release for tap-vs-hold disambiguation (<0.3s = tap → translate).
-    /// Used only when live caption is active and we gate the dictation path.
-    private var liveCaptionGatePressTimestamp: Date?
-
     // Floating overlay (created lazily on first use)
     private let overlayState = OverlayStateModel()
     private lazy var overlayWindow = FloatingOverlayWindow(stateModel: overlayState)
@@ -176,6 +179,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("[HushType] Starting...")
+        lastExternalApplication = NSWorkspace.shared.frontmostApplication
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(trackExternalApplication(_:)),
+            name: NSWorkspace.didActivateApplicationNotification, object: nil
+        )
 
         // macOS exposes Login Item launch intent as a parameter on its
         // initial open-application AppleEvent. Read it without replacing
@@ -231,7 +239,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             captureService: audioCapture
         )
         manager.onStateChanged = { [weak self] mode, source in
+            let manager = self?.liveCaptionManager
+            HushTypeSettingsWindowController.shared.updateProfileUsage(
+                mode != nil || manager?.isFinishing == true ? manager?.activeProfile : nil, captions: true
+            )
             self?.statusBar.setLiveCaptionState(mode: mode, source: source)
+            let isStarting = self?.liveCaptionManager.map { $0.isStarting && !$0.isActive } ?? false
+            HushTypeSettingsWindowController.shared.updateCaptionState(
+                mode: mode, source: source, isStarting: isStarting,
+                isFinishing: self?.liveCaptionManager?.isFinishing ?? false
+            )
+        }
+        manager.onSessionFinished = { summary in
+            do {
+                try HushTypeSettingsWindowController.shared.appendCaptionHistory(summary)
+            } catch {
+                log.error("Caption history could not be saved: \(error.localizedDescription, privacy: .public)")
+            }
         }
         liveCaptionManager = manager
 
@@ -239,16 +263,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBar.setTextPolishAvailability(TextPolisher.isAvailableCached)
         NSApp.servicesProvider = self
 
-        // Local-only F5 MVP: leave the inherited Right Option and Live
-        // Caption callbacks unwired so those shortcuts pass through to the
-        // focused app. Their implementation remains available for a future
-        // product mode.
-        hotkeyManager.onF5Toggle = { [weak self] in
+        // Short F5 remains dictation; a held F5 toggles local captions only.
+        // Inherited Right Option / Right Command shortcuts remain unwired.
+        hotkeyManager.onDictationToggle = { [weak self] in
             self?.handleF5Toggle()
         }
-        hotkeyManager.shouldPassThroughF5 = { [weak self] in
+        hotkeyManager.onCaptionToggle = { [weak self] in
+            self?.handleF5LongPress()
+        }
+        hotkeyManager.onTranslateSelection = { [weak self] in
+            self?.handleTranslation(source: .copySelection)
+        }
+        hotkeyManager.onPolishSelection = { [weak self] in
+            self?.handlePolish(source: .copySelection)
+        }
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(localTextPreferencesChanged),
+            name: LocalTextPreferences.didChange, object: nil
+        )
+        hotkeyManager.shouldPassThroughDictationShortcut = { [weak self] in
             guard let self else { return true }
             return AppConfig.shared.releaseF5WhenModelUnloaded
+                && self.liveCaptionManager?.isBusy != true
                 && AppConfig.shared.dictationEngine == .local
                 && self.state == .unloaded
         }
@@ -314,12 +350,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             stopModelDownload: { [weak self] in
                 self?.stopModelDownload()
             },
+            cancelRecording: { [weak self] in
+                self?.cancelActiveRecording(reason: "settings overview")
+            },
+            toggleDictation: { [weak self] in
+                self?.handleOverviewDictation()
+            },
+            startCaptions: { [weak self] in
+                self?.toggleProductWithLastSource(.local)
+            },
             switchDictationEngine: { [weak self] engine in
                 self?.switchDictationEngine(to: engine)
             },
-            openDictionary: {
-                DictionaryReplacer.createTemplateIfMissing()
-                NSWorkspace.shared.open(AppConfig.dictionaryFileURL)
+            startCaptionMic: { [weak self] in
+                self?.startCaptionMode(.local, source: .mic)
+            },
+            startCaptionSystem: { [weak self] in
+                self?.startCaptionModeOnSystemAudio(.local, forcePicker: true)
+            },
+            stopCaptions: { [weak self] in
+                self?.stopLiveCaptions()
             },
             openAccessibilitySettings: {
                 OnboardingManager.openAccessibilitySettings()
@@ -364,7 +414,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 settingsWindow.present(section: .overview)
             }
         }
-        statusBar.onStateChanged = { state in
+        statusBar.onStateChanged = { [weak self] state in
+            switch state {
+            case .unloaded, .error, .setupRequired:
+                self?.overviewDictationLoadPending = false
+                settingsWindow.setDictationPreparing(false)
+            default: break
+            }
             settingsWindow.updateAppState(state)
         }
 
@@ -380,7 +436,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.startCaptionModeOnSystemAudio(.local, forcePicker: true)
         }
         statusBar.onLiveCaptionStop = { [weak self] in
-            self?.liveCaptionManager?.stop()
+            self?.stopLiveCaptions()
         }
 
         // Wire Live Translated Caption (cloud) submenu.
@@ -439,7 +495,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard AppConfig.shared.dictationEngine == .local else {
             state = .idle
             statusBar.setState(.idle)
-            scheduleTextPolishPrewarmIfNeeded(reason: "cloud-engine launch")
             log.info("HushType ready with cloud dictation; local model not loaded")
             return
         }
@@ -468,7 +523,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.statusBar.setState(.idle)
                     log.info("HushType ready")
                 }
-                await self.scheduleTextPolishPrewarmIfNeeded(reason: "local-model launch")
             } catch is CancellationError {
                 await MainActor.run {
                     guard self.modelLoadAttemptID == loadAttemptID,
@@ -503,6 +557,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        captionStartTask?.cancel()
+        liveCaptionManager?.stop()
         historyCleanupTimer?.invalidate()
         hotkeyResumeWorkItem?.cancel()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
@@ -701,9 +757,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// F5 is a discrete toggle, unlike Right Option's press-and-hold flow.
     /// It deliberately bypasses tap translation/polish so the second press
     /// always owns the recording stop and transcription path.
-    private func handleF5Toggle() {
+    private func handleOverviewDictation() {
+        handleF5Toggle(preferPreviousApplication: true)
+    }
+
+    private func handleF5Toggle(preferPreviousApplication: Bool = false) {
         // App-modal alerts must exclusively own input while they are visible.
         guard NSApp.modalWindow == nil else { return }
+
+        if overviewDictationLoadPending { cancelProfilePreparation(); return }
 
         tapArbiter.reset()
 
@@ -713,14 +775,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if state == .recording {
-            finishRecording(allowTapAction: false)
-            return
-        }
-
-        // F5 must not compete with mic-source Live Caption. Unlike Right
-        // Option, it has no release event on which to show the gated feedback.
-        guard !AppConfig.shared.liveCaptionUsesMicSource else {
-            log.info("Ignoring F5 press while mic-source Live Caption is active")
+            finishRecording(allowTapAction: false, preferPreviousApplication: preferPreviousApplication)
             return
         }
 
@@ -728,7 +783,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if state == .unloaded {
             if AppConfig.shared.dictationEngine == .local {
                 print("[HushType] Model unloaded — auto-reloading...")
-                reloadModel()
+                startRecording(trigger: .f5)
                 return
             }
             state = .idle
@@ -740,12 +795,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        guard activeEngine.isLoaded else {
-            print("[HushType] Model not loaded yet")
-            return
-        }
-
         startRecording(trigger: .f5)
+    }
+
+    private func handleF5LongPress() {
+        guard NSApp.modalWindow == nil else { return }
+        toggleLiveCaptionViaHotkey()
     }
 
     private func handleHotkeyPress() {
@@ -753,21 +808,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard NSApp.modalWindow == nil else { return }
 
         let claimedSecondTap = tapArbiter.cancelPendingForSecondPress()
-
-        // Gate dictation only when Live Caption is active on the MIC source —
-        // both would compete for the mic. System-audio Live Caption uses
-        // ScreenCaptureKit (different audio path) so dictation works
-        // concurrently. Record press timestamp for tap/hold disambiguation
-        // on release; do NOT start recording. Pill stays hidden.
-        if AppConfig.shared.liveCaptionUsesMicSource {
-            guard state == .idle else {
-                if claimedSecondTap { tapArbiter.reset() }
-                log.info("Ignoring mic-gated press — state is \(String(describing: self.state), privacy: .public)")
-                return
-            }
-            liveCaptionGatePressTimestamp = Date()
-            return
-        }
 
         // If model is unloaded and user holds Right ⌥, auto-reload
         if state == .unloaded {
@@ -800,38 +840,108 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startRecording(trigger: RecordingTrigger) {
+        let snapshot: ProcessingProfileSnapshot
+        do {
+            guard let profile = ProcessingProfileStore.shared.selected(.dictation) else { throw ProfileError.invalid }
+            let validated = try profile.validated()
+            // An application-audio configuration with no selected app is a
+            // valid resting state. Starting it is intentionally a no-op: do
+            // not load a model, create ScreenCaptureKit input, or ask for its
+            // permission until an application has been selected.
+            guard validated.input.hasCaptureSource else { return }
+            try validated.requireAvailableModels(loadedSpeechModelID: localEngine.loadedModelID)
+            snapshot = ProcessingProfileSnapshot(profile: validated)
+            if localEngine.loadedModelID != snapshot.profile.modelID, liveCaptionManager?.isBusy == true {
+                throw ProfileError.modelBusy
+            }
+        } catch { showProfileError(error); return }
+
         let attemptID = UUID()
         recordingAttemptID = attemptID
         recordingTrigger = trigger
-        state = .connecting
-        statusBar.setState(.connecting)
-        showOverlayConnecting()
-        print("[HushType] Connecting microphone...")
-
-        audioCapture.startRecording(onUnexpectedStop: { [weak self] error in
-            DispatchQueue.main.async {
-                self?.handleRecordingInputDisconnected(error, attemptID: attemptID)
+        runningDictationSnapshot = snapshot
+        HushTypeSettingsWindowController.shared.updateProfileUsage(snapshot.profile, captions: false)
+        if localEngine.loadedModelID != snapshot.profile.modelID {
+            overviewDictationLoadPending = true
+            HushTypeSettingsWindowController.shared.setDictationPreparing(true)
+            state = .loading
+            statusBar.setState(.loading(0))
+            profilePreparationTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.localEngine.unloadAndWait()
+                guard self.recordingAttemptID == attemptID, !Task.isCancelled else { return }
+                AppConfig.shared.modelId = snapshot.profile.modelID
+                self.reloadModel { [weak self] success in
+                    guard let self, self.recordingAttemptID == attemptID else { return }
+                    self.overviewDictationLoadPending = false
+                    HushTypeSettingsWindowController.shared.setDictationPreparing(false)
+                    if success { self.beginProfileRecording(snapshot, attemptID: attemptID) }
+                }
             }
-        }) { [weak self] result in
+        } else {
+            beginProfileRecording(snapshot, attemptID: attemptID)
+        }
+    }
+
+    private func beginProfileRecording(_ snapshot: ProcessingProfileSnapshot, attemptID: UUID) {
+        guard recordingAttemptID == attemptID else { return }
+        runningDictationSnapshot = snapshot
+        HushTypeSettingsWindowController.shared.updateProfileUsage(snapshot.profile, captions: false)
+        audioCapture = AudioCaptureService.shared(for: snapshot.profile.input)
+        audioCapture.onRMSLevel = { [weak self] level in
             DispatchQueue.main.async {
-                guard let self,
-                      self.recordingAttemptID == attemptID,
-                      self.state == .connecting else { return }
-                switch result {
-                case .success:
-                    self.state = .recording
-                    self.statusBar.setState(.recording)
-                    self.switchOverlayToRecording()
-                    print("[HushType] Recording started...")
-                case .failure(let error):
-                    self.recordingTrigger = nil
-                    self.state = .idle
-                    self.statusBar.setState(.error(error.localizedDescription))
-                    self.showOverlayConnectionFailed()
-                    log.error("Failed to start recording: \(error.localizedDescription, privacy: .public)")
+                guard let self else { return }
+                if case .recording(_, let provider) = self.overlayState.state {
+                    self.overlayState.state = .recording(level: level, provider: provider)
                 }
             }
         }
+        state = .connecting
+        statusBar.setState(.connecting)
+        showOverlayConnecting()
+        let begin = { [weak self] in
+            guard let self, self.recordingAttemptID == attemptID, self.state == .connecting else { return }
+            self.audioCapture.startRecording(onUnexpectedStop: { [weak self] error in
+                DispatchQueue.main.async { self?.handleRecordingInputDisconnected(error, attemptID: attemptID) }
+            }) { [weak self] result in
+                DispatchQueue.main.async {
+                    guard let self, self.recordingAttemptID == attemptID, self.state == .connecting else { return }
+                    switch result {
+                    case .success:
+                        self.state = .recording
+                        self.statusBar.setState(.recording)
+                        self.switchOverlayToRecording()
+                    case .failure(let error):
+                        self.recordingTrigger = nil
+                        self.state = .idle
+                        self.statusBar.setState(.error(error.localizedDescription))
+                        self.showOverlayConnectionFailed()
+                    }
+                }
+            }
+        }
+        if snapshot.profile.input.kind == .application {
+            // Permission setup requires a restart and never calls onReady later.
+            var started = false
+            SystemAudioPermissionFlow.ensurePermission { started = true; begin() }
+            if !started { cancelPendingRecordingStart(reason: "application audio permission setup") }
+        } else { begin() }
+    }
+
+    private func showProfileError(_ error: Error) {
+        let alert = NSAlert()
+        alert.messageText = L10n.string("profiles.cannot_start", fallback: "Cannot start this configuration")
+        alert.informativeText = error.localizedDescription
+        alert.runModal()
+    }
+
+    private func cancelProfilePreparation() {
+        recordingAttemptID = UUID()
+        recordingTrigger = nil
+        overviewDictationLoadPending = false
+        profilePreparationTask?.cancel()
+        HushTypeSettingsWindowController.shared.setDictationPreparing(false)
+        stopModelDownload()
     }
 
     private func handleRecordingInputDisconnected(_ error: Error, attemptID: UUID) {
@@ -850,31 +960,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleHotkeyRelease() {
-        // Live caption mic-source gate: if mic-source Live Caption is active,
-        // we never went into .recording on press. Decide tap-vs-hold using the
-        // press timestamp and either translate (tap + translation enabled) or
-        // flash the panel header (hold). System-audio Live Caption does NOT
-        // gate dictation, so it never enters this branch.
-        if AppConfig.shared.liveCaptionUsesMicSource {
-            guard state == .idle else {
-                liveCaptionGatePressTimestamp = nil
-                tapArbiter.reset()
-                log.info("Ignoring mic-gated release — state is \(String(describing: self.state), privacy: .public)")
-                return
-            }
-            let elapsed = liveCaptionGatePressTimestamp.map { Date().timeIntervalSince($0) } ?? 0
-            liveCaptionGatePressTimestamp = nil
-            if elapsed < 0.3 {
-                handleTapDetected()
-            } else {
-                tapArbiter.reset()
-                Task { @MainActor [weak self] in
-                    self?.liveCaptionManager?.flashGatedMessage()
-                }
-            }
+        if overviewDictationLoadPending, recordingTrigger == .rightOption {
+            cancelProfilePreparation()
             return
         }
-
         guard recordingTrigger == .rightOption else {
             log.info("Ignoring Right Option release during F5-owned recording")
             return
@@ -882,7 +971,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         finishRecording(allowTapAction: true)
     }
 
-    private func finishRecording(allowTapAction: Bool) {
+    private func finishRecording(allowTapAction: Bool, preferPreviousApplication: Bool = false) {
         guard state == .recording || state == .connecting else {
             print("[HushType] Ignoring recording stop — state is \(state)")
             return
@@ -897,12 +986,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         audioCapture.stopRecording { [weak self] samples in
             DispatchQueue.main.async {
-                self?.continueFinishedRecording(samples: samples, allowTapAction: allowTapAction)
+                self?.continueFinishedRecording(samples: samples, allowTapAction: allowTapAction,
+                                               preferPreviousApplication: preferPreviousApplication)
             }
         }
     }
 
-    private func continueFinishedRecording(samples: [Float], allowTapAction: Bool) {
+    private func continueFinishedRecording(samples: [Float], allowTapAction: Bool,
+                                          preferPreviousApplication: Bool = false) {
         guard state == .transcribing else { return }
         print("[HushType] Recording stopped: \(samples.count) samples (\(String(format: "%.1f", Double(samples.count) / 16000.0))s)")
 
@@ -927,10 +1018,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         print("[HushType] Transcribing...")
 
-        let language = AppConfig.shared.language
+        let snapshot = runningDictationSnapshot
+        let language = snapshot.map { $0.profile.language == "auto" ? nil : $0.profile.language } ?? AppConfig.shared.language
         let selection = AppConfig.shared.dictationEngine
         let engine = activeEngine!
-        let insertionFocus = captureInsertionFocus()
+        let insertionFocus = captureInsertionFocus(preferPreviousApplication: preferPreviousApplication)
 
         if selection == .local {
             launchTranscription(
@@ -938,7 +1030,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 language: language,
                 selection: selection,
                 engine: engine,
-                insertionFocus: insertionFocus
+                insertionFocus: insertionFocus,
+                profileSnapshot: snapshot
             )
         } else {
             // The hotkey callbacks originate inside CGEventTap. Queue consent
@@ -1062,12 +1155,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         selection: AppConfig.DictationEngine,
         engine: any TranscriptionEngine,
         metering: CloudDictationMetering? = nil,
-        insertionFocus: NSRunningApplication?
+        insertionFocus: NSRunningApplication?,
+        profileSnapshot: ProcessingProfileSnapshot? = nil
     ) {
         let metering = metering ?? cloudDictationMetering(for: selection)
         Task.detached { [weak self, engine] in
             do {
-                let text = try await engine.transcribe(audio: samples, language: language)
+                let text: String
+                if let profileSnapshot, let local = engine as? Qwen3TranscriptionEngine {
+                    let raw = try await local.transcribeRaw(audio: samples, language: language, client: .dictation)
+                    if profileSnapshot.profile.llm.polish || profileSnapshot.profile.llm.translate {
+                        await MainActor.run { self?.statusBar.setState(.polishing) }
+                    }
+                    text = try await profileSnapshot.process(raw)
+                } else {
+                    text = try await engine.transcribe(audio: samples, language: language)
+                }
                 if let metering {
                     let snapshot = await CloudUsageTracker.shared.recordDictation(
                         seconds: Double(samples.count) / 16_000.0,
@@ -1089,6 +1192,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 log.error("Transcription failed: \(error.localizedDescription, privacy: .public)")
                 guard selection != .local else {
                     await self?.finishWithoutInsertion(restoreFocus: insertionFocus)
+                    await MainActor.run {
+                        let alert = NSAlert()
+                        alert.messageText = L10n.string("overview.dictation_failed", fallback: "Dictation failed")
+                        alert.informativeText = error.localizedDescription
+                        alert.runModal()
+                    }
                     return
                 }
                 let mapped = error as? TranscriptionError ?? .network
@@ -1224,7 +1333,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         recordingAttemptID = UUID()
         state = .idle
         recordingTrigger = nil
-        liveCaptionGatePressTimestamp = nil
         tapArbiter.reset()
         audioCapture.stopRecording { _ in }
         hideOverlay()
@@ -1247,7 +1355,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         recordingAttemptID = UUID()
         state = .idle
         recordingTrigger = nil
-        liveCaptionGatePressTimestamp = nil
         tapArbiter.reset()
         hideOverlay()
         statusBar.setState(.idle)
@@ -1271,7 +1378,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The tap sites check the toggle before calling in, but the Services
         // entry ("Translate with HushType") dispatches here directly — enforce
         // the menu toggle for that path too.
-        if case .provided = source, !AppConfig.shared.textTranslationEnabled {
+        if !AppConfig.shared.textTranslationEnabled {
             showTranslationError(TranslationError.translationFailed(
                 L10n.string(
                     "error.translation.disabled",
@@ -1283,7 +1390,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         state = .translating
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let selection = await self.resolveSelection(source)
+            let selection = await self.resolveSelection(source, preservingPasteboard: true)
+            self.restorePasteboardIfNeeded(selection.priorPasteboardItems)
             let text = selection.text
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 self.state = .idle
@@ -1305,31 +1413,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
 
-            print("[HushType] Translating: '\(text.prefix(50))...'")
-            self.translationManager.translate(text: text) { [weak self] result in
-                DispatchQueue.main.async {
-                    guard let self else { return }
-
-                    switch result {
-                    case .success(let (translated, direction)):
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(translated, forType: .string)
-                        print("[HushType] Translation result (\(direction)): '\(translated.prefix(80))...'")
-                        self.translationCardWindow.show(
-                            sourceLanguage: direction,
-                            sourceText: text,
-                            translatedText: translated
-                        )
-
-                    case .failure(let error):
-                        print("[HushType] Translation error: \(error)")
-                        self.showTranslationError(error)
-                    }
-
-                    self.state = .idle
-                    self.statusBar.setState(.idle)
-                }
+            do {
+                let target = LocalTextPreferences.selectionTarget(for: text)
+                let translated = try await LocalTextResources.transform(.translate(text, target: target))
+                self.translationCardWindow.show(
+                    sourceLanguage: target.title,
+                    sourceText: text,
+                    translatedText: translated
+                )
+            } catch is CancellationError {
+                // The text-model controls can cancel an active request.
+            } catch {
+                self.showTranslationError(error)
             }
+            self.state = .idle
+            self.statusBar.setState(.idle)
         }
     }
 
@@ -1353,18 +1451,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             switch result {
             case .success(let polished, let changed):
-                var insertionFailure: TextInserter.Failure?
-                if changed {
-                    // The source application must retain focus through the
-                    // complete simulated paste before any result window appears.
-                    insertionFailure = await TextInserter.insert(polished)
-                }
-
                 self.finishPolishing()
-                if let insertionFailure {
-                    self.statusBar.setState(.error(insertionFailure.message))
-                    NSSound.beep()
-                }
                 self.polishCardWindow.show(
                     originalText: selection.text,
                     polishedText: polished,
@@ -1373,6 +1460,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             case .failure(let error):
                 self.finishPolishing()
+                if case .cancelled = error { return }
                 self.showPolishError(error)
             }
         }
@@ -1566,6 +1654,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Live Caption helpers
 
+    private var canStartCaptionInCurrentState: Bool {
+        switch state {
+        case .idle, .unloaded:
+            return true
+        case .connecting, .recording, .transcribing, .inserting, .translating, .polishing:
+            return localEngine.isLoaded
+        case .loading:
+            return false
+        }
+    }
+
     /// Start (or auto-switch to) the requested caption product on the given
     /// audio source. The engine setting flips to match the mode before the
     /// manager start fires. If a session of the OTHER product is running,
@@ -1574,11 +1673,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// running on a different source, we use switchSource for fast handoff.
     /// For .translated mode we gate on the cloud-disclosure modal first.
     @MainActor
-    private func startCaptionMode(_ mode: AppConfig.CaptionMode, source: AudioSourceKind) {
+    private func startCaptionMode(_ mode: AppConfig.CaptionMode, source: AudioSourceKind,
+                                  profileOverride: ProcessingProfile? = nil) {
         guard let manager = self.liveCaptionManager else {
             NSSound.beep()
             return
         }
+        if captionSourcePickerPending {
+            captionSourceRequestGeneration &+= 1
+            captionSourcePickerPending = false
+            SystemAudioPicker.cancel()
+        }
+        guard canStartCaptionInCurrentState else {
+            NSSound.beep()
+            return
+        }
+        guard !manager.isStarting else { return }
+        guard captionStartTask == nil else { return }
         // Cloud-first-time disclosure. The cloudOnboardingShown flag is
         // persisted, so this only fires once per macOS user account.
         if mode == .translated && !AppConfig.shared.cloudOnboardingShown {
@@ -1587,49 +1698,121 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let targetEngine: AppConfig.LiveCaptionEngine = (mode == .translated) ? .cloudTranslate : .local
+        let snapshot: ProcessingProfileSnapshot?
+        do {
+            if mode == .local {
+                guard var profile = profileOverride ?? ProcessingProfileStore.shared.selected(.captions) else { throw ProfileError.invalid }
+                try profile.requireAvailableModels(loadedSpeechModelID: localEngine.loadedModelID)
+                switch source {
+                case .mic: profile.input.kind = .microphone
+                case .system(let id): profile.input.kind = .application; profile.input.bundleID = id
+                }
+                snapshot = ProcessingProfileSnapshot(profile: try profile.validated())
+            } else { snapshot = nil }
+        } catch { showProfileError(error); return }
 
-        Task { @MainActor in
+        captionStartGeneration &+= 1
+        let generation = captionStartGeneration
+        captionStartTask = Task { @MainActor in
+            defer {
+                if self.captionStartGeneration == generation {
+                    self.captionStartTask = nil
+                    if !manager.isActive && !manager.isStarting && !manager.isFinishing {
+                        HushTypeSettingsWindowController.shared.updateCaptionState(mode: nil, source: nil)
+                        HushTypeSettingsWindowController.shared.updateProfileUsage(nil, captions: true)
+                    }
+                }
+            }
             do {
+                try Task.checkCancellation()
                 let currentMode: AppConfig.CaptionMode? = manager.isActive
                     ? (AppConfig.shared.liveCaptionEngine == .cloudTranslate ? .translated : .local)
                     : nil
                 if manager.isActive && currentMode == mode {
                     // Same product, possibly different source → fast in-place switch.
-                    try await manager.switchSource(to: source)
+                    try await manager.switchSource(to: source, profile: snapshot)
                     return
                 }
-                if manager.isActive {
+                if manager.isBusy {
                     // Different product → tear down fully, then start fresh.
                     manager.stop()
-                    // Give the teardown's async block a chance to settle the
-                    // panel and free MLX/URLSession state before we set up
-                    // the new engine. 200ms matches the cloud graceful-close
-                    // window plus a small buffer.
-                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    await manager.waitUntilStopped()
                 }
+                try Task.checkCancellation()
+                guard self.canStartCaptionInCurrentState else { return }
+                if let snapshot, self.localEngine.loadedModelID != snapshot.profile.modelID {
+                    guard self.state == .idle || self.state == .unloaded else { throw ProfileError.modelBusy }
+                    HushTypeSettingsWindowController.shared.updateProfileUsage(snapshot.profile, captions: true)
+                    HushTypeSettingsWindowController.shared.updateCaptionState(mode: mode, source: source, isStarting: true)
+                    self.state = .loading
+                    self.statusBar.setState(.loading(0))
+                    do {
+                        await self.localEngine.unloadAndWait()
+                        try Task.checkCancellation()
+                        AppConfig.shared.modelId = snapshot.profile.modelID
+                        try await self.localEngine.load(progressHandler: nil)
+                        self.state = .idle
+                        self.statusBar.setState(.idle)
+                    } catch {
+                        self.state = self.localEngine.isLoaded ? .idle : .unloaded
+                        self.statusBar.setState(self.localEngine.isLoaded ? .idle : .unloaded)
+                        throw error
+                    }
+                }
+                try Task.checkCancellation()
                 AppConfig.shared.liveCaptionEngine = targetEngine
-                try await manager.start(source: source)
+                try await manager.start(source: source, profile: snapshot)
+                if manager.isActive, self.state == .unloaded, self.localEngine.isLoaded {
+                    self.state = .idle
+                    self.statusBar.setState(.idle)
+                    self.statusBar.setModelLoaded()
+                }
+            } catch is CancellationError {
+                return
+            } catch let error as ProfileError {
+                self.showProfileError(error)
+            } catch let error as LocalTextModelError {
+                let alert = NSAlert()
+                alert.messageText = L10n.string("error.local_text.title", fallback: "Text model unavailable")
+                alert.informativeText = error.localizedDescription
+                alert.addButton(withTitle: L10n.string("common.button.open_settings", fallback: "Open Settings"))
+                alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
+                if alert.runModal() == .alertFirstButtonReturn {
+                    HushTypeSettingsWindowController.shared.present(section: .model)
+                }
             } catch {
                 log.error("LiveCaption start failed: \(error.localizedDescription, privacy: .public)")
             }
         }
     }
 
-    /// Hotkey handler (Right ⌘ + /): toggle whichever product was last
-    /// started. First-use (no AppConfig.lastStartedCaptionMode set) defaults
-    /// to local — nobody accidentally starts a paid translation session via
-    /// muscle memory on day one.
+    /// Long F5 always controls local captions, including their loading state.
     @MainActor
     private func toggleLiveCaptionViaHotkey() {
         guard let manager = self.liveCaptionManager else {
             NSSound.beep()
             return
         }
-        if manager.isActive {
-            manager.stop()
+        if captionSourcePickerPending || manager.isActive || manager.isStarting || captionStartTask != nil {
+            stopLiveCaptions()
             return
         }
-        toggleProductWithLastSource(AppConfig.shared.lastStartedCaptionMode)
+        guard !manager.isBusy else { return }
+        toggleProductWithLastSource(.local)
+    }
+
+    @MainActor
+    private func stopLiveCaptions() {
+        captionSourceRequestGeneration &+= 1
+        captionSourcePickerPending = false
+        SystemAudioPicker.cancel()
+        captionStartGeneration &+= 1
+        captionStartTask?.cancel()
+        captionStartTask = nil
+        liveCaptionManager?.finish()
+        let finishing = liveCaptionManager?.isFinishing ?? false
+        HushTypeSettingsWindowController.shared.updateCaptionState(mode: nil, source: nil, isFinishing: finishing)
+        if !finishing { HushTypeSettingsWindowController.shared.updateProfileUsage(nil, captions: true) }
     }
 
     /// Shared entry point for "start `mode` with whatever source the user
@@ -1640,6 +1823,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// because the dictation gate watches it.
     @MainActor
     private func toggleProductWithLastSource(_ mode: AppConfig.CaptionMode) {
+        if mode == .local {
+            guard let profile = ProcessingProfileStore.shared.selected(.captions) else { showProfileError(ProfileError.invalid); return }
+            // Keep an unconfigured application source stopped without opening
+            // the system-audio permission flow or beginning model work.
+            guard profile.input.hasCaptureSource else { return }
+            do { try profile.requireAvailableModels(loadedSpeechModelID: localEngine.loadedModelID) }
+            catch { showProfileError(error); return }
+            if profile.input.kind == .microphone {
+                startCaptionMode(mode, source: .mic, profileOverride: profile)
+            } else {
+                SystemAudioPermissionFlow.ensurePermission { [weak self] in
+                    self?.startCaptionMode(mode, source: .system(bundleID: profile.input.bundleID), profileOverride: profile)
+                }
+            }
+            return
+        }
         if AppConfig.shared.lastStartedCaptionUsesMicSource {
             startCaptionMode(mode, source: .mic)
         } else {
@@ -1656,15 +1855,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSSound.beep()
             return
         }
+        guard canStartCaptionInCurrentState,
+              !captionSourcePickerPending, captionStartTask == nil else { return }
+        captionSourceRequestGeneration &+= 1
+        let generation = captionSourceRequestGeneration
         SystemAudioPermissionFlow.ensurePermission { [weak self] in
-            guard let self else { return }
+            guard let self, self.captionSourceRequestGeneration == generation else { return }
             let tuning = LiveCaptionTuning.load()
             if !forcePicker && !tuning.systemAudioBundleID.isEmpty {
                 self.startCaptionMode(mode, source: .system(bundleID: tuning.systemAudioBundleID))
                 return
             }
+            self.captionSourcePickerPending = true
             SystemAudioPicker.present { [weak self] bundleID in
-                guard let self, let bundleID else { return }
+                guard let self, self.captionSourceRequestGeneration == generation else { return }
+                self.captionSourcePickerPending = false
+                guard let bundleID else { return }
                 self.startCaptionMode(mode, source: .system(bundleID: bundleID))
             }
         }
@@ -1723,23 +1929,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = await liveCaptionManager?.releaseLocalModel()
         snapshot("1_manager_release")
 
-        localEngine.unload()
+        await localEngine.unloadAndWait()
         snapshot("2_engine_unload")
-
-        if AppConfig.shared.textPolishEnabled {
-            if #available(macOS 26.0, *) {
-                Task { @MainActor in
-                    FoundationModelsPolisher.releaseSession()
-                }
-            }
-        }
 
         // Drop any MLX buffers retained from prior transcribes — the model
         // pointers are now gone, so cached intermediate tensors are dead
         // weight. clearCache() walks MLX's buffer pool and frees everything
         // not currently in flight. Without this, hundreds of MB can linger
         // even after the model itself releases.
-        MLX.Memory.clearCache()
+        try? await LocalMLXComputeGate.shared.run { MLX.Memory.clearCache() }
         snapshot("3_clearCache")
 
         if AppConfig.shared.dictationEngine == .local {
@@ -1756,7 +1954,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showModelNotice(.unloaded)
     }
 
-    private func reloadModel(showCompletionNotice: Bool = false) {
+    private func reloadModel(showCompletionNotice: Bool = false, completion: (@MainActor (Bool) -> Void)? = nil) {
+        guard liveCaptionManager?.isBusy != true else {
+            liveCaptionManager?.flashGatedMessage()
+            return
+        }
         guard AXIsProcessTrusted() else {
             statusBar.setState(.setupRequired)
             let settingsWindow = HushTypeSettingsWindowController.shared
@@ -1798,8 +2000,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     if showCompletionNotice {
                         self.showModelNotice(.loaded)
                     }
+                    completion?(true)
                 }
-                await self.scheduleTextPolishPrewarmIfNeeded(reason: "model reload")
             } catch is CancellationError {
                 await MainActor.run {
                     guard self.modelLoadAttemptID == loadAttemptID,
@@ -1807,6 +2009,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.state = .unloaded
                     self.statusBar.setState(.unloaded)
                     self.statusBar.setModelDownloadStopped()
+                    completion?(false)
                 }
             } catch {
                 log.error("Failed to reload model: \(error.localizedDescription, privacy: .public)")
@@ -1818,6 +2021,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         fallback: "Reload failed"
                     )))
                     self.statusBar.setModelUnloaded()
+                    completion?(false)
                 }
             }
         }
@@ -1852,11 +2056,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func scheduleTextPolishPrewarmIfNeeded(reason: String) {
-        guard AppConfig.shared.textPolishEnabled && TextPolisher.isAvailableCached else { return }
-        if #available(macOS 26.0, *) {
-            log.info("Scheduling Text Polish prewarm after \(reason, privacy: .public)")
-            FoundationModelsPolisher.warmup()
+    @objc private func localTextPreferencesChanged() {
+        TextPolisher.refreshAvailabilityCache()
+        statusBar?.setTextPolishAvailability(TextPolisher.isAvailableCached)
+        if !LocalTextPreferences.translatesCaptions {
+            liveCaptionManager?.stopLocalTranslation()
         }
     }
 
@@ -2268,16 +2472,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Capture before a modal that may lead to insertion, then reactivate and
     /// wait for the original app to confirm focus before simulating paste.
     /// T4's consent/failure alerts use these helpers.
-    private func captureInsertionFocus() -> NSRunningApplication? {
-        NSWorkspace.shared.frontmostApplication
+    @objc private func trackExternalApplication(_ notification: Notification) {
+        guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+              application.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+        lastExternalApplication = application
+    }
+
+    /// Only the overview button steals focus from an external input target.
+    /// Keyboard dictation must retain the frontmost application, including HushType.
+    static func insertionFocus(current: NSRunningApplication?, previous: NSRunningApplication?,
+                               preferPreviousApplication: Bool,
+                               ownProcessID: pid_t = ProcessInfo.processInfo.processIdentifier) -> NSRunningApplication? {
+        if preferPreviousApplication,
+           current?.processIdentifier == ownProcessID {
+            guard let previous, !previous.isTerminated,
+                  previous.processIdentifier != ownProcessID else { return nil }
+            return previous
+        }
+        return current
+    }
+
+    private func captureInsertionFocus(preferPreviousApplication: Bool = false) -> NSRunningApplication? {
+        Self.insertionFocus(current: UnicodeTextInput.focusedApplication() ?? NSWorkspace.shared.frontmostApplication,
+                            previous: lastExternalApplication,
+                            preferPreviousApplication: preferPreviousApplication)
+    }
+
+    static func shouldActivateInsertionTarget(targetPID: pid_t, focusedPID: pid_t?, frontmostPID: pid_t?) -> Bool {
+        // AX focus takes precedence over Workspace for auxiliary input panels.
+        (focusedPID ?? frontmostPID) != targetPID
     }
 
     @discardableResult
     private func restoreInsertionFocus(_ application: NSRunningApplication?) async -> Bool {
         guard let application else { return false }
+        guard Self.shouldActivateInsertionTarget(
+            targetPID: application.processIdentifier,
+            focusedPID: UnicodeTextInput.focusedApplication()?.processIdentifier,
+            frontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier
+        ) else { return true }
         application.activate()
         for _ in 0..<20 {
-            if application.isActive { return true }
+            if UnicodeTextInput.focusedApplication()?.processIdentifier == application.processIdentifier
+                || application.isActive { return true }
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
         return application.isActive

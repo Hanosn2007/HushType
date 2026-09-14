@@ -72,7 +72,7 @@ private struct SettingsAdaptiveCutoutRegistryKey: EnvironmentKey {
     static let defaultValue: SettingsAdaptiveCutoutRegistry? = nil
 }
 
-private extension EnvironmentValues {
+extension EnvironmentValues {
     var settingsAdaptiveCutoutRegistry: SettingsAdaptiveCutoutRegistry? {
         get { self[SettingsAdaptiveCutoutRegistryKey.self] }
         set { self[SettingsAdaptiveCutoutRegistryKey.self] = newValue }
@@ -454,7 +454,23 @@ func settingsClickOnlyActionAllowed(
 }
 
 private struct SettingsTopBarHeightKey: EnvironmentKey {
-    static let defaultValue: CGFloat = 0
+    static let defaultValue: CGFloat = SettingsWindowChromeMetrics().detailContentTop
+}
+
+/// All SwiftUI scroll containers reserve the same measured chrome region.
+/// Safe-area reservation is honored by native List as well as grouped Form;
+/// a scroll-content margin alone does not establish that exclusion on macOS.
+private struct SettingsDetailScrollInset: ViewModifier {
+    @Environment(\.settingsTopBarHeight) private var top
+    func body(content: Content) -> some View {
+        content.safeAreaInset(edge: .top, spacing: 0) {
+            Color.clear.frame(height: max(0, top)).allowsHitTesting(false).accessibilityHidden(true)
+        }
+    }
+}
+
+extension View {
+    func settingsDetailScrollInset() -> some View { modifier(SettingsDetailScrollInset()) }
 }
 
 extension EnvironmentValues {
@@ -538,7 +554,7 @@ struct SettingsWindowShell<Detail: View, Sidebar: View, Header: View>: View {
                                  extendsDetailUnderHeader: extendsScrollUnderHeader,
                                  detailLayoutProgress: stabilizesDetailWidth ? (sidebarExpanded ? 1 : 0) : nil) {
                 detail()
-                    .environment(\.settingsTopBarHeight, max(64, chrome.titlebarCenterY + 28))
+                    .environment(\.settingsTopBarHeight, chrome.detailContentTop)
                     .environment(\.settingsSidebarIsResizing, sidebarDragOrigin != nil)
                     .clipped()
                     .transaction { transaction in
@@ -609,6 +625,7 @@ struct SettingsWindowShell<Detail: View, Sidebar: View, Header: View>: View {
                 .zIndex(3)
                 header()
                     .environment(\.settingsTitlebarDragExclusionRegistry, titlebarDragExclusionRegistry)
+                    .environment(\.settingsToolbarEdgeGap, SettingsToolbarGeometry.edgeGap(centerY: chrome.titlebarCenterY))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .zIndex(3)
             }
@@ -619,6 +636,7 @@ struct SettingsWindowShell<Detail: View, Sidebar: View, Header: View>: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .background(SettingsWindowChromeReader { chrome = $0 })
+        .preference(key: SettingsChromeMetricsKey.self, value: chrome)
         .clipped()
         .ignoresSafeArea(.container, edges: .top)
     }
@@ -627,6 +645,25 @@ struct SettingsWindowShell<Detail: View, Sidebar: View, Header: View>: View {
 /// The accepted HTML prototype's single-progress layout, in window points.
 /// Layout interpolation moves existing views; it never rebuilds the toggle or
 /// asks a NavigationSplitView to create a second, independently moving toggle.
+enum SettingsToolbarGeometry {
+    static let controlSize: CGFloat = 36
+    /// Match the visible top clearance while keeping all controls on the
+    /// system titlebar centerline. The trailing cluster uses this same gap.
+    static func edgeGap(centerY: CGFloat) -> CGFloat {
+        max(0, centerY - controlSize / 2)
+    }
+}
+
+private struct SettingsToolbarEdgeGapKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 10
+}
+extension EnvironmentValues {
+    var settingsToolbarEdgeGap: CGFloat {
+        get { self[SettingsToolbarEdgeGapKey.self] }
+        set { self[SettingsToolbarEdgeGapKey.self] = newValue }
+    }
+}
+
 struct SettingsChromeFrames {
     let sidebar: CGRect
     let detail: CGRect
@@ -653,7 +690,7 @@ struct SettingsChromeFrames {
                         width: max(0, size.width - detailInset), height: max(0, size.height - detailTop))
         toggle = CGRect(x: toggleX, y: titlebarCenterY - 18, width: 36, height: 36)
         header = CGRect(x: headerX, y: titlebarCenterY - 18,
-                        width: max(0, size.width - headerX - max(8, titlebarCenterY - 18)), height: 36)
+                        width: max(0, size.width - headerX - SettingsToolbarGeometry.edgeGap(centerY: titlebarCenterY)), height: 36)
     }
 }
 
@@ -698,6 +735,13 @@ struct SettingsWindowChromeMetrics: Equatable {
     var minimumToggleX: CGFloat = 100
     var titlebarCenterY: CGFloat = 28
     var titlebarBottomY: CGFloat = 52
+    var detailContentTop: CGFloat {
+        // The clearance is a shared spacing token; the occupied region is
+        // measured from the actual window, including full-screen changes.
+        let bottom = titlebarBottomY.isFinite && titlebarBottomY >= 0 ? titlebarBottomY : 52
+        let center = titlebarCenterY.isFinite && titlebarCenterY >= 0 ? titlebarCenterY : 28
+        return max(bottom, center + 18) + 12
+    }
 }
 
 /// Public NSWindow standard buttons are the only geometry source. No titlebar
@@ -1065,6 +1109,20 @@ func settingsTopTintOpacity(_ normalizedY: CGFloat) -> CGFloat {
     return 0.35 * t * t * (3 - 2 * t)
 }
 
+/// Output opacity, rather than blur radius alone: even a sampled shadow must
+/// disappear at the detail boundary. Smoothstep keeps both ends gentle.
+func settingsMakeBackdropLeadingFade() -> CAGradientLayer {
+    let mask = CAGradientLayer()
+    mask.startPoint = CGPoint(x: 0, y: 0.5)
+    mask.endPoint = CGPoint(x: 1, y: 0.5)
+    mask.locations = (0...8).map { NSNumber(value: Double($0) / 8) }
+    mask.colors = (0...8).map { step in
+        let t = CGFloat(step) / 8
+        return CGColor(gray: 1, alpha: t * t * (3 - 2 * t))
+    }
+    return mask
+}
+
 /// Maps real scroll velocity to the temporary top-blur radius. Keeping this
 /// independent from the AppKit host makes the continuous response testable.
 enum SettingsScrollBlurDynamics {
@@ -1135,6 +1193,9 @@ private struct SettingsNativeTopBackdrop: NSViewRepresentable {
         private var lastAppliedMaskOrigin: CGPoint = .zero
         @available(macOS 14.0, *) private let cutoutDisplayLinkProxy = CutoutDisplayLinkProxy()
         private var backdrop: CALayer?
+        // One output mask fades the captured blur and its color cover together.
+        private let edgeStage = CALayer()
+        private let leadingEdgeMask = settingsMakeBackdropLeadingFade()
         private let blurStage = CALayer()
         private let sourceClip = CAShapeLayer()
         private let outputClip = CAShapeLayer()
@@ -1170,14 +1231,15 @@ private struct SettingsNativeTopBackdrop: NSViewRepresentable {
             super.init(frame: frame)
             wantsLayer = true
             layer?.masksToBounds = true
-            layer?.addSublayer(blurStage)
+            layer?.addSublayer(edgeStage)
+            edgeStage.addSublayer(blurStage)
             if let backdropType = NSClassFromString("CABackdropLayer") as? CALayer.Type {
                 let backdrop = backdropType.init()
                 blurStage.addSublayer(backdrop)
                 self.backdrop = backdrop
             }
             cover.mask = coverMask
-            layer?.addSublayer(cover)
+            edgeStage.addSublayer(cover)
             NotificationCenter.default.addObserver(self, selector: #selector(scrollBoundsChanged(_:)),
                 name: NSView.boundsDidChangeNotification, object: nil)
             NotificationCenter.default.addObserver(self, selector: #selector(scrollViewDidLiveScroll(_:)),
@@ -1731,9 +1793,20 @@ private struct SettingsNativeTopBackdrop: NSViewRepresentable {
             } else {
                 frame = bounds
             }
-            blurStage.frame = frame
+            edgeStage.frame = frame
+            // As the sidebar disappears, shrink the transition with it. A
+            // collapsed sidebar leaves the full-width header unchanged.
+            let fadeWidth = configuration?.sidebar == false ? min(24, max(0, frame.minX)) : 0
+            if fadeWidth > 0, frame.width > 0 {
+                leadingEdgeMask.frame = edgeStage.bounds
+                leadingEdgeMask.endPoint = CGPoint(x: min(fadeWidth, frame.width) / frame.width, y: 0.5)
+                edgeStage.mask = leadingEdgeMask
+            } else {
+                edgeStage.mask = nil
+            }
+            blurStage.frame = edgeStage.bounds
             backdrop?.frame = blurStage.bounds
-            cover.frame = frame
+            cover.frame = edgeStage.bounds
             coverMask.frame = cover.bounds
         }
 

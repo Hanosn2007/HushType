@@ -21,7 +21,10 @@ let package = Package(
         // Direct mlx-swift dep so live caption can bound the GPU buffer cache
         // (MLX.GPU.set(cacheLimit:) / clearCache) — speech-swift transitively
         // depends on the same version, so SwiftPM resolves a single copy.
-        .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.30.0"),
+        .package(url: "https://github.com/ml-explore/mlx-swift", exact: "0.31.3"),
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm", exact: "3.31.3"),
+        .package(url: "https://github.com/huggingface/swift-huggingface.git", exact: "0.9.0"),
+        .package(url: "https://github.com/huggingface/swift-transformers", exact: "1.3.3"),
     ],
     targets: [
         .target(
@@ -38,6 +41,11 @@ let package = Package(
                 .product(name: "AudioCommon", package: "speech-swift"),
                 .product(name: "SpeechVAD", package: "speech-swift"),
                 .product(name: "MLX", package: "mlx-swift"),
+                .product(name: "MLXLLM", package: "mlx-swift-lm"),
+                .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
+                .product(name: "MLXHuggingFace", package: "mlx-swift-lm"),
+                .product(name: "HuggingFace", package: "swift-huggingface"),
+                .product(name: "Tokenizers", package: "swift-transformers"),
             ],
             path: "Sources/HushType",
             resources: [
