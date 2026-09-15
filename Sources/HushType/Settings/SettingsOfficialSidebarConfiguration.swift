@@ -1,9 +1,11 @@
 import Foundation
 
-/// Preview-only parameters for the macOS 26 public sidebar scroll-edge effect.
+/// Parameters for the macOS 26 public sidebar scroll-edge effect in all builds.
 ///
 /// These keys are deliberately separate from the private right-side blur
 /// configuration so either side can be reset without changing the other.
+/// Keep the historical "preview" preference names to preserve existing tuning;
+/// they do not restrict the renderer to prerelease version numbers.
 struct SettingsOfficialSidebarConfiguration: Equatable {
     enum Style: String, CaseIterable {
         case soft

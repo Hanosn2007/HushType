@@ -1852,7 +1852,7 @@
 "settings.debug.scroll_blur.edge_inset.restore" = "恢复 2 像素";
 "settings.debug.sidebar_scroll_test" = "侧栏滚动测试";
 "settings.debug.sidebar_scroll_test.enabled" = "添加 100 个填充项";
-"settings.debug.sidebar_scroll_test.description" = "在真实导航下方添加无功能填充行，以便观察侧栏滚动。仅在 Preview 中生效。";
+"settings.debug.sidebar_scroll_test.description" = "在真实导航下方添加无功能填充行，仅用于侧栏滚动调试。";
 "settings.debug.sidebar_scroll_test.filler_item" = "滚动测试项 %1$d";
 "settings.debug.temporary_clipboard" = "临时剪贴板";
 "settings.debug.temporary_clipboard_markers" = "添加临时剪贴板标记";

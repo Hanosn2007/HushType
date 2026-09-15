@@ -1850,7 +1850,7 @@
 "settings.debug.scroll_blur.edge_inset.restore" = "Restore 2 px";
 "settings.debug.sidebar_scroll_test" = "Sidebar scroll test";
 "settings.debug.sidebar_scroll_test.enabled" = "Add 100 filler items";
-"settings.debug.sidebar_scroll_test.description" = "Adds inert rows below the real navigation so you can inspect sidebar scrolling. Preview only.";
+"settings.debug.sidebar_scroll_test.description" = "Adds inert rows below the real navigation for sidebar scrolling diagnostics.";
 "settings.debug.sidebar_scroll_test.filler_item" = "Scroll test item %1$d";
 "settings.debug.temporary_clipboard" = "Temporary clipboard";
 "settings.debug.temporary_clipboard_markers" = "Add temporary clipboard marker";

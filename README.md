@@ -131,7 +131,7 @@ iOS（通过你的 Mac 作为服务器）：
 
 ### 方案 A：下载正式版（不需要任何开发工具）
 
-1. 从[本分支最新版本](https://github.com/Hanosn2007/HushType/releases/latest)下载 `HushType-0.5.18.zip`
+1. 从[本分支最新版本](https://github.com/Hanosn2007/HushType/releases/latest)下载该版本的 `HushType-<版本>.zip`
 2. 解压 ZIP，将 HushType.app 拖到「应用程序」
 3. 右键点击 HushType.app → 打开（首次启动时需要，0.5.17 起使用固定自签名，未经 Apple 公证）
 4. 授予**辅助功能**与**麦克风**权限

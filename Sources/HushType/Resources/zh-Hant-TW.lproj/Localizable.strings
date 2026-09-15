@@ -1852,7 +1852,7 @@
 "settings.debug.scroll_blur.edge_inset.restore" = "恢復 2 像素";
 "settings.debug.sidebar_scroll_test" = "側欄捲動測試";
 "settings.debug.sidebar_scroll_test.enabled" = "新增 100 個填充項目";
-"settings.debug.sidebar_scroll_test.description" = "在真實導覽下方加入無功能填充列，以便觀察側欄捲動。僅在 Preview 中生效。";
+"settings.debug.sidebar_scroll_test.description" = "在真實導覽下方加入無功能填充列，僅用於側欄捲動除錯。";
 "settings.debug.sidebar_scroll_test.filler_item" = "捲動測試項目 %1$d";
 "settings.debug.temporary_clipboard" = "暫時剪貼簿";
 "settings.debug.temporary_clipboard_markers" = "加入暫時剪貼簿標記";

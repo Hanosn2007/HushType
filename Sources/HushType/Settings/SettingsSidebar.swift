@@ -9,7 +9,9 @@ enum SettingsSidebarScrollTestConfiguration {
         defaults: UserDefaults = .standard,
         isPreview: Bool = SettingsScrollBlurConfiguration.defaultIsPreview
     ) -> Bool {
-        isPreview && ((defaults.object(forKey: enabledKey) as? Bool) ?? false)
+        // This is already an explicit developer option. Keep its saved value
+        // when the same app moves from a candidate to a stable version.
+        (defaults.object(forKey: enabledKey) as? Bool) ?? false
     }
 }
 
@@ -33,7 +35,7 @@ struct SettingsDrawnSidebar: View {
 
     var body: some View {
         Group {
-        if #available(macOS 26.0, *), SettingsScrollBlurConfiguration.defaultIsPreview {
+        if #available(macOS 26.0, *) {
             officialEffectSidebar
         } else {
             legacySidebar

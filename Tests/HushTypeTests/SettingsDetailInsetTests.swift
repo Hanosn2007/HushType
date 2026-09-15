@@ -5,6 +5,49 @@ import XCTest
 
 @MainActor
 final class SettingsDetailInsetTests: XCTestCase {
+    func testStableBuildUsesOfficialSidebarWithoutLegacyBackdrop() async throws {
+        guard #available(macOS 26.0, *) else { throw XCTSkip("System sidebar requires macOS 26") }
+        XCTAssertFalse(SettingsScrollBlurConfiguration.defaultIsPreview)
+        let content = SettingsWindowShell(toggleLabel: "Sidebar", expandedLabel: "Expanded", collapsedLabel: "Collapsed") {
+            Text("Stable release sidebar").frame(maxWidth: .infinity, maxHeight: .infinity)
+        } sidebar: {
+            SettingsDrawnSidebar(sections: HushTypeSettingsSection.allCases, selection: .constant(.profiles))
+        } header: {
+            HStack {
+                SettingsNavigationButtons(backDisabled: false, forwardDisabled: true,
+                    backLabel: "Back", forwardLabel: "Forward", back: {}, forward: {})
+                Text("处理配置").font(.headline)
+                Spacer()
+            }
+        }
+        let host = NSHostingView(rootView: content)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.toolbarStyle = .unified
+        window.toolbar = NSToolbar(identifier: "StableOfficialSidebar")
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.contentView = host
+        window.orderBack(nil)
+        defer { window.orderOut(nil); window.contentView = nil }
+        try await Task.sleep(for: .milliseconds(250))
+        host.layoutSubtreeIfNeeded()
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        let customBackdrops = descendants(host).filter {
+            String(reflecting: type(of: $0)).contains("SettingsNativeTopBackdrop.BackdropView")
+        }
+        XCTAssertEqual(customBackdrops.count, 1, "Only the detail pane should own the custom backdrop; the sidebar must use the system edge")
+        if let path = ProcessInfo.processInfo.environment["HUSHTYPE_STABLE_SIDEBAR_CAPTURE"] {
+            let capture = Process()
+            capture.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            capture.arguments = ["-x", "-o", "-l", String(window.windowNumber), path]
+            try capture.run(); capture.waitUntilExit()
+            XCTAssertEqual(capture.terminationStatus, 0)
+        }
+    }
+
     func testListAndFormFirstRowClearTheMeasuredHeader() async throws {
         for useList in [true, false] {
             var firstRow: NSView?

@@ -1,4 +1,6 @@
-# Preview 调试页与动态滚动模糊配置
+# 滚动边缘效果与调试配置
+
+2026-09-15：0.5.19起，macOS 26的正式版与候选版均使用官方侧栏滚动边缘、同一层级和同一背景归属；不再按版本号切回旧侧栏。右侧动态滚动模糊缺省开启，显式用户设置优先；开发者滚动测试也按其显式开关生效。历史偏好键中的preview保持不变，避免丢失已保存参数。下面旧Preview说明作为历史记录，冲突处以本段为准。
 
 配置入口：`Sources/HushType/Settings/SettingsScrollBlurConfiguration.swift`；UI入口：同目录 `SettingsDebugView.swift`。`SettingsChromeLayout.swift` 的 `BackdropView` 在创建时读取配置，并监听 UserDefaults 变化在主线程重新应用，调试页修改即时生效。
 

@@ -363,7 +363,7 @@ struct SettingsDebugSections: View {
                             L10n.string(
                                 "settings.debug.sidebar_scroll_test.description",
                                 fallback:
-                                    "Adds inert rows below the real navigation so you can inspect sidebar scrolling. Preview only."
+                                    "Adds inert rows below the real navigation for sidebar scrolling diagnostics."
                             )
                         )
                         .font(.caption)

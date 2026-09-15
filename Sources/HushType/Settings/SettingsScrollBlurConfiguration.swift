@@ -8,7 +8,7 @@ import Foundation
 /// See `docs/SCROLL_BLUR_CONFIGURATION.md` for preference keys and usage.
 struct SettingsScrollBlurConfiguration: Equatable {
     /// Whether scroll-driven blur updates are active for this process.
-    /// Missing keys enable the probe only in a Preview build.
+    /// Missing keys preserve the accepted candidate behavior in every release.
     let enabled: Bool
 
     /// Lower bound, in `CAFilter.inputRadius` units, for the scroll-driven radius.
@@ -66,15 +66,15 @@ struct SettingsScrollBlurConfiguration: Equatable {
     ///
     /// - Parameters:
     ///   - defaults: Preference store to inspect; `.standard` reads the app domain.
-    ///   - isPreview: Missing `enabled` defaults to this value. By default it is
-    ///     inferred from the bundle version, leaving stable builds default-off.
+    ///   - isPreview: Retained for existing callers and parity checks. Release
+    ///     metadata no longer changes the default rendering behavior.
     /// - Returns: A safe configuration: finite radii, clamped to `0...60`, with
     ///   `minimumRadius <= maximumRadius`.
     static func load(
         defaults: UserDefaults = .standard,
         isPreview: Bool = SettingsScrollBlurConfiguration.defaultIsPreview
     ) -> Self {
-        let enabled = (defaults.object(forKey: enabledKey) as? Bool) ?? isPreview
+        let enabled = (defaults.object(forKey: enabledKey) as? Bool) ?? true
         let requestedMinimum = number(forKey: minimumRadiusKey, defaults: defaults) ?? defaultMinimumRadius
         let requestedMaximum = number(forKey: maximumRadiusKey, defaults: defaults) ?? defaultMaximumRadius
         let requestedEdgeInsetPixels = number(forKey: edgeInsetPixelsKey, defaults: defaults)

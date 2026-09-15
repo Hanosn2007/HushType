@@ -539,7 +539,7 @@ struct SettingsWindowShell<Detail: View, Sidebar: View, Header: View>: View {
     private var extendsScrollUnderHeader: Bool { true }
     private var sidebarAboveDetailBackdrop: Bool {
         if #available(macOS 26.0, *) {
-            return SettingsScrollBlurConfiguration.defaultIsPreview
+            return true
         }
         return false
     }
@@ -975,7 +975,7 @@ private struct SettingsChromeFadeLayer: View, Animatable {
     var animatableData: CGFloat { get { progress } set { progress = newValue } }
     private var usesPublicSidebarEffect: Bool {
         if #available(macOS 26.0, *) {
-            return SettingsScrollBlurConfiguration.defaultIsPreview
+            return true
         }
         return false
     }
@@ -988,8 +988,8 @@ private struct SettingsChromeFadeLayer: View, Animatable {
             ZStack(alignment: .topLeading) {
                 fade(in: f.detail, height: max(0, titlebarBottomY - f.detail.minY), sidebar: false,
                      hostWidth: geometry.size.width, cutoutRegistry: cutoutRegistry)
-                // Preview on macOS 26 uses the public scroll-edge host.
-                // All other configurations retain the original sidebar effect.
+                // All macOS 26 builds use the accepted public scroll-edge host.
+                // Older systems retain the compatibility sidebar effect.
                 if !usesPublicSidebarEffect {
                     fade(in: f.sidebar, height: max(0, titlebarBottomY - f.sidebar.minY), sidebar: true,
                          hostWidth: geometry.size.width, cutoutRegistry: cutoutRegistry)

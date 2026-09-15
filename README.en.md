@@ -122,7 +122,7 @@ iOS (via your Mac as server):
 
 ### Option A: Download the stable release (no build tools needed)
 
-1. Download `HushType-0.5.18.zip` from [this fork's latest release](https://github.com/Hanosn2007/HushType/releases/latest)
+1. Download that version's `HushType-<version>.zip` from [this fork's latest release](https://github.com/Hanosn2007/HushType/releases/latest)
 2. Extract the ZIP and drag HushType.app to Applications
 3. Right-click HushType.app → Open (required on first launch; releases from 0.5.17 use a stable self-signed identity and are not notarized)
 4. Grant **Accessibility** and **Microphone** permissions when prompted
